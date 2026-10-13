@@ -137,6 +137,16 @@ fun subagentDispatchTool(
                     })
                     put("timeout_seconds", buildJsonObject { put("type", "integer") })
                     put("max_trips", buildJsonObject { put("type", "integer") })
+                    put("capabilities", buildJsonObject {
+                        put("type", "array")
+                        put("items", buildJsonObject { put("type", "string") })
+                        put(
+                            "description",
+                            "Opt-in capability categories. Sub-agents get ONLY workspace tools plus " +
+                                "the explicit `tools` list by default. Grant more with any of: " +
+                                SubAgentCapability.entries.joinToString(", ") { it.wire } + ".",
+                        )
+                    })
                 },
                 required = listOf("task"),
             )
@@ -170,6 +180,8 @@ fun subagentDispatchTool(
                 maxTrips = params["max_trips"]?.jsonPrimitive?.intOrNull
                     ?: SubAgentDefaults.DEFAULT_MAX_TRIPS,
                 label = params["label"]?.jsonPrimitive?.contentOrNull,
+                capabilities = params["capabilities"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull },
             )
             // The engine's recursion guard checks `HeadlessConversations.isHeadless(parentChatId)`
             // — if the calling conversation is itself headless (cron / sub-agent / workflow /

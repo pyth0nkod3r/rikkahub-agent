@@ -1363,7 +1363,7 @@ class ChatService(
                     conversation.chatModelId ?: assistant.chatModelId ?: settings.chatModelId
                 ) ?: return RerunToolResult.Failure("no chat model selected")
 
-                val tools = buildToolsForRerun(assistant, conversationId, conversation, model, settings)
+                val tools = me.rerere.rikkahub.subagent.SubAgentToolPolicies.filter(conversationId, buildToolsForRerun(assistant, conversationId, conversation, model, settings)) { it.name }
                 val tool = tools.firstOrNull { it.name == toolPart.toolName }
                     ?: return RerunToolResult.Failure("tool '${toolPart.toolName}' is not available")
 

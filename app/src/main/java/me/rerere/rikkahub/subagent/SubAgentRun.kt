@@ -88,6 +88,8 @@ data class SubAgentRequest(
     val noResult: Boolean = false,
     val timeoutSeconds: Int = SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS,
     val maxTrips: Int = SubAgentDefaults.DEFAULT_MAX_TRIPS,
+    /** Opt-in capability categories (see [SubAgentCapability]) granted to this run. */
+    val capabilities: List<String>? = null,
     val label: String? = null,
 )
 
@@ -154,4 +156,8 @@ data class SubAgentProfile(
     val systemPrompt: String = "",
     val modelId: Uuid? = null,
     val enabled: Boolean = true,
+    /** Role tool names this profile always grants (added to the dispatch `tools` list). */
+    val tools: List<String> = emptyList(),
+    /** Capability categories this profile always grants (added to the dispatch `capabilities`). */
+    val capabilities: List<String> = emptyList(),
 )

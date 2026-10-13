@@ -411,9 +411,23 @@ class SubAgentEngine(
             title = "[Sub-agent] ${request.label?.take(40) ?: request.task.take(40)}",
             chatModelId = resolvedChatModelId,
         )
+        // Restricted catalog: a sub-agent sees only workspace_ tools plus the explicit role
+        // tools and opt-in capabilities from the dispatch and the profile. Unknown capability
+        // names fail the run rather than being dropped.
+        val toolPolicy = when (val built = buildSubAgentToolPolicy(
+            roleTools = request.tools.orEmpty() + profile?.tools.orEmpty(),
+            capabilities = request.capabilities.orEmpty() + profile?.capabilities.orEmpty(),
+        )) {
+            is SubAgentPolicyBuild.Ok -> built.policy
+            is SubAgentPolicyBuild.UnknownCapability -> {
+                markTerminal(runId, SubAgentStatus.FAILED, "unknown capability: ${built.names.joinToString()}")
+                return
+            }
+        }
         conversationRepo.insertConversation(conv)
         chatService.initializeConversation(conv.id)
         HeadlessConversations.mark(conv.id)
+        // Policy is registered inside the try block below so the finally always unregisters it.
         try {
             // Prepend a wrap-up instruction. Some models naturally write a summary paragraph
             // after their tool-call sequence; others stop after the last tool result and emit
@@ -425,6 +439,7 @@ class SubAgentEngine(
                 appendLine()
                 append("When you have finished, end with one short paragraph in plain text that summarises what you did and what you found. Do NOT stop on a tool call — finish with assistant text. The dispatcher harvests only your final text reply, so this paragraph is the entire response the parent sees.")
             }
+            SubAgentToolPolicies.register(conv.id, toolPolicy)
             chatService.sendMessage(conv.id, listOf(UIMessagePart.Text(taskWithWrapup)))
             // The naive form `withTimeoutOrNull { …first { it == null } }` followed by a
             // `finished == null` check is BROKEN: `.first { it == null }` returns the matched
@@ -468,6 +483,7 @@ class SubAgentEngine(
             markTerminal(runId, terminal, "${t::class.simpleName}: ${t.message.orEmpty()}")
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } finally {
+            SubAgentToolPolicies.unregister(conv.id)
             HeadlessConversations.unmark(conv.id)
             registry.clearJob(runId)
         }

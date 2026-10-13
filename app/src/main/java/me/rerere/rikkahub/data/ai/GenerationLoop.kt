@@ -552,9 +552,9 @@ class GenerationLoop(
 
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
 
-            val toolsInternal = buildList {
+            val toolsInternal = buildList<Tool> {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
-                if (assistant.enableMemory) {
+                if (assistant.enableMemory && me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "memory_tool")) {
                     val memoryAssistantId = if (assistant.useGlobalMemory) {
                         MemoryRepository.GLOBAL_MEMORY_ID
                     } else {
@@ -573,7 +573,7 @@ class GenerationLoop(
                         }
                     ).let(this::addAll)
                 }
-                addAll(tools)
+                addAll(tools.filter { me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, it.name) })
             }
 
             // Check if we have tool calls ready to continue after user interaction.
