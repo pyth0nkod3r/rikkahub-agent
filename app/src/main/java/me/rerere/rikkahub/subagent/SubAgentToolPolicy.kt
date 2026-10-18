@@ -53,7 +53,7 @@ enum class SubAgentCapability(val wire: String, val toolNames: Set<String>) {
             "keyboard_press_key", "keyboard_delete", "keyboard_clear", "keyboard_editor_info",
             "keyboard_set_cursor", "keyboard_select_range", "create_calendar_event",
             "create_contact", "send_email_intent", "send_sms_intent", "open_wifi_settings",
-            "show_location_on_map",
+            "show_location_on_map", "chart_display",
         ),
     ),
     SSH(

@@ -117,6 +117,18 @@ val dataSourceModule = module {
     }
 
     single {
+        get<AppDatabase>().memoryConsolidationDao()
+    }
+
+    single {
+        get<AppDatabase>().mediaCreationDao()
+    }
+
+    single {
+        get<AppDatabase>().translationHistoryDao()
+    }
+
+    single {
         MessageFtsManager(get())
     }
 

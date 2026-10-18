@@ -204,6 +204,7 @@ sealed class LocalToolOption {
     @Serializable @SerialName("external_storage")     data object ExternalStorage     : LocalToolOption()
     @Serializable @SerialName("archive")              data object Archive             : LocalToolOption()
     @Serializable @SerialName("keyboard_control")     data object KeyboardControl     : LocalToolOption()
+    @Serializable @SerialName("chart_display")        data object ChartDisplay        : LocalToolOption()
 }
 
 /**
@@ -848,6 +849,9 @@ class LocalTools(
         if (options.contains(LocalToolOption.Download)) {
             tools.add(downloadTool(context))
             tools.add(writeTextFileTool(context))
+        }
+        if (options.contains(LocalToolOption.ChartDisplay)) {
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.buildChartDisplayTool())
         }
         if (options.contains(LocalToolOption.Location)) {
             tools.add(locationTool(context))

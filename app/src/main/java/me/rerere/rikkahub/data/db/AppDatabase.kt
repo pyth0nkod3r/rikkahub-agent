@@ -14,12 +14,15 @@ import me.rerere.rikkahub.data.db.dao.FavoriteDAO
 import me.rerere.rikkahub.data.db.dao.FolderDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.ManagedFileDAO
+import me.rerere.rikkahub.data.db.dao.MediaCreationDAO
+import me.rerere.rikkahub.data.db.dao.MemoryConsolidationDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.dao.ScheduledJobDao
 import me.rerere.rikkahub.data.db.dao.ScheduledJobRunDao
 import me.rerere.rikkahub.data.db.dao.SshHostDao
 import me.rerere.rikkahub.data.db.dao.TelegramChatDao
+import me.rerere.rikkahub.data.db.dao.TranslationHistoryDAO
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.ConversationCompactionEntity
@@ -27,17 +30,24 @@ import me.rerere.rikkahub.data.db.entity.FavoriteEntity
 import me.rerere.rikkahub.data.db.entity.FolderEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
+import me.rerere.rikkahub.data.db.entity.MediaCreationNodeEntity
+import me.rerere.rikkahub.data.db.entity.MediaCreationRecordEntity
+import me.rerere.rikkahub.data.db.entity.MediaCreationSessionEntity
+import me.rerere.rikkahub.data.db.entity.MemoryConsolidationEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.db.entity.ScheduledJobEntity
 import me.rerere.rikkahub.data.db.entity.ScheduledJobRunEntity
 import me.rerere.rikkahub.data.db.entity.SshHostEntity
 import me.rerere.rikkahub.data.db.entity.TelegramChatEntity
+import me.rerere.rikkahub.data.db.entity.TranslationHistoryEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.db.migrations.Migration_16_17
 import me.rerere.rikkahub.data.db.migrations.Migration_20_21
 import me.rerere.rikkahub.data.db.migrations.Migration_21_22
 import me.rerere.rikkahub.data.db.migrations.Migration_22_23
+import me.rerere.rikkahub.data.db.migrations.Migration_31_32
 import me.rerere.rikkahub.data.db.migrations.Migration_8_9
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.workflow.db.WorkflowDao
@@ -50,6 +60,8 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         ConversationEntity::class,
         ConversationCompactionEntity::class,
         MemoryEntity::class,
+        MemoryFileEntity::class,
+        MemoryConsolidationEntity::class,
         GenMediaEntity::class,
         MessageNodeEntity::class,
         ManagedFileEntity::class,
@@ -63,8 +75,12 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         AgentRun::class,
         WorkspaceEntity::class,
         FolderEntity::class,
+        MediaCreationSessionEntity::class,
+        MediaCreationNodeEntity::class,
+        MediaCreationRecordEntity::class,
+        TranslationHistoryEntity::class,
     ],
-    version = 31,
+    version = 32,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -113,6 +129,9 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         // AppDatabaseFactory) instead of a plain auto-migration: a database restored from an
         // upstream 2.5.x backup can already carry this column, and an unconditional ADD COLUMN
         // crash-loops the app on every launch (issue #105).
+        // v32: 3.0.0 merge brings memory_file, memory_consolidation, media_creation_*,
+        // translation_history, and config on ConversationEntity.
+        AutoMigration(from = 31, to = 32, spec = Migration_31_32::class),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -122,6 +141,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationCompactionDao(): ConversationCompactionDAO
 
     abstract fun memoryDao(): MemoryDAO
+
+    abstract fun memoryConsolidationDao(): MemoryConsolidationDAO
 
     abstract fun genMediaDao(): GenMediaDAO
 
@@ -148,6 +169,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun workspaceDao(): WorkspaceDAO
 
     abstract fun folderDao(): FolderDAO
+
+    abstract fun mediaCreationDao(): MediaCreationDAO
+
+    abstract fun translationHistoryDao(): TranslationHistoryDAO
 }
 
 object TokenUsageConverter {

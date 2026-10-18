@@ -9,130 +9,26 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import me.rerere.ai.provider.BalanceOption
-import me.rerere.ai.provider.Modality
-import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import kotlin.uuid.Uuid
 
 val DEFAULT_AUTO_MODEL_ID = Uuid.parse("b7055fb4-39f9-4042-a88a-0d80ed76cf08")
-val DEFAULT_CODEX_PROVIDER_ID = Uuid.parse("7ce7e322-b995-4b0c-9d48-42e08dcfcdda")
-val DEFAULT_GROK_PROVIDER_ID = Uuid.parse("8f3e1d20-4b6a-4c9e-a1f2-9d5c7e0b3a44")
-val DEFAULT_GEMINI_OAUTH_PROVIDER_ID = Uuid.parse("2b6c1f84-73ad-4e35-b0c7-1a9e4d5f8c21")
 
 val DEFAULT_PROVIDERS = listOf(
-    ProviderSetting.AICore(
-        // On-device provider sits at the top of the list so the agent's primary surface for
-        // privacy-conscious / offline use is the first thing users see.
-        //
-        // OFF by default. The vast majority of users don't have a Pixel 8/9/10 with the
-        // AICore beta enrolled, and an enabled-but-broken provider at the top of the list
-        // is more confusing than a disabled-but-discoverable one. AICore-eligible users
-        // flip a single toggle on the provider card to turn it on. Existing users who
-        // already had it enabled keep their choice — PreferencesStore's merge only copies
-        // builtIn/description/shortDescription back from the defaults, not enabled.
-        enabled = false,
-        builtIn = true,
-        description = {
-            Text("Runs Gemini Nano on-device through Android AICore. Off by default — flip the switch to enable. Requires AICore beta on a supported Pixel device.")
-        },
-        shortDescription = {
-            Text("On-device — no API key, no network")
-        },
-    ),
-    ProviderSetting.LiteRtLocal(
-        // LiteRT-LM on-device provider. Disabled by default. Settings → Local · LiteRT
-        // shows a curated picker (LiteRtCatalog) with Google AI Edge Gallery's recommended
-        // models — Gemma 4 E2B / Gemma3-1B-IT / Qwen2.5-1.5B / DeepSeek-R1 distill / etc.
-        // — each with the per-model sampler + length defaults Gallery curates for them.
-        // The runtime mirrors Gallery's exact SDK call sequence (engine.initialize() +
-        // maxNumTokens + systemInstruction via ConversationConfig + speculative decoding
-        // probe via Capabilities) so on-device inference behaves the same as Gallery.
-        enabled = false,
-        builtIn = true,
-        description = {
-            Text("Runs .litertlm models on-device via LiteRT-LM. Pick a curated model from Settings → Local · LiteRT (Google AI Edge Gallery's allowlist) — no API key, no network at inference.")
-        },
-        shortDescription = {
-            Text("On-device — LiteRT-LM")
-        },
-    ),
-    ProviderSetting.LlamaCppLocal(
-        // llama.cpp on-device provider. Disabled by default, matching LiteRT above. The
-        // model catalog, settings tile and SAF picker are built in later tasks of the
-        // llama.cpp model-selection plan; for now this only makes the Settings tile exist.
-        enabled = false,
-        builtIn = true,
-        description = {
-            Text("Runs GGUF models on-device via llama.cpp. No API key, no network at inference.")
-        },
-        shortDescription = {
-            Text("On-device - llama.cpp")
-        },
-    ),
-    // All built-in providers ship DISABLED by default. New installs start with zero
-    // network-egress paths so a freshly-installed app can never make an LLM call (or
-    // bill any account) until the user explicitly enables a provider AND adds an API
-    // key. Existing users keep their per-provider enabled state — PreferencesStore's
-    // merge only re-copies builtIn/description/shortDescription back from defaults,
-    // not enabled (same pattern as the AICore default-off comment above).
-    ProviderSetting.OpenAI(
-        id = Uuid.parse("a8d2d463-e8c0-41f2-b89e-f5eb8e716cce"),
-        name = "RikkaHub",
-        baseUrl = "https://api.rikka-ai.com/v1",
-        apiKey = "",
-        enabled = false,
-        builtIn = true,
-        description = {
-            Text(stringResource(R.string.rikkahub_provider_description))
-        },
-        models = listOf(
-            Model(
-                id = DEFAULT_AUTO_MODEL_ID,
-                modelId = "auto",
-                displayName = "Auto",
-                inputModalities = listOf(Modality.TEXT),
-                outputModalities = listOf(Modality.TEXT),
-                abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING),
-            )
-        )
-    ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("1eeea727-9ee5-4cae-93e6-6fb01a4d051e"),
         name = "OpenAI",
         baseUrl = "https://api.openai.com/v1",
         apiKey = "",
-        enabled = false,
         builtIn = true
-    ),
-    ProviderSetting.Codex(
-        id = DEFAULT_CODEX_PROVIDER_ID,
-        name = "Codex",
-        enabled = false,
-        builtIn = true,
-    ),
-    ProviderSetting.Grok(
-        id = DEFAULT_GROK_PROVIDER_ID,
-        name = "Grok",
-        enabled = false,
-        builtIn = true,
-    ),
-    ProviderSetting.GeminiOAuth(
-        id = DEFAULT_GEMINI_OAUTH_PROVIDER_ID,
-        name = "Gemini OAuth",
-        enabled = false,
-        builtIn = true,
-        shortDescription = {
-            Text(stringResource(R.string.gemini_provider_short_description))
-        },
     ),
     ProviderSetting.Google(
         id = Uuid.parse("6ab18148-c138-4394-a46f-1cd8c8ceaa6d"),
         name = "Gemini",
         apiKey = "",
-        enabled = false,
+        enabled = true,
         builtIn = true
     ),
     ProviderSetting.OpenAI(
@@ -140,7 +36,7 @@ val DEFAULT_PROVIDERS = listOf(
         name = "AiHubMix",
         baseUrl = "https://aihubmix.com/v1",
         apiKey = "",
-        enabled = false,
+        enabled = true,
         builtIn = true,
         description = {
             Text(
@@ -198,7 +94,6 @@ val DEFAULT_PROVIDERS = listOf(
         name = "硅基流动",
         baseUrl = "https://api.siliconflow.cn/v1",
         apiKey = "",
-        enabled = false,
         builtIn = true,
         description = {
             MarkdownBlock(
@@ -214,7 +109,6 @@ val DEFAULT_PROVIDERS = listOf(
         name = "DeepSeek",
         baseUrl = "https://api.deepseek.com/v1",
         apiKey = "",
-        enabled = false,
         builtIn = true,
         balanceOption = BalanceOption(
             enabled = true,
@@ -240,7 +134,6 @@ val DEFAULT_PROVIDERS = listOf(
         name = "OpenRouter",
         baseUrl = "https://openrouter.ai/api/v1",
         apiKey = "",
-        enabled = false,
         builtIn = true,
         balanceOption = BalanceOption(
             enabled = true,
@@ -260,22 +153,6 @@ val DEFAULT_PROVIDERS = listOf(
             apiPath = "/credits",
             resultPath = "balance",
         )
-    ),
-    ProviderSetting.OpenAI(
-        id = Uuid.parse("da020a90-f7b3-4c29-b90e-c511a0630630"),
-        name = "小马算力",
-        baseUrl = "https://api.tokenpony.cn/v1",
-        apiKey = "",
-        enabled = false,
-        builtIn = true,
-        description = {
-            MarkdownBlock(
-                content = """
-                    小马算力是一家提供国产模型的API网关服务，使用统一接口接入多种模型
-                    官网: [tokenpony.cn](https://www.tokenpony.cn/79clb)
-                """.trimIndent()
-            )
-        }
     ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("f76cae46-069a-4334-ab8e-224e4979e58c"),
@@ -332,7 +209,7 @@ val DEFAULT_PROVIDERS = listOf(
     ProviderSetting.OpenAI(
         id = Uuid.parse("ef5d149b-8e34-404b-818c-6ec242e5c3c5"),
         name = "腾讯Hunyuan",
-        baseUrl = "https://api.hunyuan.cloud.tencent.com/v1",
+        baseUrl = "https://tokenhub.tencentmaas.com/v1",
         apiKey = "",
         enabled = false,
         builtIn = true
@@ -415,72 +292,5 @@ val DEFAULT_PROVIDERS = listOf(
         apiKey = "",
         enabled = false,
         builtIn = true,
-    ),
-    ProviderSetting.OpenAI(
-        id = Uuid.parse("53027b08-1b58-43d5-90ed-29173203e3d8"),
-        name = "AckAI",
-        baseUrl = "https://ackai.fun/v1",
-        apiKey = "",
-        enabled = false,
-        builtIn = true,
-        description = {
-            Text(
-                text = buildAnnotatedString {
-                    append(
-                        "所有AI大模型全都可以用！无需翻墙！价格是官方5折！\n" +
-                            "官网："
-                    )
-                    withLink(LinkAnnotation.Url("https://ackai.fun/register?aff=jxpP")) {
-                        withStyle(SpanStyle(MaterialTheme.colorScheme.primary)) {
-                            append("https://ackai.fun")
-                        }
-                    }
-                }
-            )
-        }
-    ),
-    ProviderSetting.OpenAI(
-        id = Uuid.parse("4da09554-8844-4cc8-a4a9-fe1b2515e91b"),
-        name = "UnifyLLM",
-        baseUrl = "https://apicn.unifyllm.top/v1",
-        apiKey = "",
-        enabled = false,
-        builtIn = true,
-        description = {
-            Text(
-                text = buildAnnotatedString {
-                    append("一站式LLM API中转平台货源站\n官网：")
-                    withLink(LinkAnnotation.Url("https://www.unifyllm.com/")) {
-                        withStyle(SpanStyle(MaterialTheme.colorScheme.primary)) {
-                            append("https://www.unifyllm.com/")
-                        }
-                    }
-                }
-            )
-        }
-    ),
-    // MiniMax via the Anthropic-compatible endpoint. Per Minimax docs the base
-    // URL is https://api.minimax.io/anthropic; the Anthropic SDK appends
-    // /v1/messages, and a probe of /anthropic/messages (no /v1) returns 404
-    // while /anthropic/v1/messages returns the proper Anthropic-style 401, so
-    // /anthropic/v1 is the correct baseUrl for ClaudeProvider's `${baseUrl}/messages`.
-    // Using the Anthropic-compat surface instead of the OpenAI one because tool-
-    // calling reliability is materially better for these models on the Anthropic
-    // shape than on the OpenAI translation layer (per the minimax-m2.7
-    // observations in the Telegram bot path).
-    // Models list left empty to match every other built-in: user picks which
-    // MiniMax model(s) they want via "+ Add new model" rather than us pinning
-    // a curated subset that may go stale as the lineup evolves.
-    // promptCaching defaults true on ProviderSetting.Claude but Minimax docs
-    // make no mention of cache_control support; default off to avoid sending
-    // headers Minimax may reject. User can flip it on if/when they confirm.
-    ProviderSetting.Claude(
-        id = Uuid.parse("b55716c7-e465-4666-a788-4243aab13fb3"),
-        name = "MiniMax",
-        baseUrl = "https://api.minimax.io/anthropic/v1",
-        apiKey = "",
-        enabled = false,
-        builtIn = true,
-        promptCaching = false,
     ),
 )
