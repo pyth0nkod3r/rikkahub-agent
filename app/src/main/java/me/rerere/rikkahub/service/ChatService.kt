@@ -1165,6 +1165,10 @@ class ChatService(
         // skips the Pending → handleToolApproval path entirely.
         val priorGenerationJob = session.getJob()
 
+        if (approved && toolName == "propose_plan") {
+            me.rerere.rikkahub.data.ai.ConversationAgentMode.set(conversationId, me.rerere.rikkahub.data.ai.AgentMode.BUILD)
+        }
+
         // Commit the broader-scope grant on a NonCancellable scope BEFORE the cancellable
         // mutation block. Previous design ran grantAlways() inside the cancellable
         // appScope.launch — a rapid second tap would cancel the first job and silently
@@ -1605,8 +1609,27 @@ class ChatService(
                 // anything else) gets its runtime context into the system prompt without
                 // having to plumb a parameter all the way through sendMessage. Returns null
                 // for in-app conversations that didn't register one.
-                systemAddendum = me.rerere.rikkahub.data.ai.tools
-                    .ConversationSystemAddendum.get(conversationId),
+                systemAddendum = buildString {
+                    val baseAddendum = me.rerere.rikkahub.data.ai.tools
+                        .ConversationSystemAddendum.get(conversationId)
+                    if (!baseAddendum.isNullOrBlank()) {
+                        append(baseAddendum)
+                        append("\n\n")
+                    }
+                    if (me.rerere.rikkahub.data.ai.ConversationAgentMode.isPlanMode(conversationId)) {
+                        append(
+                            """
+                            [AGENT MODE: PLAN]
+                            You are currently operating in PLAN MODE.
+                            - Your objective is to inspect, analyze, and formulate a clear, step-by-step implementation plan.
+                            - You have read-only tools to examine the workspace, read files, and search information.
+                            - State-modifying and execution tools are locked in this mode. Do not attempt to modify files or execute commands.
+                            - Once your investigation is complete, call the `propose_plan` tool with a descriptive title, overview, and implementation steps.
+                            - The user will review your proposal in chat and can accept it (which switches to Build mode for execution) or decline it with adjustments.
+                            """.trimIndent()
+                        )
+                    }
+                }.takeIf { it.isNotBlank() },
                 isToolAutoApproved = { toolName ->
                     // YOLO mode ("I AM STUPID" toggle in Settings → Tool approvals): every
                     // tool auto-approves. User opted into this explicitly. HARDLINE still
@@ -1800,6 +1823,12 @@ class ChatService(
                                 },
                             )
                         )
+                    }
+                }.let { allTools ->
+                    if (me.rerere.rikkahub.data.ai.ConversationAgentMode.isPlanMode(conversationId)) {
+                        allTools.filter { me.rerere.rikkahub.data.ai.ConversationAgentMode.isToolAllowedInPlanMode(it.name) }
+                    } else {
+                        allTools
                     }
                 },
             ).onCompletion { completionCause ->

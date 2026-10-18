@@ -2541,4 +2541,14 @@
   <string name="workspace_detail_compatibility_mode">Compatibility mode</string>
   <string name="workspace_detail_compatibility_mode_desc">Try enabling this if the terminal fails to start. It may reduce performance. Applies to new terminal tabs and subsequent commands.</string>
   <string name="workspace_detail_settings_save_failed">Failed to save settings</string>
+  <string name="agent_mode_switched_to_plan">Switched to Plan mode</string>
+  <string name="agent_mode_switched_to_build">Switched to Build mode</string>
+  <string name="slash_command_plan_label">/plan</string>
+  <string name="slash_command_plan_desc">Switch to Plan mode (analyze and design without modifying files)</string>
+  <string name="slash_command_build_label">/build</string>
+  <string name="slash_command_build_desc">Switch to Build mode (default agent execution and editing)</string>
+  <string name="plan_tool_accept">Accept Plan</string>
+  <string name="plan_tool_decline">Decline</string>
+  <string name="plan_tool_status_approved">Plan Approved · Switched to Build mode</string>
+  <string name="plan_tool_status_denied">Plan Declined</string>
 </resources>

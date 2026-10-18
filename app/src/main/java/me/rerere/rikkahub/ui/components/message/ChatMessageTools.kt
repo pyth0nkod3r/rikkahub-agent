@@ -4,12 +4,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -22,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,12 +59,16 @@ import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.BubbleChatQuestion
 import me.rerere.hugeicons.stroke.Cancel01
+import me.rerere.hugeicons.stroke.CancelCircle
+import me.rerere.hugeicons.stroke.CheckmarkCircle01
+import me.rerere.hugeicons.stroke.Edit03
 import me.rerere.hugeicons.stroke.Refresh03
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.message.tools.ToolUIContext
 import me.rerere.rikkahub.ui.components.message.tools.ToolUIRegistry
+import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.ChainOfThoughtScope
 import me.rerere.rikkahub.ui.components.ui.DotLoading
@@ -77,6 +85,7 @@ private fun JsonElement?.getStringContent(key: String): String? =
     this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.contentOrNull
 
 private const val ASK_USER_TOOL_NAME = "ask_user"
+private const val PROPOSE_PLAN_TOOL_NAME = "propose_plan"
 
 @Composable
 fun ChainOfThoughtScope.ChatMessageServerToolStep(tool: UIMessagePart.ServerTool) {
@@ -139,6 +148,11 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
     // ask_user 是交互式问答流程, 不走注册式渲染框架
     if (tool.toolName == ASK_USER_TOOL_NAME) {
         AskUserToolStep(tool = tool, loading = loading, onToolAnswer = onToolAnswer)
+        return
+    }
+
+    if (tool.toolName == PROPOSE_PLAN_TOOL_NAME) {
+        ProposePlanToolStep(tool = tool, loading = loading, onToolApproval = onToolApproval)
         return
     }
 
@@ -745,4 +759,201 @@ private fun ToolDenyReasonDialog(
             }
         }
     )
+}
+
+@Composable
+private fun ChainOfThoughtScope.ProposePlanToolStep(
+    tool: UIMessagePart.Tool,
+    loading: Boolean,
+    onToolApproval: ((toolCallId: String, approved: Boolean, reason: String, scope: me.rerere.rikkahub.service.ChatService.ApprovalScope, toolName: String) -> Unit)?,
+) {
+    val isPending = tool.isPending
+    val isApproved = tool.approvalState is ToolApprovalState.Approved
+    val isDenied = tool.approvalState is ToolApprovalState.Denied
+    val arguments = tool.inputAsJson()
+
+    val planTitle = remember(arguments) {
+        arguments.jsonObject["title"]?.jsonPrimitive?.contentOrNull ?: "Implementation Plan"
+    }
+    val planOverview = remember(arguments) {
+        arguments.jsonObject["overview"]?.jsonPrimitive?.contentOrNull ?: ""
+    }
+    val planSteps = remember(arguments) {
+        arguments.jsonObject["steps"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+    }
+    val planMarkdown = remember(arguments) {
+        arguments.jsonObject["plan_markdown"]?.jsonPrimitive?.contentOrNull ?: ""
+    }
+
+    var expanded by remember { mutableStateOf(true) }
+    var showDenyDialog by remember { mutableStateOf(false) }
+
+    ControlledChainOfThoughtStep(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        icon = {
+            if (loading) {
+                DotLoading(size = 10.dp)
+            } else {
+                Icon(
+                    imageVector = HugeIcons.Edit03,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        },
+        label = {
+            Text(
+                text = "Plan: $planTitle",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.shimmer(isLoading = loading),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        content = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (planOverview.isNotBlank()) {
+                    Text(
+                        text = planOverview,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+
+                if (planSteps.isNotEmpty()) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                    ) {
+                        planSteps.forEachIndexed { index, step ->
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.Top,
+                            ) {
+                                Text(
+                                    text = "${index + 1}.",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    text = step,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (planMarkdown.isNotBlank()) {
+                    MarkdownBlock(
+                        content = planMarkdown,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                if (isApproved) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.CheckmarkCircle01,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "Plan Approved · Switched to Build mode",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                } else if (isDenied) {
+                    val reason = (tool.approvalState as ToolApprovalState.Denied).reason
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.CancelCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            text = if (reason.isNotBlank()) "Plan Declined: $reason" else "Plan Declined",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                } else if (isPending && onToolApproval != null) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        FilledTonalButton(
+                            onClick = {
+                                onToolApproval(
+                                    tool.toolCallId,
+                                    true,
+                                    "",
+                                    me.rerere.rikkahub.service.ChatService.ApprovalScope.Once,
+                                    tool.toolName,
+                                )
+                            },
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.CheckmarkCircle01,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Accept Plan")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                showDenyDialog = true
+                            },
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.Cancel01,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Decline")
+                        }
+                    }
+                }
+            }
+        },
+    )
+
+    if (showDenyDialog && onToolApproval != null) {
+        ToolDenyReasonDialog(
+            onDismiss = { showDenyDialog = false },
+            onConfirm = { reason ->
+                showDenyDialog = false
+                onToolApproval(
+                    tool.toolCallId,
+                    false,
+                    reason,
+                    me.rerere.rikkahub.service.ChatService.ApprovalScope.Once,
+                    tool.toolName,
+                )
+            },
+        )
+    }
 }

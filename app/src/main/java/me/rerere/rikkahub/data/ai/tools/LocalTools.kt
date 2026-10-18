@@ -717,11 +717,66 @@ class LocalTools(
         )
     }
 
+    fun createProposePlanTool(invocationContext: ToolInvocationContext) = Tool(
+        name = "propose_plan",
+        description = """
+            Propose a structured implementation plan to the user for review.
+            Use this in Plan Mode after inspecting context and determining the steps needed.
+            The user will be presented with an interactive plan card in chat to review, accept, or decline.
+            If accepted, the conversation automatically transitions to Build Mode for execution.
+        """.trimIndent().replace("\n", " "),
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("title", buildJsonObject {
+                        put("type", "string")
+                        put("description", "A concise title summarizing the plan")
+                    })
+                    put("overview", buildJsonObject {
+                        put("type", "string")
+                        put("description", "A brief high-level summary of what the plan achieves")
+                    })
+                    put("steps", buildJsonObject {
+                        put("type", "array")
+                        put("description", "Ordered list of concrete implementation steps")
+                        put("items", buildJsonObject {
+                            put("type", "string")
+                        })
+                    })
+                    put("plan_markdown", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Detailed markdown content of the plan")
+                    })
+                },
+                required = listOf("title")
+            )
+        },
+        needsApproval = { true },
+        execute = {
+            val convId = runCatching {
+                invocationContext.callerConversationId?.takeIf { it.isNotBlank() }?.let { kotlin.uuid.Uuid.parse(it) }
+            }.getOrNull()
+            if (convId != null) {
+                me.rerere.rikkahub.data.ai.ConversationAgentMode.set(convId, me.rerere.rikkahub.data.ai.AgentMode.BUILD)
+            }
+            listOf(
+                UIMessagePart.Text(
+                    buildJsonObject {
+                        put("status", "plan_approved")
+                        put("mode", "BUILD")
+                        put("message", "The plan was approved by the user. Switched to Build Mode. You may now proceed with execution.")
+                    }.toString()
+                )
+            )
+        }
+    )
+
     fun getTools(
         options: List<LocalToolOption>,
         invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
     ): List<Tool> {
         val tools = mutableListOf<Tool>()
+        tools.add(createProposePlanTool(invocationContext))
         if (options.contains(LocalToolOption.JavascriptEngine)) {
             tools.add(javascriptTool)
         }

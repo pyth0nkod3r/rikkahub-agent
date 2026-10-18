@@ -74,6 +74,9 @@ import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.SearchMode
+import me.rerere.rikkahub.data.ai.AgentMode
+import me.rerere.rikkahub.data.ai.ConversationAgentMode
+import me.rerere.rikkahub.ui.components.ai.completion.SlashCommandCompletionProvider
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
 import me.rerere.rikkahub.ui.components.ai.rememberChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -292,16 +295,24 @@ private fun ChatPageContent(
     val allowAudioVideoAttachments =
         setting.getCurrentChatModel()?.findProvider(setting.providers) is ProviderSetting.Google
 
-    val completionProviders = remember(assistant.workspaceId, conversation.workspaceCwd, workspaceRepository) {
-        assistant.workspaceId?.let { workspaceId ->
-            listOf(
-                WorkspaceCompletionProvider(
-                    workspaceId = workspaceId.toString(),
-                    repository = workspaceRepository,
-                    currentCwd = conversation.workspaceCwd,
+    val agentMode by ConversationAgentMode.getFlow(conversation.id).collectAsStateWithLifecycle()
+    val completionProviders = remember(assistant.workspaceId, conversation.workspaceCwd, workspaceRepository, agentMode) {
+        buildList {
+            add(
+                SlashCommandCompletionProvider(
+                    currentMode = { ConversationAgentMode.get(conversation.id) }
                 )
             )
-        }.orEmpty()
+            assistant.workspaceId?.let { workspaceId ->
+                add(
+                    WorkspaceCompletionProvider(
+                        workspaceId = workspaceId.toString(),
+                        repository = workspaceRepository,
+                        currentCwd = conversation.workspaceCwd,
+                    )
+                )
+            }
+        }
     }
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
@@ -392,7 +403,37 @@ private fun ChatPageContent(
                                 messageId = inputState.editingMessage!!,
                             )
                         } else {
-                            vm.handleMessageSend(inputState.getContents())
+                            val contents = inputState.getContents()
+                            val textPart = contents.firstOrNull() as? UIMessagePart.Text
+                            val rawText = textPart?.text?.trim().orEmpty()
+
+                            // Check slash commands
+                            if (contents.size == 1 && textPart != null && rawText.equals("/plan", ignoreCase = true)) {
+                                ConversationAgentMode.set(conversation.id, AgentMode.PLAN)
+                                toaster.show("Switched to Plan mode", type = ToastType.Success)
+                                inputState.clearInput()
+                                return@ChatInput
+                            }
+                            if (contents.size == 1 && textPart != null && rawText.equals("/build", ignoreCase = true)) {
+                                ConversationAgentMode.set(conversation.id, AgentMode.BUILD)
+                                toaster.show("Switched to Build mode", type = ToastType.Success)
+                                inputState.clearInput()
+                                return@ChatInput
+                            }
+
+                            val finalContents = if (textPart != null && rawText.startsWith("/plan ", ignoreCase = true)) {
+                                ConversationAgentMode.set(conversation.id, AgentMode.PLAN)
+                                toaster.show("Switched to Plan mode", type = ToastType.Success)
+                                listOf(UIMessagePart.Text(rawText.removePrefix("/plan ").trim())) + contents.drop(1)
+                            } else if (textPart != null && rawText.startsWith("/build ", ignoreCase = true)) {
+                                ConversationAgentMode.set(conversation.id, AgentMode.BUILD)
+                                toaster.show("Switched to Build mode", type = ToastType.Success)
+                                listOf(UIMessagePart.Text(rawText.removePrefix("/build ").trim())) + contents.drop(1)
+                            } else {
+                                contents
+                            }
+
+                            vm.handleMessageSend(finalContents)
                             scope.launch {
                                 delay(100.milliseconds)
                                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
