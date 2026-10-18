@@ -9,7 +9,9 @@ import me.rerere.rikkahub.data.repository.FavoriteRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.data.repository.FilesRepository
 import me.rerere.rikkahub.data.repository.GenMediaRepository
+import me.rerere.rikkahub.data.repository.MediaCreationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.TranslationHistoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.ProotShellRunner
 import me.rerere.workspace.RootfsInstaller
@@ -32,7 +34,15 @@ val repositoryModule = module {
     }
 
     single {
+        TranslationHistoryRepository(get())
+    }
+
+    single {
         GenMediaRepository(get())
+    }
+
+    single {
+        MediaCreationRepository(context = get(), database = get(), dao = get(), json = get())
     }
 
     single {
@@ -55,6 +65,10 @@ val repositoryModule = module {
                 WorkspaceBindMount(
                     source = File(context.filesDir, FileFolders.SKILLS).apply { mkdirs() },
                     target = "/skills",
+                ),
+                WorkspaceBindMount(
+                    source = File(context.filesDir, FileFolders.BUILTIN_SKILLS).apply { mkdirs() },
+                    target = "/builtin_skills",
                 ),
                 WorkspaceBindMount(
                     source = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() },

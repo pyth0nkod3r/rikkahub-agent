@@ -29,20 +29,61 @@ class SkillManager(
     class SkillFileTooLargeException(val lengthBytes: Long) :
         java.io.IOException("Skill file is $lengthBytes bytes, over the ${MAX_SKILL_FILE_BYTES}-byte cap")
 
+    private val builtinLock = Any()
+
+    @Volatile
+    private var builtinExtracted = false
+
     fun getSkillsDir(): File {
         val dir = context.filesDir.resolve(FileFolders.SKILLS)
         if (!dir.exists()) dir.mkdirs()
         return dir
     }
 
-    fun listSkills(): List<SkillMetadata> {
-        val skillsDir = getSkillsDir()
-        return skillsDir.listFiles()
-            ?.filter { it.isDirectory }
+    fun getBuiltinSkillsDir(): File {
+        val dir = context.filesDir.resolve(FileFolders.BUILTIN_SKILLS)
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
+    /**
+     * 确保内置技能已从 assets 解压到 [getBuiltinSkillsDir]，每个进程只检查一次。
+     */
+    fun ensureBuiltinSkillsExtracted() {
+        if (builtinExtracted) return
+        synchronized(builtinLock) {
+            if (builtinExtracted) return
+            runCatching {
+                BuiltinSkills.extractIfNeeded(context, getBuiltinSkillsDir())
+            }.onFailure {
+                Log.w(TAG, "ensureBuiltinSkillsExtracted: Failed to extract builtin skills", it)
+            }
+            builtinExtracted = true
+        }
+    }
+
+    /**
+     * 列出所有可用技能：用户技能 + 内置技能，同名时用户技能覆盖内置技能。
+     */
+    fun listSkills(): List<SkillMetadata> = mergeWithBuiltinSkills(
+        local = listSkillsIn(getSkillsDir(), builtin = false),
+        builtin = listBuiltinSkills(),
+    )
+
+    fun findSkill(name: String): SkillMetadata? = listSkills().firstOrNull { it.name == name }
+
+    private fun listBuiltinSkills(): List<SkillMetadata> {
+        ensureBuiltinSkillsExtracted()
+        return listSkillsIn(getBuiltinSkillsDir(), builtin = true)
+    }
+
+    private fun listSkillsIn(root: File, builtin: Boolean): List<SkillMetadata> {
+        return root.listFiles()
+            ?.filter { it.isDirectory && !it.name.startsWith(".") }
             ?.mapNotNull { dir ->
                 val skillFile = dir.resolve("SKILL.md")
                 if (!skillFile.exists()) return@mapNotNull null
-                parseSkillFile(skillFile, dir)
+                parseSkillFile(skillFile, dir, builtin)
             }
             ?: emptyList()
     }
@@ -482,7 +523,10 @@ class SkillManager(
     }
 
     private fun resolveSkillDir(skillName: String): File? {
-        return SkillPaths.resolveSkillDir(getSkillsDir(), skillName)
+        val userDir = SkillPaths.resolveSkillDir(getSkillsDir(), skillName)
+        if (userDir != null && userDir.exists()) return userDir
+        ensureBuiltinSkillsExtracted()
+        return SkillPaths.resolveSkillDir(getBuiltinSkillsDir(), skillName)
     }
 
     private fun createTempSkillDir(skillsRoot: File, skillName: String, suffix: String): File? {
@@ -495,7 +539,7 @@ class SkillManager(
         return null
     }
 
-    private fun parseSkillFile(skillFile: File, skillDir: File): SkillMetadata? {
+    private fun parseSkillFile(skillFile: File, skillDir: File, builtin: Boolean = false): SkillMetadata? {
         return runCatching {
             val content = skillFile.readText()
             val frontmatter = SkillFrontmatterParser.parse(content)
@@ -508,6 +552,7 @@ class SkillManager(
                 autoLoad = frontmatter["auto_load"]?.equals("true", ignoreCase = true) == true,
                 autoLoadPath = frontmatter["auto_load_path"]?.takeIf { it.isNotBlank() },
                 skillDir = skillDir,
+                builtin = builtin,
             )
         }.getOrElse {
             Log.w(TAG, "parseSkillFile: Failed to parse ${skillFile.absolutePath}", it)
@@ -586,6 +631,8 @@ data class SkillMetadata(
     val autoLoad: Boolean = false,
     val autoLoadPath: String? = null,
     val skillDir: File,
+    /** 内置技能，来自 assets 解压，只读 */
+    val builtin: Boolean = false,
 ) {
     val skillFile: File get() = skillDir.resolve("SKILL.md")
 }

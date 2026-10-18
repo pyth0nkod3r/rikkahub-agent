@@ -15,8 +15,10 @@ import me.rerere.rikkahub.data.repository.TelegramChatRepository
 import me.rerere.rikkahub.data.notifications.NotificationListenerPreferences
 import me.rerere.rikkahub.data.telegram.TelegramBotClient
 import me.rerere.rikkahub.data.telegram.TelegramBotPreferences
+import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.CronJobScheduler
+import me.rerere.rikkahub.service.MediaCreationService
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalSessionManager
 import me.rerere.rikkahub.utils.EmojiData
 import me.rerere.rikkahub.utils.EmojiUtils
@@ -243,9 +245,18 @@ val appModule = module {
     single { me.rerere.locallm.litert.LiteRtRuntime(get()) }
     single { me.rerere.llamacpp.LlamaCppRuntime() }
 
+    single(createdAtStart = true) {
+        ChatNotificationManager(
+            context = get(),
+            appScope = get(),
+            eventBus = get(),
+            settingsStore = get(),
+        )
+    }
+
     single {
         ChatToolFactory(
-            json = get(),
+            context = get(),
             memoryRepository = get(),
             conversationRepository = get(),
             localTools = get(),
@@ -274,7 +285,20 @@ val appModule = module {
             skillManager = get(),
             toolApprovalPreferences = get(),
             workspaceRepository = get(),
-            folderRepository = get()
+            folderRepository = get(),
+            memoryConsolidationScheduler = get(),
+        )
+    }
+
+    single {
+        MediaCreationService(
+            context = get(),
+            appScope = get(),
+            settingsStore = get(),
+            repository = get(),
+            manager = get(),
+            remoteFileStore = get(),
+            okHttpClient = get(),
         )
     }
 

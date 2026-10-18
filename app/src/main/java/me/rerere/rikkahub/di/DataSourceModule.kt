@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.di
 
 import android.content.Context
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.http.HttpHeaders
@@ -8,14 +10,19 @@ import io.pebbletemplates.pebble.PebbleEngine
 import kotlinx.serialization.json.Json
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.common.http.AcceptLanguageBuilder
+import me.rerere.mediagen.provider.MediaGenerationManager
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.RequestLoggingInterceptor
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
 import me.rerere.rikkahub.data.ai.GenerationLoop
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
+import me.rerere.rikkahub.data.ai.MemoryConsolidator
 import me.rerere.rikkahub.data.ai.TranslationHandler
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
+import me.rerere.rikkahub.data.remote.RemoteFileStore
+import me.rerere.rikkahub.service.memoryDreamKeepAlive
 import me.rerere.rikkahub.data.api.HuggingFaceAPI
 import me.rerere.rikkahub.data.api.RikkaHubAPI
 import me.rerere.rikkahub.data.api.SponsorAPI
@@ -140,6 +147,25 @@ val dataSourceModule = module {
     single { AgentRunBootRecovery(context = get(), repository = get()) }
 
     single { McpManager(settingsStore = get(), appScope = get(), filesManager = get()) }
+
+    single {
+        MemoryConsolidator(
+            providerManager = get(),
+            memoryRepository = get(),
+            conversationRepo = get(),
+            consolidationDao = get(),
+            settingsStore = get(),
+        )
+    }
+
+    single {
+        MemoryConsolidationScheduler(
+            scope = get<AppScope>(),
+            worker = get<MemoryConsolidator>(),
+            keepAlive = memoryDreamKeepAlive(get<Context>()),
+            isAppVisible = { ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) },
+        )
+    }
 
     single {
         GenerationLoop(
@@ -415,6 +441,18 @@ val dataSourceModule = module {
             context = get(),
             httpClient = get()
         )
+    }
+
+    single {
+        RemoteFileStore(
+            settingsStore = get(),
+            httpClient = get(),
+            scope = get<AppScope>()
+        )
+    }
+
+    single {
+        MediaGenerationManager(client = get())
     }
 
     single<Retrofit> {

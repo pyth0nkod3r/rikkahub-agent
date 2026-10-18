@@ -94,7 +94,8 @@ import me.rerere.rikkahub.ui.theme.rememberChatFontFamily
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.openUrl
-import me.rerere.rikkahub.utils.urlDecode
+import me.rerere.ui.charts.ChartCard
+import me.rerere.ui.charts.ChartSpec
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -395,6 +396,11 @@ private fun MessagePartsBlock(
                         }
                     }
                 }
+            }
+
+            is MessagePartBlock.ChartBlock -> key(block.index) {
+                val spec = remember(block.tool.input) { ChartSpec.fromJson(block.tool.inputAsJson()) }
+                spec?.let { ChartCard(spec = it) }
             }
 
             is MessagePartBlock.ContentBlock -> key(block.index) {

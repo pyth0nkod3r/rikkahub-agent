@@ -83,26 +83,42 @@ class ConversationRepository(
         }
     }
 
-    fun getUnfiledConversationsOfAssistantPaging(assistantId: Uuid): Flow<PagingData<Conversation>> = Pager(
+    fun getUnfiledConversationsOfAssistantPaging(
+        assistantId: Uuid,
+        sortOrder: me.rerere.rikkahub.data.datastore.ConversationSortOrder = me.rerere.rikkahub.data.datastore.ConversationSortOrder.UPDATE_TIME,
+    ): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
             initialLoadSize = INITIAL_LOAD_SIZE,
             enablePlaceholders = false
         ),
-        pagingSourceFactory = { conversationDAO.getUnfiledConversationsOfAssistantPaging(assistantId.toString()) }
+        pagingSourceFactory = {
+            conversationDAO.getUnfiledConversationsOfAssistantPaging(
+                assistantId = assistantId.toString(),
+                sortByCreateTime = sortOrder == me.rerere.rikkahub.data.datastore.ConversationSortOrder.CREATE_TIME,
+            )
+        }
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
         }
     }
 
-    fun getConversationsOfFolderPaging(folderId: Uuid): Flow<PagingData<Conversation>> = Pager(
+    fun getConversationsOfFolderPaging(
+        folderId: Uuid,
+        sortOrder: me.rerere.rikkahub.data.datastore.ConversationSortOrder = me.rerere.rikkahub.data.datastore.ConversationSortOrder.UPDATE_TIME,
+    ): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
             initialLoadSize = INITIAL_LOAD_SIZE,
             enablePlaceholders = false
         ),
-        pagingSourceFactory = { conversationDAO.getConversationsOfFolderPaging(folderId.toString()) }
+        pagingSourceFactory = {
+            conversationDAO.getConversationsOfFolderPaging(
+                folderId = folderId.toString(),
+                sortByCreateTime = sortOrder == me.rerere.rikkahub.data.datastore.ConversationSortOrder.CREATE_TIME,
+            )
+        }
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
@@ -180,7 +196,7 @@ class ConversationRepository(
         offset: Int,
         limit: Int,
     ): ConversationPageResult = loadConversationPage(
-        conversationDAO.getUnfiledConversationsOfAssistantPaging(assistantId.toString()),
+        conversationDAO.getUnfiledConversationsOfAssistantPaging(assistantId.toString(), sortByCreateTime = false),
         offset,
         limit,
     )
@@ -190,7 +206,7 @@ class ConversationRepository(
         offset: Int,
         limit: Int,
     ): ConversationPageResult = loadConversationPage(
-        conversationDAO.getConversationsOfFolderPaging(folderId.toString()),
+        conversationDAO.getConversationsOfFolderPaging(folderId.toString(), sortByCreateTime = false),
         offset,
         limit,
     )
@@ -293,6 +309,12 @@ class ConversationRepository(
         return conversationDAO.countAll()
     }
 
+    suspend fun countConversationsByAssistant(): Map<Uuid, Int> {
+        return conversationDAO.countByAssistant().mapNotNull { row ->
+            runCatching { Uuid.parse(row.assistantId) }.getOrNull()?.let { it to row.count }
+        }.toMap()
+    }
+
     suspend fun getCompaction(conversationId: Uuid): ConversationCompaction? =
         conversationCompactionDAO.getByConversationId(conversationId.toString())?.let { entity ->
             ConversationCompaction(
@@ -383,7 +405,11 @@ class ConversationRepository(
         keyword: String,
         sort: MessageSearchSort = MessageSearchSort.RELEVANCE,
         assistantId: Uuid? = null,
-    ) = messageFtsManager.search(keyword, sort, assistantId?.toString())
+    ) = messageFtsManager.search(keyword, sort, assistantId?.let { listOf(it.toString()) })
+
+    /** 只在 [assistantIds] 这些助手的对话里搜索 */
+    suspend fun searchMessagesOfAssistants(keyword: String, assistantIds: Set<Uuid>) =
+        messageFtsManager.search(keyword, MessageSearchSort.RELEVANCE, assistantIds.map { it.toString() })
 
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         messageFtsManager.deleteAll()
@@ -441,6 +467,7 @@ class ConversationRepository(
             workspaceCwd = conversation.workspaceCwd ?: "",
             folderId = conversation.folderId?.toString() ?: "",
             chatModelId = encodeChatModelId(conversation.chatModelId),
+            config = conversation.config?.let { JsonInstant.encodeToString(it) } ?: "",
         )
     }
 
@@ -463,6 +490,7 @@ class ConversationRepository(
             workspaceCwd = conversationEntity.workspaceCwd.ifEmpty { null },
             folderId = conversationEntity.folderId.ifEmpty { null }?.let { Uuid.parse(it) },
             chatModelId = decodeChatModelId(conversationEntity.chatModelId),
+            config = conversationEntity.config.ifEmpty { null }?.let { JsonInstant.decodeFromString(it) },
         )
     }
 
@@ -497,6 +525,46 @@ class ConversationRepository(
      * [LightConversationEntity] 投影，messageNodes 为空，若传入 updateConversation
      * 会把消息节点全部删除重建，等于清空聊天记录。
      */
+    suspend fun updatePinStatus(conversationId: Uuid, isPinned: Boolean) {
+        conversationDAO.updatePinStatus(
+            id = conversationId.toString(),
+            isPinned = isPinned,
+        )
+    }
+
+    suspend fun updateConversationAssistant(conversationId: Uuid, assistantId: Uuid) {
+        conversationDAO.updateAssistantId(conversationId.toString(), assistantId.toString())
+    }
+
+    /**
+     * 只更新会话持有的配置（含注入绑定和工作目录），不重写消息节点。
+     */
+    suspend fun updateConversationConfig(conversation: Conversation) {
+        conversationDAO.updateConfig(
+            id = conversation.id.toString(),
+            config = conversation.config?.let { JsonInstant.encodeToString(it) } ?: "",
+            modeInjectionIds = JsonInstant.encodeToString(conversation.modeInjectionIds),
+            lorebookIds = JsonInstant.encodeToString(conversation.lorebookIds),
+            workspaceCwd = conversation.workspaceCwd ?: "",
+        )
+    }
+
+    suspend fun updateTitle(conversationId: Uuid, title: String) {
+        conversationDAO.updateTitle(conversationId.toString(), title)
+        messageFtsManager.updateTitle(conversationId.toString(), title)
+    }
+
+    suspend fun updateCustomSystemPrompt(conversationId: Uuid, customSystemPrompt: String?) {
+        conversationDAO.updateCustomSystemPrompt(conversationId.toString(), customSystemPrompt ?: "")
+    }
+
+    suspend fun updateChatSuggestions(conversationId: Uuid, chatSuggestions: List<String>) {
+        conversationDAO.updateChatSuggestions(
+            id = conversationId.toString(),
+            chatSuggestions = JsonInstant.encodeToString(chatSuggestions),
+        )
+    }
+
     suspend fun renameConversation(conversationId: Uuid, title: String) {
         conversationDAO.updateTitle(conversationId.toString(), title)
         messageFtsManager.updateConversationTitle(conversationId.toString(), title)
@@ -566,6 +634,8 @@ class ConversationRepository(
             while (true) {
                 val page = try {
                     messageNodeDAO.getNodesOfConversationPaged(conversationId, pageSize, offset)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: SQLiteBlobTooBigException) {
                     Log.e(TAG, "loadMessageNodes: page failed to decode (conversationId=$conversationId, offset=$offset, pageSize=$pageSize); retrying row-by-row", e)
                     val consumed = recoverPageRowByRow(offset, pageSize)

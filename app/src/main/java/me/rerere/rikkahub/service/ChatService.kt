@@ -117,8 +117,9 @@ import me.rerere.rikkahub.data.model.ConversationCompaction
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.localFileUrls
-import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.toMessageNode
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
+import me.rerere.rikkahub.data.model.fork
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -314,20 +315,6 @@ internal fun isStalledTurn(succeeded: Boolean, lastMessage: UIMessage?): Boolean
     return lastMessage.parts.filterIsInstance<UIMessagePart.Text>().none { it.text.isNotBlank() }
 }
 
-internal fun createForkConversation(
-    source: Conversation,
-    messageNodes: List<MessageNode>,
-): Conversation = Conversation(
-    id = Uuid.random(),
-    assistantId = source.assistantId,
-    messageNodes = messageNodes,
-    customSystemPrompt = source.customSystemPrompt,
-    modeInjectionIds = source.modeInjectionIds,
-    lorebookIds = source.lorebookIds,
-    workspaceCwd = source.workspaceCwd,
-    folderId = source.folderId,
-)
-
 data class ChatError(
     val id: Uuid = Uuid.random(),
     val title: String? = null,
@@ -423,6 +410,7 @@ class ChatService(
     private val toolApprovalPreferences: me.rerere.rikkahub.data.preferences.ToolApprovalPreferences,
     private val workspaceRepository: WorkspaceRepository,
     private val folderRepository: FolderRepository,
+    private val memoryConsolidationScheduler: MemoryConsolidationScheduler,
 ) {
     // workspace 系统提示注入 (依赖 workspaceRepository, 故在类内构造)
     private val workspaceReminderTransformer = WorkspaceReminderTransformer(workspaceRepository)
@@ -611,6 +599,7 @@ class ChatService(
         }
         if (sessions.remove(conversationId, session)) {
             session.cleanup()
+            memoryConsolidationScheduler.onConversationLeft(conversationId)
             // Evict the per-conversation mutex so it doesn't accumulate forever.
             // dropSession() already removes it; removeSession() (idle eviction path)
             // was previously missing this cleanup, causing a slow leak on heavy-use
@@ -635,6 +624,7 @@ class ChatService(
     fun dropSession(conversationId: Uuid) {
         val session = sessions.remove(conversationId) ?: return
         session.cleanup()
+        memoryConsolidationScheduler.onConversationLeft(conversationId)
         sessionMutexes.remove(conversationId)
         compactionMutexes.remove(conversationId)
         pendingStreamingPersistence.remove(conversationId)
@@ -2033,6 +2023,12 @@ class ChatService(
             launchAuxJob(conversationId, AuxJobKind.TITLE) {
                 generateTitle(conversationId, finalConversation)
             }
+
+            val assistant = settingsStore.settingsFlow.value.getAssistantById(finalConversation.assistantId)
+                ?: settingsStore.settingsFlow.value.getCurrentAssistant()
+            if (assistant.enableMemory) {
+                memoryConsolidationScheduler.onTurnFinished(finalConversation)
+            }
         }
     }
 
@@ -2161,6 +2157,9 @@ class ChatService(
         }
         if (!shouldGenerate) return@withContext
 
+        val settings = settingsStore.settingsFlow.first()
+        if (!force && !settings.enableAutoTitle) return@withContext
+
         val fallback = titleFallbackFrom(conversation.currentMessages)
 
         suspend fun applyTitle(title: String?) {
@@ -2174,7 +2173,6 @@ class ChatService(
         }
 
         runCatching {
-            val settings = settingsStore.settingsFlow.first()
             val model = settings.findModelById(settings.fastModelId)
                 ?: run { applyTitle(fallback); return@runCatching }
             val provider = model.findProvider(settings.providers)
@@ -3307,33 +3305,19 @@ class ChatService(
         messageId: Uuid
     ): Conversation {
         val currentConversation = getConversationFlow(conversationId).value
-        val targetNodeIndex = currentConversation.messageNodes.indexOfFirst { node ->
-            node.messages.any { it.id == messageId }
-        }
-        if (targetNodeIndex == -1) {
-            throw NotFoundException("Message not found")
-        }
-
-        val copiedNodes = currentConversation.messageNodes
-            .subList(0, targetNodeIndex + 1)
-            .map { node ->
-                node.copy(
-                    id = Uuid.random(),
-                    messages = node.messages.map { message ->
-                        message.copy(
-                            parts = message.parts.map { part ->
-                                part.copyWithForkedFileUrl()
-                            }
-                        )
-                    }
-                )
-            }
-
-        val forkConversation = createForkConversation(currentConversation, copiedNodes)
-
-        saveConversation(forkConversation.id, forkConversation)
-        return forkConversation
+        val existingTitles = conversationRepo
+            .getConversationsOfAssistant(currentConversation.assistantId)
+            .first()
+            .mapTo(mutableSetOf()) { it.title }
+        val fork = currentConversation.fork(messageId, existingTitles, copyFile = ::copyChatFile)
+            ?: throw NotFoundException("Message not found")
+        saveConversation(fork.id, fork)
+        memoryConsolidationScheduler.onConversationForked(fork)
+        return fork
     }
+
+    private fun copyChatFile(url: String): String =
+        filesManager.createChatFilesByContents(listOf(url.toUri())).firstOrNull()?.toString() ?: url
 
     suspend fun selectMessageNode(
         conversationId: Uuid,
@@ -3429,22 +3413,6 @@ class ChatService(
         }
 
         return conversation.copy(messageNodes = updatedNodes)
-    }
-
-    private fun UIMessagePart.copyWithForkedFileUrl(): UIMessagePart {
-        fun copyLocalFileIfNeeded(url: String): String {
-            if (!url.startsWith("file:")) return url
-            val copied = filesManager.createChatFilesByContents(listOf(url.toUri())).firstOrNull()
-            return copied?.toString() ?: url
-        }
-
-        return when (this) {
-            is UIMessagePart.Image -> copy(url = copyLocalFileIfNeeded(url))
-            is UIMessagePart.Document -> copy(url = copyLocalFileIfNeeded(url))
-            is UIMessagePart.Video -> copy(url = copyLocalFileIfNeeded(url))
-            is UIMessagePart.Audio -> copy(url = copyLocalFileIfNeeded(url))
-            else -> this
-        }
     }
 
     fun clearTranslationField(conversationId: Uuid, messageId: Uuid) {
