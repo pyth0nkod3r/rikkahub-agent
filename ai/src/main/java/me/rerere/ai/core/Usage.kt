@@ -39,3 +39,22 @@ fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
         cost = cost,
     )
 }
+
+/**
+ * 累加多次请求的 usage，每次请求都会按完整上下文计费，因此 prompt 也直接相加。
+ */
+fun TokenUsage?.sum(other: TokenUsage?): TokenUsage? {
+    if (this == null) return other
+    if (other == null) return this
+    val combinedCost = if (cost != null || other.cost != null) {
+        (cost ?: 0.0) + (other.cost ?: 0.0)
+    } else null
+    return TokenUsage(
+        promptTokens = promptTokens + other.promptTokens,
+        completionTokens = completionTokens + other.completionTokens,
+        cachedTokens = cachedTokens + other.cachedTokens,
+        totalTokens = totalTokens + other.totalTokens,
+        cost = combinedCost,
+    )
+}
+
