@@ -20,6 +20,9 @@ class SettingVM(
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
 
+    val launchCount: StateFlow<Int> = settingsStore.launchCountFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, 0)
+
     fun updateSettings(settings: Settings) {
         // Settings edits must survive leaving the settings screen immediately. Using the
         // application scope prevents a ViewModel cancellation from dropping the DataStore edit

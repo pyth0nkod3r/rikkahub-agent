@@ -101,19 +101,20 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val launchCount by vm.launchCount.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
 
-    if (settings.launchCount > 100 && (settings.launchCount - settings.sponsorAlertDismissedAt) >= 50) {
+    if (!settings.init && launchCount > 100 && (launchCount - settings.sponsorAlertDismissedAt) >= 50) {
         AlertDialog(
             onDismissRequest = {
-                vm.updateSettings(settings.copy(sponsorAlertDismissedAt = settings.launchCount))
+                vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
             },
             icon = { Icon(HugeIcons.WavingHand01, null) },
             title = { Text(stringResource(R.string.setting_page_sponsor_alert_title)) },
             text = { Text(stringResource(R.string.setting_page_sponsor_alert_desc)) },
             confirmButton = {
                 Button(onClick = {
-                    vm.updateSettings(settings.copy(sponsorAlertDismissedAt = settings.launchCount))
+                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
                     navController.navigate(Screen.SettingDonate)
                 }) {
                     Text(stringResource(R.string.setting_page_sponsor_alert_confirm))
@@ -121,7 +122,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             },
             dismissButton = {
                 TextButton(onClick = {
-                    vm.updateSettings(settings.copy(sponsorAlertDismissedAt = settings.launchCount))
+                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
                 }) {
                     Text(stringResource(R.string.setting_page_sponsor_alert_dismiss))
                 }
@@ -263,6 +264,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { Icon(HugeIcons.Megaphone01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_tts_service_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_tts_service)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingMedia) },
+                        leadingContent = { Icon(HugeIcons.Image02, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_media_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_media)) },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingMcp) },
