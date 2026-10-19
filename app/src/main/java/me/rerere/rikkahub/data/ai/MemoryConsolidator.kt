@@ -41,9 +41,27 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.memoryId
 import me.rerere.common.android.Logging
+import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.agent.RetryPolicy
 import kotlin.uuid.Uuid
 
 private const val TAG = "MemoryConsolidator"
+
+private fun backgroundTextGenerationParams(
+    model: Model,
+    sessionId: Uuid,
+    reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
+): TextGenerationParams = TextGenerationParams(
+    model = model,
+    reasoningLevel = reasoningLevel,
+    customHeaders = model.customHeaders,
+    customBody = model.customBodies,
+    sessionId = sessionId.toString(),
+)
+
+private fun Settings.retryPolicy(): RetryPolicy =
+    if (networkSetting.enableAutoRetry) RetryPolicy.NETWORK else RetryPolicy.NONE
 
 private const val MAX_STEPS = 32
 private const val MAX_CONVERSATIONS_PER_RUN = 8

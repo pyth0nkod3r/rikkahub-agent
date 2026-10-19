@@ -562,17 +562,10 @@ class GenerationLoop(
                         assistant.id.toString()
                     }
                     buildMemoryTools(
-                        json = json,
-                        onCreation = { content ->
-                            memoryRepo.addMemory(memoryAssistantId, content)
-                        },
-                        onUpdate = { id, content ->
-                            memoryRepo.updateContent(id, content)
-                        },
-                        onDelete = { id ->
-                            memoryRepo.deleteMemory(id)
-                        }
-                    ).let(this::addAll)
+                        repository = memoryRepo,
+                        assistantId = memoryAssistantId,
+                    ).filter { me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, it.name) }
+                     .let(this::addAll)
                 }
                 addAll(tools.filter { me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, it.name) })
             }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.skills.SkillFrontmatterParser
 
 class SkillManager(
     private val context: Context,
