@@ -29,7 +29,7 @@ sealed class ProviderSetting {
     abstract val name: String
     abstract val models: List<Model>
     abstract val balanceOption: BalanceOption
-    open val customHeaders: List<CustomHeader> = emptyList()
+    abstract val customHeaders: List<CustomHeader>
 
     abstract val builtIn: Boolean
     abstract val description: @Composable() () -> Unit
@@ -272,6 +272,8 @@ sealed class ProviderSetting {
         // Pixel 8/9/10 today. Users can flip back to STABLE once Google promotes it.
         var releaseStage: AICoreReleaseStage = AICoreReleaseStage.PREVIEW,
     ) : ProviderSetting() {
+        @Transient override val customHeaders: List<CustomHeader> get() = emptyList()
+
         override fun addModel(model: Model): ProviderSetting = this // synthetic models, no add
         override fun editModel(model: Model): ProviderSetting {
             return copy(models = models.map { if (it.id == model.id) model else it })
@@ -322,6 +324,8 @@ sealed class ProviderSetting {
         @Transient override val description: @Composable (() -> Unit) = {},
         @Transient override val shortDescription: @Composable (() -> Unit) = {},
     ) : ProviderSetting() {
+        @Transient override val customHeaders: List<CustomHeader> get() = emptyList()
+
         override fun addModel(model: Model): ProviderSetting = copy(models = models + model)
         override fun editModel(model: Model): ProviderSetting =
             copy(models = models.map { if (it.id == model.id) model else it })
@@ -358,6 +362,8 @@ sealed class ProviderSetting {
         @Transient override val description: @Composable (() -> Unit) = {},
         @Transient override val shortDescription: @Composable (() -> Unit) = {},
     ) : ProviderSetting() {
+        @Transient override val customHeaders: List<CustomHeader> get() = emptyList()
+
         override fun addModel(model: Model): ProviderSetting = copy(models = models + model)
         override fun editModel(model: Model): ProviderSetting =
             copy(models = models.map { if (it.id == model.id) model else it })
