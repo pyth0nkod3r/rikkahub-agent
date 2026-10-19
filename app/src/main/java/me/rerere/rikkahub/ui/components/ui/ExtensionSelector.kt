@@ -23,9 +23,10 @@ import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.skills.SkillManager
-import me.rerere.rikkahub.data.skills.SkillMetadata
+import me.rerere.rikkahub.data.files.SkillManager
+import me.rerere.rikkahub.data.files.SkillMetadata
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.components.ai.ExtensionEmptyState
 import me.rerere.rikkahub.ui.components.ai.LorebooksContent
 import me.rerere.rikkahub.ui.components.ai.ModeInjectionsContent
@@ -53,6 +54,8 @@ fun ExtensionSelector(
     assistant: Assistant,
     settings: Settings,
     onUpdate: (Assistant) -> Unit,
+    conversation: Conversation? = null,
+    onUpdateConversation: ((Conversation) -> Unit)? = null,
     onNavigateToQuickMessages: () -> Unit = {},
     onNavigateToPrompts: () -> Unit = {},
     onNavigateToSkills: () -> Unit = {},
@@ -64,6 +67,19 @@ fun ExtensionSelector(
         // 打开扩展面板时清理运行时被删除的技能（残留的 enabledSkills 引用），
         // prune 顺带返回现存技能列表，避免重复读盘
         skills = skillManager.pruneOrphanedEnabledSkills()
+    }
+
+    val useConversationInjections =
+        assistant.allowConversationPromptInjection && conversation != null && onUpdateConversation != null
+    val selectedModeInjectionIds = if (useConversationInjections) {
+        conversation.modeInjectionIds
+    } else {
+        assistant.modeInjectionIds
+    }
+    val selectedLorebookIds = if (useConversationInjections) {
+        conversation.lorebookIds
+    } else {
+        assistant.lorebookIds
     }
 
     val pagerState = rememberPagerState { ExtensionTab.entries.size }
@@ -114,14 +130,18 @@ fun ExtensionSelector(
                     if (settings.modeInjections.isNotEmpty()) {
                         ModeInjectionsContent(
                             modeInjections = settings.modeInjections,
-                            selectedIds = assistant.modeInjectionIds,
+                            selectedIds = selectedModeInjectionIds,
                             onToggle = { id, checked ->
                                 val newIds = if (checked) {
-                                    assistant.modeInjectionIds + id
+                                    selectedModeInjectionIds + id
                                 } else {
-                                    assistant.modeInjectionIds - id
+                                    selectedModeInjectionIds - id
                                 }
-                                onUpdate(assistant.copy(modeInjectionIds = newIds))
+                                if (useConversationInjections) {
+                                    onUpdateConversation(conversation.copy(modeInjectionIds = newIds))
+                                } else {
+                                    onUpdate(assistant.copy(modeInjectionIds = newIds))
+                                }
                             },
                             onManage = onNavigateToPrompts,
                         )
@@ -139,14 +159,18 @@ fun ExtensionSelector(
                     if (settings.lorebooks.isNotEmpty()) {
                         LorebooksContent(
                             lorebooks = settings.lorebooks,
-                            selectedIds = assistant.lorebookIds,
+                            selectedIds = selectedLorebookIds,
                             onToggle = { id, checked ->
                                 val newIds = if (checked) {
-                                    assistant.lorebookIds + id
+                                    selectedLorebookIds + id
                                 } else {
-                                    assistant.lorebookIds - id
+                                    selectedLorebookIds - id
                                 }
-                                onUpdate(assistant.copy(lorebookIds = newIds))
+                                if (useConversationInjections) {
+                                    onUpdateConversation(conversation.copy(lorebookIds = newIds))
+                                } else {
+                                    onUpdate(assistant.copy(lorebookIds = newIds))
+                                }
                             },
                             onManage = onNavigateToPrompts,
                         )

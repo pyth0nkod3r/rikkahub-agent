@@ -59,8 +59,9 @@ import me.rerere.rikkahub.data.ai.limits.ToolRuntimeLimits
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import java.io.File
 import java.io.IOException
@@ -472,7 +473,7 @@ class GenerationLoop(
         inputTransformers: List<InputMessageTransformer> = emptyList(),
         outputTransformers: List<OutputMessageTransformer> = emptyList(),
         assistant: Assistant,
-        memories: List<AssistantMemory>? = null,
+        memories: List<MemoryFile>? = null,
         tools: List<Tool> = emptyList(),
         // Read live from the runtime holder, not captured once: the default expression is
         // evaluated per call, so a settings change takes effect on the next turn.
@@ -1236,7 +1237,7 @@ class GenerationLoop(
         providerImpl: Provider<ProviderSetting>,
         provider: ProviderSetting,
         tools: List<Tool>,
-        memories: List<AssistantMemory>,
+        memories: List<MemoryFile>,
         stream: Boolean,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
@@ -1255,7 +1256,7 @@ class GenerationLoop(
                     assistant.systemPrompt
                 }
             val memoryPrompt = if (assistant.enableMemory) {
-                buildMemoryPrompt(memories = memories)
+                buildMemoryPrompt(files = memories)
             } else ""
             val recentChatsPrompt = if (assistant.enableRecentChatsReference) {
                 buildRecentChatsPrompt(assistant, conversationRepo)

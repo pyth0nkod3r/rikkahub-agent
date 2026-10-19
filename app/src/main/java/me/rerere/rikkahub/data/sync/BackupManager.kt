@@ -9,6 +9,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
@@ -165,10 +168,21 @@ class BackupManager(
             filesDir = context.filesDir,
         )
 
+        // 启动次数不在 Settings 里，备份文件里仍放在 settings.json 的这个字段，和旧备份保持一致
+        private const val LAUNCH_COUNT_KEY = "launchCount"
+
+        // 更早的备份没有这个字段，按 0 恢复，和它还在 Settings 里时的默认值一致
+        private fun Json.launchCountOf(settingsJson: String): Int =
+            parseToJsonElement(settingsJson).jsonObject[LAUNCH_COUNT_KEY]?.jsonPrimitive?.intOrNull ?: 0
+
         /** Must finish before Koin, Room, SettingsStore or any background consumers are initialized. */
         suspend fun applyPendingRestore(context: Context, json: Json): Boolean = withContext(Dispatchers.IO) {
             pendingRestore(context).apply { settingsJson ->
-                SettingsStore.restoreBeforeInitialization(context, json.decodeFromString<Settings>(settingsJson))
+                SettingsStore.restoreBeforeInitialization(
+                    context = context,
+                    settings = json.decodeFromString<Settings>(settingsJson),
+                    launchCount = json.launchCountOf(settingsJson),
+                )
             }
         }
     }

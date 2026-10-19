@@ -1721,11 +1721,10 @@ class ChatService(
                 conversationModeInjectionIds = conversation.modeInjectionIds,
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = conversation.workspaceCwd,
-                memories = if (assistant.useGlobalMemory) {
-                    memoryRepository.getGlobalMemories()
-                } else {
-                    memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
-                },
+                memories = memoryRepository.getFiles(
+                    if (assistant.useGlobalMemory) MemoryRepository.GLOBAL_MEMORY_ID
+                    else assistant.id.toString()
+                ),
                 inputTransformers = buildList {
                     addAll(inputTransformers)
                     add(templateTransformer)

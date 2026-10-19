@@ -1,6 +1,6 @@
 package me.rerere.rikkahub.skills
 
-import me.rerere.rikkahub.data.files.SkillFrontmatterParser
+import me.rerere.rikkahub.data.skills.SkillFrontmatterParser
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.files.SkillMetadata
 import kotlinx.serialization.json.contentOrNull
