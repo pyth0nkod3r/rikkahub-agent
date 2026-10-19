@@ -1,4 +1,4 @@
-name: Build Debug APK
+name: Build APK
 
 on:
   push:
@@ -39,14 +39,63 @@ jobs:
           bun install
           pnpm install
 
-      - name: Build Debug APK
+      - name: Configure signing (secrets, or generated CI keystore)
+        env:
+          KEY_BASE64: ${{ secrets.KEY_BASE64 }}
+        run: |
+          if [ -n "$KEY_BASE64" ]; then
+            echo "$KEY_BASE64" | base64 -d > app/app.key
+            echo "${{ secrets.SIGNING_CONFIG }}" > local.properties
+          else
+            echo "No keystore secrets - generating throwaway CI keystore"
+            keytool -genkeypair -v -keystore /tmp/ci-release.keystore -alias cikey -keyalg RSA -keysize 2048 -validity 10000 -storepass ci_store_pass_9f3k -keypass ci_store_pass_9f3k -dname "CN=CI Build, O=CI"
+            echo "storeFile=/tmp/ci-release.keystore" > local.properties
+            echo "storePassword=ci_store_pass_9f3k" >> local.properties
+            echo "keyAlias=cikey" >> local.properties
+            echo "keyPassword=ci_store_pass_9f3k" >> local.properties
+          fi
+
+      - name: Build APKs (Release & Debug)
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleRelease assembleDebug --stacktrace
 
-      - name: Upload Debug APK
+      - name: Upload arm64-v8a Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: rikkahub-agent-debug-apk
-          path: app/build/outputs/apk/**/*.apk
+          name: rikkahub-agent-arm64-v8a-release
+          path: app/build/outputs/apk/release/*arm64-v8a*.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Universal Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rikkahub-agent-universal-release
+          path: app/build/outputs/apk/release/*universal*.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload x86_64 Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rikkahub-agent-x86_64-release
+          path: app/build/outputs/apk/release/*x86_64*.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload arm64-v8a Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rikkahub-agent-arm64-v8a-debug
+          path: app/build/outputs/apk/debug/*arm64-v8a*.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Universal Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rikkahub-agent-universal-debug
+          path: app/build/outputs/apk/debug/*universal*.apk
+          if-no-files-found: warn
           retention-days: 7
