@@ -3076,6 +3076,31 @@ class ChatService(
         folderRepository.deleteFolder(folderId)
     }
 
+    suspend fun deleteConversation(conversationId: Uuid) {
+        val session = sessions.remove(conversationId)
+        session?.cleanup()
+        memoryConsolidationScheduler.onConversationLeft(conversationId)
+        sessionMutexes.remove(conversationId)
+        compactionMutexes.remove(conversationId)
+        pendingStreamingPersistence.remove(conversationId)
+        lastStreamingPersistAt.remove(conversationId)
+        persistenceMutexes.remove(conversationId)
+        _sessionsVersion.value++
+        conversationRepo.getConversationById(conversationId)?.let { conv ->
+            conversationRepo.deleteConversation(conv)
+            filesManager.deleteChatFiles(conv.files)
+        }
+        session?.let { filesManager.deleteChatFiles(it.state.value.files) }
+    }
+
+    suspend fun deleteConversationsOfAssistant(assistantId: Uuid) {
+        val persisted = conversationRepo.getConversationsOfAssistant(assistantId).first().map { it.id }
+        val loaded = sessions.values
+            .filter { it.state.value.assistantId == assistantId }
+            .map { it.id }
+        (persisted + loaded).distinct().forEach { deleteConversation(it) }
+    }
+
     private fun checkFilesDelete(newConversation: Conversation, oldConversation: Conversation) {
         val session = sessions[newConversation.id]
         val queuedFiles = (session?.messageQueue?.state?.value?.messages.orEmpty() +
