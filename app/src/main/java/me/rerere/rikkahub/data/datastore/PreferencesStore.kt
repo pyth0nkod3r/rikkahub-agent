@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
@@ -38,6 +39,7 @@ import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV2Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV3Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV4Migration
+import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV5Migration
 import me.rerere.rikkahub.data.model.Assistant
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
@@ -77,6 +79,7 @@ private fun createSettingsDataStore(context: Context): DataStore<Preferences> {
             PreferenceStoreV2Migration(),
             PreferenceStoreV3Migration(),
             PreferenceStoreV4Migration(),
+            PreferenceStoreV5Migration(),
         ),
         produceFile = { file },
     )
@@ -122,6 +125,8 @@ class SettingsStore internal constructor(
         val SUGGESTION_PROMPT = stringPreferencesKey("suggestion_prompt")
         val OCR_MODEL = stringPreferencesKey("ocr_model")
         val OCR_PROMPT = stringPreferencesKey("ocr_prompt")
+        val COMPRESS_MODEL = stringPreferencesKey("compress_model")
+        val COMPRESS_PROMPT = stringPreferencesKey("compress_prompt")
 
         // 提供商
         val PROVIDERS = stringPreferencesKey("providers")
@@ -222,6 +227,9 @@ class SettingsStore internal constructor(
     /** 当前设置。加载完成前是 [Settings.dummy]，需要真实设置时用 [awaitLoaded]。 */
     val settingsFlow: StateFlow<Settings> = state.asStateFlow()
 
+    /** 未加载时不发出值的设置流 */
+    val settingsFlowRaw: Flow<Settings> get() = state.filter { !it.init }
+
     /** 等启动时的读盘完成后返回当前设置，不会返回 [Settings.dummy]。已经加载完时直接返回。 */
     suspend fun awaitLoaded(): Settings = state.first { !it.init }
 
@@ -277,6 +285,10 @@ class SettingsStore internal constructor(
         persist()
     }
 
+    suspend fun update(settings: Settings) {
+        update { settings }
+    }
+
     // 连续修改只写最新的一份：排队等锁的调用拿到锁时，它的修改多半已经被前一次写盘带上了。
     // 不跟着调用方取消：页面关闭（viewModelScope 取消）时修改已经在内存里生效，不能只差落盘这一步。
     // DataStore 在调用方的上下文里执行编码，所以要在这里切到后台线程
@@ -310,6 +322,16 @@ class SettingsStore internal constructor(
     /** 切换当前选中的助手。 */
     suspend fun selectAssistant(assistantId: Uuid) {
         update { it.copy(assistantId = assistantId) }
+    }
+
+    suspend fun updateAssistant(assistantId: Uuid) = selectAssistant(assistantId)
+
+    suspend fun updateAssistant(assistant: Assistant) {
+        update { settings ->
+            settings.copy(
+                assistants = settings.assistants.map { if (it.id == assistant.id) assistant else it }
+            )
+        }
     }
 
     private suspend fun updateAssistant(assistantId: Uuid, transform: (Assistant) -> Assistant) {

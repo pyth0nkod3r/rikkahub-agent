@@ -117,6 +117,7 @@ import me.rerere.rikkahub.data.model.ConversationCompaction
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.localFileUrls
+import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.toMessageNode
 import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.model.fork

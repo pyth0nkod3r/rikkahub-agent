@@ -19,7 +19,7 @@ class PreferenceStoreV5Migration : DataMigration<Preferences> {
 
     override suspend fun migrate(currentData: Preferences): Preferences {
         val prefs = currentData.toMutablePreferences()
-        if (prefs[SettingsStore.CONTEXT_COMPACTION_TARGET_TOKENS_K] == LEGACY_DEFAULT_TARGET_K) {
+        if (prefs[SettingsStore.CONTEXT_COMPACTION_TARGET_TOKENS_K] == LEGACY_DEFAULT_TARGET_K.toString()) {
             prefs.remove(SettingsStore.CONTEXT_COMPACTION_TARGET_TOKENS_K)
         }
         prefs[SettingsStore.VERSION] = 5

@@ -94,6 +94,7 @@ import me.rerere.rikkahub.ui.theme.rememberChatFontFamily
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.openUrl
+import me.rerere.rikkahub.utils.urlDecode
 import me.rerere.ui.charts.ChartCard
 import me.rerere.ui.charts.ChartSpec
 import java.util.Locale
