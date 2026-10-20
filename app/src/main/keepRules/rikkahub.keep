@@ -11,8 +11,7 @@
 -dontwarn java.lang.management.RuntimeMXBean
 
 # Jackson references these JVM-only java.beans annotations.
--dontwarn java.beans.ConstructorProperties
--dontwarn java.beans.Transient
+-dontwarn java.beans.**
 
 # re2j has optional references that are unavailable on Android.
 -dontwarn com.google.re2j.**
