@@ -59,8 +59,6 @@ class AICoreProvider(private val context: Context) : Provider<ProviderSetting.AI
     override suspend fun listModels(providerSetting: ProviderSetting.AICore): List<Model> =
         AICORE_DEFAULT_MODELS
 
-    override suspend fun getBalance(providerSetting: ProviderSetting.AICore): String =
-        "On-device — no API balance"
 
     override suspend fun streamText(
         providerSetting: ProviderSetting.AICore,

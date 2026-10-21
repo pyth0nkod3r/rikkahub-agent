@@ -1,7 +1,6 @@
 package me.rerere.ai.provider.providers.openai
 
 import android.util.Log
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
@@ -32,22 +31,21 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.BuiltInTools
-import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
-import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.TextGenerationParams
-import me.rerere.ai.provider.stream.SseEvent
+import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.providers.PartGroup
 import me.rerere.ai.provider.providers.groupPartsByToolBoundary
+import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.registry.ModelRegistry
-import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.OpenAIReasoningMetadata
 import me.rerere.ai.ui.ReasoningType
 import me.rerere.ai.ui.ServerToolMetadata
 import me.rerere.ai.ui.ServerToolProtocol
 import me.rerere.ai.ui.ServerToolStatus
+import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.metadataAs
@@ -58,14 +56,13 @@ import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
+import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.ai.util.parseErrorDetail
-import me.rerere.ai.util.redactSecrets
 import me.rerere.ai.util.stringSafe
-import me.rerere.ai.util.toHeaders
-import me.rerere.common.android.Logging
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.common.http.jsonPrimitiveOrNull
+import me.rerere.common.http.sse.newEventSource
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -74,117 +71,21 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
-import okhttp3.sse.EventSources
-import java.io.IOException
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Clock
 
 private const val TAG = "ResponseAPI"
-private val USER_CANCELLATION_MARKERS = listOf(
-    "canceled by user",
-    "cancelled by user",
-    "user_canceled",
-    "user_cancelled",
+
+/**
+ * Responses API 请求的目标：发往哪里、怎么鉴权，以及该网关对请求体的特殊要求（[capabilities]）。
+ *
+ * OpenAI 兼容提供商由 [ProviderSetting.OpenAI] 生成；地址写死的账号型提供商各自构造。
+ */
+internal class ResponsesEndpoint(
+    val url: String,
+    val capabilities: ResponseProviderCapabilities = ResponseProviderCapabilities(),
+    // 构建请求时调用，负责请求头和鉴权；可挂起，以便先刷新 token
+    val configureRequest: suspend Request.Builder.() -> Unit,
 )
-
-private fun isCancellationFailure(failure: Throwable): Boolean =
-    generateSequence(failure) { it.cause }
-        .take(8)
-        .any { cause ->
-            cause is CancellationException ||
-                USER_CANCELLATION_MARKERS.any { marker ->
-                    cause.message?.contains(marker, ignoreCase = true) == true
-                }
-        }
-
-/**
- * A transport failure from a Response API stream. The output marker protects callers from
- * replaying a request after text or a tool call has already reached the conversation.
- */
-internal class ResponseStreamFailureException(
-    val receivedMeaningfulOutput: Boolean,
-    message: String,
-    cause: Throwable? = null,
-) : IOException(message, cause)
-
-/**
- * A provider-side Response API error delivered as an SSE event. These errors are already a
- * complete business response, so replaying the exact same request is both noisy and harmful
- * (a context-length error, for example, can never succeed without changing the input).
- */
-class ResponseStreamErrorException(
-    val code: String?,
-    message: String,
-    cause: Throwable? = null,
-) : IOException(message, cause)
-
-private fun JsonObject.responseErrorObject(): JsonObject? =
-    this["error"]?.jsonObject
-        ?: this["response"]?.jsonObject?.get("error")?.jsonObject
-
-private fun JsonObject.responseErrorText(name: String): String? = runCatching {
-    this[name]?.jsonPrimitive?.contentOrNull
-        ?: this["response"]?.jsonObject?.get(name)?.jsonPrimitive?.contentOrNull
-        ?: this.responseErrorObject()?.get(name)?.jsonPrimitive?.contentOrNull
-}.getOrNull()?.takeIf { it.isNotBlank() }
-
-/** Convert `error`/`response.failed` SSE payloads into a useful, non-retryable exception. */
-internal fun parseResponseStreamError(
-    payload: JsonObject,
-    eventType: String?,
-): ResponseStreamErrorException {
-    val code = payload.responseErrorText("code")
-    val message = runCatching {
-        val error = payload["error"] ?: payload["response"]?.jsonObject?.get("error")
-        error?.parseErrorDetail()?.message
-    }.getOrNull()?.takeIf { it.isNotBlank() }
-        ?: payload.responseErrorText("message")
-        ?: code
-        ?: "unknown provider error"
-    val eventLabel = eventType?.takeIf { it.isNotBlank() } ?: "error"
-    val detail = buildString {
-        append("Response API $eventLabel")
-        if (code != null && !message.contains(code, ignoreCase = true)) {
-            append(" [$code]")
-        }
-        append(": ")
-        append(message)
-    }
-    return ResponseStreamErrorException(code = code, message = detail)
-}
-
-internal fun shouldRetryResponseStream(
-    failure: Throwable,
-    retryAttempt: Long,
-    maxRetries: Int,
-): Boolean {
-    if (retryAttempt >= maxRetries.coerceAtLeast(0).toLong()) return false
-    if (failure is ResponseStreamErrorException) return false
-    // Some gateways return the context error as a non-2xx response body instead of an SSE
-    // event. Preserve the error for ChatService's compaction path and never replay it blindly.
-    if (generateSequence(failure) { it.cause }.take(8).any { cause ->
-            val text = (cause.message.orEmpty() + " " + cause.toString())
-                .lowercase()
-                .replace('_', ' ')
-            "context length exceeded" in text ||
-                "context_length_exceeded" in text ||
-                "maximum context length" in text
-        }) {
-        return false
-    }
-    if ((failure as? ResponseStreamFailureException)?.receivedMeaningfulOutput == true) {
-        return false
-    }
-    // Response API can surface HTTP, decoding, callback, and other provider failures using
-    // different exception types. Retry every failure except cancellation requested by the user
-    // (or cancellation propagated from the parent coroutine).
-    return !isCancellationFailure(failure)
-}
-
-// Same wording ChatCompletionsAPI uses when downgrading an image to text for a
-// model without image input support; reused here for consistency.
-private const val IMAGE_UNSUPPORTED_PLACEHOLDER =
-    "[Image output omitted: current model does not support image input]"
 
 class ResponseAPI(
     private val client: OkHttpClient,
@@ -194,29 +95,44 @@ class ResponseAPI(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams
+    ): TextGenerationResult = generateText(providerSetting.toResponsesEndpoint(params), messages, params)
+
+    override suspend fun streamText(
+        providerSetting: ProviderSetting.OpenAI,
+        messages: List<UIMessage>,
+        params: TextGenerationParams
+    ): Flow<StreamChunk> = streamText(providerSetting.toResponsesEndpoint(params), messages, params)
+
+    private fun ProviderSetting.OpenAI.toResponsesEndpoint(params: TextGenerationParams) = ResponsesEndpoint(
+        url = "$baseUrl$responsesPath",
+        capabilities = resolveResponseProviderCapabilities(baseUrl.toHttpUrl().host),
+        configureRequest = {
+            headers(mergeCustomHeaders(params.customHeaders))
+            addHeader("Authorization", "Bearer ${keyRoulette.next(apiKey, id.toString())}")
+            configureReferHeaders(baseUrl)
+            configureSessionHeaders(baseUrl, params.sessionId)
+        },
+    )
+
+    internal suspend fun generateText(
+        endpoint: ResponsesEndpoint,
+        messages: List<UIMessage>,
+        params: TextGenerationParams
     ): TextGenerationResult = withContext(Dispatchers.IO) {
         val requestBody = buildRequestBody(
-            providerSetting = providerSetting,
+            capabilities = endpoint.capabilities,
             messages = messages,
             params = params,
             stream = false,
         )
         val request = Request.Builder()
-            .url("${providerSetting.baseUrl}${providerSetting.responsesPath}")
-            .headers(params.customHeaders.toHeaders())
+            .url(endpoint.url)
+            .apply { endpoint.configureRequest(this) }
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader(
-                "Authorization",
-                "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}"
-            )
             .addHeader("Content-Type", "application/json")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
-        if (Logging.isDebugLoggingEnabled()) {
-            Log.i(TAG, "generateText: ${json.encodeToString(redactSecrets(requestBody))}")
-        }
+        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
         // await() waits for the response headers; reading the body can still block.
         client.newCall(request).await().use { response ->
@@ -231,36 +147,24 @@ class ResponseAPI(
         }
     }
 
-    override suspend fun streamText(
-        providerSetting: ProviderSetting.OpenAI,
+    internal fun streamText(
+        endpoint: ResponsesEndpoint,
         messages: List<UIMessage>,
         params: TextGenerationParams
     ): Flow<StreamChunk> = callbackFlow {
         val requestBody = buildRequestBody(
-            providerSetting = providerSetting,
+            capabilities = endpoint.capabilities,
             messages = messages,
             params = params,
             stream = true,
         )
         val request = Request.Builder()
-            .url("${providerSetting.baseUrl}${providerSetting.responsesPath}")
-            .headers(params.customHeaders.toHeaders())
+            .url(endpoint.url)
+            .apply { endpoint.configureRequest(this) }
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader(
-                "Authorization",
-                "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}"
-            )
-            .configureReferHeaders(providerSetting.baseUrl)
-            .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
-        if (Logging.isDebugLoggingEnabled()) {
-            Log.i(TAG, "streamText: ${json.encodeToString(redactSecrets(requestBody))}")
-        }
-
-        val completionReceived = AtomicBoolean(false)
-        val canceledByCollector = AtomicBoolean(false)
-        val receivedMeaningfulOutput = AtomicBoolean(false)
+        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
 
         val decoder = ResponseApiStreamDecoder()
 
@@ -280,177 +184,107 @@ class ResponseAPI(
                 data: String
             ) {
                 Log.d(TAG, "onEvent: $id/$type $data")
-                if (data.trim() == "[DONE]") {
-                    try {
-                        sendChunks(decoder.accept(SseEvent(id = id, event = type, data = data)).chunks)
-                    } catch (e: Throwable) {
-                        Log.w(TAG, "onEvent: failed to finish decoder for [DONE]", e)
-                    }
-                    completionReceived.set(true)
-                    close()
-                    return
-                }
-                // A business error is already a complete response from the provider (context
-                // length, moderation refusal, etc.) - classify it before handing the raw event
-                // to the decoder so it surfaces as a non-retryable ResponseStreamErrorException
-                // instead of a generic decode failure.
-                val json = runCatching {
-                    json.parseToJsonElement(data).jsonObject
-                }.getOrElse { error ->
-                    close(
-                        ResponseStreamFailureException(
-                            receivedMeaningfulOutput = receivedMeaningfulOutput.get(),
-                            message = "Response stream contained invalid JSON: ${error.message.orEmpty()}",
-                            cause = error,
-                        )
-                    )
-                    return
-                }
-                val eventType = json["type"]?.jsonPrimitive?.contentOrNull ?: type
-                if (eventType == "error" || eventType == "response.failed") {
-                    close(parseResponseStreamError(json, eventType))
-                    return
-                }
                 try {
                     val result = decoder.accept(SseEvent(id = id, event = type, data = data))
-                    if (result.chunks.any { it !is StreamChunk.Usage && it !is StreamChunk.Finish }) {
-                        receivedMeaningfulOutput.set(true)
-                    }
                     sendChunks(result.chunks)
-                    if (result.completed) {
-                        completionReceived.set(true)
-                        close()
-                    }
+                    if (result.completed) close()
                 } catch (e: Throwable) {
-                    close(
-                        ResponseStreamFailureException(
-                            receivedMeaningfulOutput = receivedMeaningfulOutput.get(),
-                            message = "Failed to decode stream event: ${e.message.orEmpty()}",
-                            cause = e,
-                        )
-                    )
+                    close(e)
                 }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                if (canceledByCollector.get() || completionReceived.get()) return
+                var exception = t
 
-                var exception: Throwable = t ?: IOException(
-                    "Response stream failed${response?.code?.let { " (HTTP $it)" }.orEmpty()}"
-                )
-
-                Log.w(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response", t)
+                t?.printStackTrace()
+                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
 
                 val bodyRaw = response?.body?.stringSafe()
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        Log.d(TAG, "onFailure: error body $bodyElement")
-                        val detail = bodyElement.parseErrorDetail()
-                        val code = (bodyElement as? JsonObject)?.responseErrorText("code")
-                        exception = if (code != null && !detail.message.orEmpty().contains(code, ignoreCase = true)) {
-                            IOException("$code: ${detail.message.orEmpty()}", detail)
-                        } else {
-                            detail
-                        }
+                        println(bodyElement)
+                        exception = bodyElement.parseErrorDetail()
                         Log.i(TAG, "onFailure: $exception")
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw", e)
+                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
+                    e.printStackTrace()
+                } finally {
+                    close(exception)
                 }
-                if (receivedMeaningfulOutput.get()) {
-                    exception = ResponseStreamFailureException(
-                        receivedMeaningfulOutput = true,
-                        message = "Response stream failed after partial output: ${exception.message.orEmpty()}",
-                        cause = exception,
-                    )
-                }
-                close(exception)
             }
 
             override fun onClosed(eventSource: EventSource) {
-                if (canceledByCollector.get() || completionReceived.get()) {
-                    sendChunks(decoder.onClosed())
-                    close()
-                    return
-                }
-                close(
-                    ResponseStreamFailureException(
-                        receivedMeaningfulOutput = receivedMeaningfulOutput.get(),
-                        message = if (receivedMeaningfulOutput.get()) {
-                            "Response stream closed before completion after partial output"
-                        } else {
-                            "Response stream closed unexpectedly before response.completed or [DONE]"
-                        },
-                    )
-                )
+                sendChunks(decoder.onClosed())
+                close()
             }
         }
 
-        val eventSource = EventSources.createFactory(client)
-            .newEventSource(request, listener)
+        val eventSource = client.newEventSource(request, listener)
 
         awaitClose {
-            canceledByCollector.set(true)
+            println("[awaitClose] 关闭eventSource ")
             eventSource.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
     }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
-    fun createRequestBody(
-        providerSetting: ProviderSetting.OpenAI,
-        messages: List<UIMessage>,
-        params: TextGenerationParams,
-        stream: Boolean
-    ): JsonObject = buildRequestBody(providerSetting, messages, params, stream)
-
     internal fun buildRequestBody(
-        providerSetting: ProviderSetting.OpenAI,
+        capabilities: ResponseProviderCapabilities,
         messages: List<UIMessage>,
         params: TextGenerationParams,
         stream: Boolean
     ): JsonObject {
-        val host = providerSetting.baseUrl.toHttpUrl().host
-        val capabilities = resolveResponseProviderCapabilities(host)
         return buildJsonObject {
             put("model", params.model.modelId)
             put("stream", stream)
             put("store", false)
 
-            if (isModelAllowTemperature(params.model)) {
-                if (params.temperature != null) put("temperature", params.temperature)
-                if (params.topP != null) put("top_p", params.topP)
+            if (capabilities.supportsSamplingParams) {
+                if (isModelAllowTemperature(params.model)) {
+                    if (params.temperature != null) put("temperature", params.temperature)
+                    if (params.topP != null) put("top_p", params.topP)
+                }
+                if (params.maxTokens != null) put("max_output_tokens", params.maxTokens)
             }
-            if (params.maxTokens != null) put("max_output_tokens", params.maxTokens)
 
             // system instructions
-            if (messages.any { it.role == MessageRole.SYSTEM }) {
-                val parts = messages.first { it.role == MessageRole.SYSTEM }.parts
-                put(
-                    "instructions",
-                    parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text })
-            }
+            val systemPrompt = messages.firstOrNull { it.role == MessageRole.SYSTEM }
+                ?.parts?.filterIsInstance<UIMessagePart.Text>()?.joinToString("\n") { it.text }
+            val systemRole = capabilities.systemMessageRole
+            if (systemPrompt != null && systemRole == null) put("instructions", systemPrompt)
 
             // messages
-            put("input", buildMessages(messages, supportInputModalities = params.model.inputModalities))
+            putJsonArray("input") {
+                if (!systemPrompt.isNullOrEmpty() && systemRole != null) {
+                    add(buildJsonObject {
+                        put("role", systemRole)
+                        put("content", systemPrompt)
+                    })
+                }
+                buildMessages(messages).forEach { add(it) }
+            }
 
             // reasoning
-            if (params.model.abilities.contains(ModelAbility.REASONING)) {
-                val level = params.reasoningLevel
-                put("reasoning", buildJsonObject {
+            val reasoningModel = params.model.abilities.contains(ModelAbility.REASONING)
+            if (reasoningModel) {
+                val reasoning = buildJsonObject {
                     if (capabilities.supportsReasoningSummary) {
                         put("summary", "auto")
                     }
-                    if (level != ReasoningLevel.AUTO) {
-                        put("effort", level.effort)
-                    }
-                })
-                if (capabilities.supportEncryptedContent) {
-                    put("include", buildJsonArray {
-                        add("reasoning.encrypted_content")
-                    })
+                    capabilities.reasoningEffort(params.reasoningLevel, params.model.modelId)?.let { put("effort", it) }
                 }
+                if (reasoning.isNotEmpty()) put("reasoning", reasoning)
             }
+            if (capabilities.supportEncryptedContent &&
+                (reasoningModel || capabilities.alwaysIncludeEncryptedContent)) {
+                put("include", buildJsonArray {
+                    add("reasoning.encrypted_content")
+                })
+            }
+            // 会话 ID 作为 prompt_cache_key，同一会话的请求能命中提示缓存
+            params.sessionId?.let { put("prompt_cache_key", it) }
 
             // tools
             // Response API 的 tools 是扁平数组, 函数工具和内置工具可以共存, 必须写在同一个 key 下,
@@ -471,6 +305,9 @@ class ResponseAPI(
                                         tool.parameters()
                                     )
                                 )
+                                // Response API 不传 strict 时默认按严格模式处理, 会把 schema 里的可选字段全部变成必填,
+                                // 模型只能给本应省略的字段硬填默认值 (0 / "" / []), 导致工具参数校验失败
+                                put("strict", false)
                             })
                         }
                     }
@@ -488,7 +325,7 @@ class ResponseAPI(
                             BuiltInTools.ImageGeneration -> {
                                 add(buildJsonObject {
                                     put("type", "image_generation")
-                                    put("model", "gpt-image-2")
+                                    put("model", "gpt-image-2.5-sunburst")
                                 })
                             }
                         }
@@ -498,10 +335,7 @@ class ResponseAPI(
         }.mergeCustomBody(params.customBody)
     }
 
-    fun buildMessages(
-        messages: List<UIMessage>,
-        supportInputModalities: List<Modality> = listOf(Modality.TEXT, Modality.IMAGE),
-    ) = buildJsonArray {
+    internal fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
         messages
             .filter { message ->
                 message.role != MessageRole.SYSTEM && (
@@ -509,18 +343,18 @@ class ResponseAPI(
                         part is UIMessagePart.Reasoning &&
                             part.metadataAs<OpenAIReasoningMetadata>()?.encryptedContent != null
                     }
-                )
+                    )
             }
             .forEach { message ->
                 if (message.role == MessageRole.ASSISTANT) {
-                    addAssistantItems(message, supportInputModalities)
+                    addAssistantItems(message)
                 } else {
-                    addUserItems(message, supportInputModalities)
+                    addUserItems(message)
                 }
             }
     }
 
-    private fun JsonArrayBuilder.addAssistantItems(message: UIMessage, supportInputModalities: List<Modality>) {
+    private fun JsonArrayBuilder.addAssistantItems(message: UIMessage) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
 
@@ -538,7 +372,7 @@ class ResponseAPI(
                                 }
                                 // 先输出累积的文本/图片内容
                                 if (contentBuffer.isNotEmpty()) {
-                                    addContentItem(MessageRole.ASSISTANT, contentBuffer, supportInputModalities)
+                                    addContentItem(MessageRole.ASSISTANT, contentBuffer)
                                     contentBuffer.clear()
                                 }
                                 // 输出 reasoning item
@@ -585,10 +419,10 @@ class ResponseAPI(
 
                             is UIMessagePart.Image -> {
                                 if (contentBuffer.isNotEmpty()) {
-                                    addContentItem(MessageRole.ASSISTANT, contentBuffer, supportInputModalities)
+                                    addContentItem(MessageRole.ASSISTANT, contentBuffer)
                                     contentBuffer.clear()
                                 }
-                                addContentItem(MessageRole.USER, listOf(part), supportInputModalities)
+                                addContentItem(MessageRole.USER, listOf(part))
                             }
 
                             is UIMessagePart.Text -> {
@@ -597,7 +431,7 @@ class ResponseAPI(
 
                             is UIMessagePart.ServerTool -> {
                                 if (contentBuffer.isNotEmpty()) {
-                                    addContentItem(MessageRole.ASSISTANT, contentBuffer, supportInputModalities)
+                                    addContentItem(MessageRole.ASSISTANT, contentBuffer)
                                     contentBuffer.clear()
                                 }
                                 addServerToolItem(part)
@@ -611,7 +445,7 @@ class ResponseAPI(
                 is PartGroup.Tools -> {
                     // 先输出累积的内容
                     if (contentBuffer.isNotEmpty()) {
-                        addContentItem(MessageRole.ASSISTANT, contentBuffer, supportInputModalities)
+                        addContentItem(MessageRole.ASSISTANT, contentBuffer)
                         contentBuffer.clear()
                     }
 
@@ -630,8 +464,7 @@ class ResponseAPI(
                             put("type", "function_call_output")
                             put("call_id", tool.toolCallId)
                             val hasImage = tool.output.any { it is UIMessagePart.Image }
-                            val supportsImageInput = Modality.IMAGE in supportInputModalities
-                            if (hasImage && supportsImageInput) {
+                            if (hasImage) {
                                 putJsonArray("output") {
                                     tool.output.forEach { part ->
                                         when (part) {
@@ -653,21 +486,6 @@ class ResponseAPI(
                                         }
                                     }
                                 }
-                            } else if (hasImage) {
-                                // Text-only model: fold the image(s) into the placeholder
-                                // text, mirroring ChatCompletionsAPI's toToolResultContent,
-                                // so the model still sees that a tool produced an image
-                                // without leaking image data it can't accept.
-                                put(
-                                    "output",
-                                    tool.output.mapNotNull { part ->
-                                        when (part) {
-                                            is UIMessagePart.Text -> part.text
-                                            is UIMessagePart.Image -> IMAGE_UNSUPPORTED_PLACEHOLDER
-                                            else -> null
-                                        }
-                                    }.joinToString("\n")
-                                )
                             } else {
                                 put(
                                     "output",
@@ -676,11 +494,6 @@ class ResponseAPI(
                                 )
                             }
                         })
-                        // No image lift here (issue #104): the Responses API allows
-                        // input_image parts inline inside function_call_output.output
-                        // above, which is in-spec, so a tool-returned image is already
-                        // visible to the model without a follow-up user item that would
-                        // otherwise separate one tool call's output from the next.
                     }
                 }
             }
@@ -688,7 +501,7 @@ class ResponseAPI(
 
         // 输出剩余内容
         if (contentBuffer.isNotEmpty()) {
-            addContentItem(MessageRole.ASSISTANT, contentBuffer, supportInputModalities)
+            addContentItem(MessageRole.ASSISTANT, contentBuffer)
         }
     }
 
@@ -708,26 +521,26 @@ class ResponseAPI(
             put("id", tool.toolCallId)
             put("status", tool.status.toOpenAIStatus())
             tool.input?.let { input ->
-                if (tool.toolName.removeSuffix("_call") == "web_search") put("action", input)
-                else if (input is JsonObject) input.forEach { (key, value) -> put(key, value) }
-                else put("input", input)
+                if (tool.toolName.removeSuffix("_call") == "web_search") {
+                    put("action", input)
+                } else if (input is JsonObject) {
+                    input.forEach { (key, value) -> put(key, value) }
+                } else {
+                    put("input", input)
+                }
             }
             tool.output?.let { put("output", it) }
         })
     }
 
-    private fun JsonArrayBuilder.addUserItems(message: UIMessage, supportInputModalities: List<Modality>) {
+    private fun JsonArrayBuilder.addUserItems(message: UIMessage) {
         val contentParts = message.parts.filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
         if (contentParts.isNotEmpty()) {
-            addContentItem(message.role, contentParts, supportInputModalities)
+            addContentItem(message.role, contentParts)
         }
     }
 
-    private fun JsonArrayBuilder.addContentItem(
-        role: MessageRole,
-        parts: List<UIMessagePart>,
-        supportInputModalities: List<Modality>,
-    ) {
+    private fun JsonArrayBuilder.addContentItem(role: MessageRole, parts: List<UIMessagePart>) {
         if (parts.isEmpty()) return
 
         add(buildJsonObject {
@@ -748,18 +561,13 @@ class ResponseAPI(
 
                             is UIMessagePart.Image -> {
                                 add(buildJsonObject {
-                                    if (Modality.IMAGE !in supportInputModalities) {
+                                    part.encodeBase64().onSuccess { encodedImage ->
+                                        put("type", "input_image")
+                                        put("image_url", encodedImage.base64)
+                                    }.onFailure {
+                                        it.printStackTrace()
                                         put("type", "input_text")
-                                        put("text", IMAGE_UNSUPPORTED_PLACEHOLDER)
-                                    } else {
-                                        part.encodeBase64().onSuccess { encodedImage ->
-                                            put("type", "input_image")
-                                            put("image_url", encodedImage.base64)
-                                        }.onFailure {
-                                            Log.w(TAG, "failed to encode image to base64", it)
-                                            put("type", "input_text")
-                                            put("text", "Error: Failed to encode image to base64")
-                                        }
+                                        put("text", "Error: Failed to encode image to base64")
                                     }
                                 })
                             }
@@ -898,7 +706,8 @@ class ResponseAPI(
             promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            cachedTokens = jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+            cachedTokens =
+            jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
                 ?: 0
         )
     }
@@ -967,7 +776,18 @@ private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
 
 internal data class ResponseProviderCapabilities(
     val supportsReasoningSummary: Boolean = true,
-    val supportEncryptedContent: Boolean = true
+    val supportEncryptedContent: Boolean = true,
+    // 不为 null 时 system 提示以这个角色的消息放在 input 开头，不用 instructions 字段
+    val systemMessageRole: String? = null,
+    // 是否接受 temperature、top_p 和 max_output_tokens
+    val supportsSamplingParams: Boolean = true,
+    // 非推理模型也请求加密推理内容：不保存会话时，自带推理的模型要靠它接上多轮推理
+    val alwaysIncludeEncryptedContent: Boolean = false,
+    // 推理档位对应的 reasoning.effort（参数依次是档位、模型 id），返回 null 时不带
+    val reasoningEffort: (
+        ReasoningLevel,
+        String,
+    ) -> String? = { level, _ -> level.effort.takeIf { level != ReasoningLevel.AUTO } },
 )
 
 internal fun resolveResponseProviderCapabilities(host: String): ResponseProviderCapabilities {

@@ -58,17 +58,18 @@ class ProviderManager(
      */
     @Suppress("UNCHECKED_CAST")
     fun <T : ProviderSetting> getProviderByType(setting: T): Provider<T> {
-        return when (setting) {
-            is ProviderSetting.OpenAI -> getProvider("openai")
-            is ProviderSetting.Google -> getProvider("google")
-            is ProviderSetting.Claude -> getProvider("claude")
-            is ProviderSetting.ChatGPT -> getProvider("chatgpt")
-            is ProviderSetting.Grok -> getProvider("grok")
-            is ProviderSetting.AICore -> getProvider("aicore")
-            is ProviderSetting.LiteRtLocal -> getProvider("local_litert")
-            is ProviderSetting.LlamaCppLocal -> getProvider("local_llamacpp")
-            is ProviderSetting.Codex -> getProvider("chatgpt")
-            is ProviderSetting.GeminiOAuth -> getProvider("gemini_oauth")
-        } as Provider<T>
+        val type = when (setting) {
+            is ProviderSetting.OpenAI -> "openai"
+            is ProviderSetting.Google -> "google"
+            is ProviderSetting.Claude -> "claude"
+            is ProviderSetting.ChatGPT -> "chatgpt"
+            is ProviderSetting.Grok -> "grok"
+            is ProviderSetting.AICore -> "aicore"
+            is ProviderSetting.LiteRtLocal -> "local_litert"
+            is ProviderSetting.LlamaCppLocal -> "local_llamacpp"
+            is ProviderSetting.Codex -> "chatgpt"
+            is ProviderSetting.GeminiOAuth -> "gemini_oauth"
+        }
+        return getProvider<T>(type)
     }
 }
