@@ -72,6 +72,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import android.provider.OpenableColumns
 import me.rerere.ui.toast.ToastType
 import me.rerere.ai.provider.ClaudePromptCacheTtl
 import me.rerere.ai.provider.ProviderSetting
@@ -239,7 +240,9 @@ internal fun ProviderSetting.ApiKey.isUsingDefaultBaseUrl(): Boolean = baseUrl =
 internal fun ProviderSetting.isUsingDefaultBaseUrl(): Boolean = (this as? ProviderSetting.ApiKey)?.isUsingDefaultBaseUrl() ?: true
 
 internal fun ProviderSetting.resetBaseUrlToDefault(): ProviderSetting = when (this) {
-    is ProviderSetting.ApiKey -> this.copyApiKey(baseUrl = defaultBaseUrlForReset())
+    is ProviderSetting.OpenAI -> this.copy(baseUrl = defaultBaseUrlForReset())
+    is ProviderSetting.Google -> this.copy(baseUrl = defaultBaseUrlForReset())
+    is ProviderSetting.Claude -> this.copy(baseUrl = defaultBaseUrlForReset())
     else -> this
 }
 

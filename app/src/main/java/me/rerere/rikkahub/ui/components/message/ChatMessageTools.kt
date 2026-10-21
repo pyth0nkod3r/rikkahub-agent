@@ -177,7 +177,6 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
     var expanded by remember { mutableStateOf(true) }
     val isPending = tool.isPending
     val isDenied = tool.approvalState is ToolApprovalState.Denied
-    val duration = rememberToolDuration(tool, loading)
     val images = tool.output.filterIsInstance<UIMessagePart.Image>()
     // Text parts nested in tool.output (e.g. run_js's webview payload) that carry
     // rikkahub.webview metadata never reach the top-level Text rendering branch in
@@ -382,15 +381,6 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
                         }
                     }
                 }
-            }
-        } else if (duration != null && duration >= 100.milliseconds) {
-            {
-                Text(
-                    text = duration.toString(DurationUnit.SECONDS, 1),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.shimmer(isLoading = loading),
-                )
             }
         } else {
             null
@@ -974,24 +964,3 @@ private fun ChainOfThoughtScope.ProposePlanToolStep(
     }
 }
 
-/**
- * 工具执行耗时；执行中随时间刷新，没有计时（拒绝、问答、旧消息）时为 null
- */
-@Composable
-private fun rememberToolDuration(tool: UIMessagePart.Tool, loading: Boolean): Duration? {
-    val startedAt = tool.startedAt
-    val finishedAt = tool.finishedAt
-    val running = loading && startedAt != null && finishedAt == null
-    val now by produceState(Clock.System.now(), running) {
-        while (running) {
-            value = Clock.System.now()
-            delay(100)
-        }
-    }
-    return when {
-        startedAt == null -> null
-        finishedAt != null -> finishedAt - startedAt
-        running -> now - startedAt
-        else -> null
-    }
-}

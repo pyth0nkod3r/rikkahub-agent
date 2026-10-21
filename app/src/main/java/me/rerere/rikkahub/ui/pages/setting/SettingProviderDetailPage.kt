@@ -309,7 +309,7 @@ private fun SettingProviderConfigPage(
                 supportingContent = if (provider.supportsQuota) {
                     { ProviderQuotaText(providerSetting = provider) }
                 } else null,
-                onEdit = { internalProvider = apiKeyProvider.copyApiKey(quotaQuery = it) }
+                onEdit = { internalProvider = apiKeyProvider.withQuotaQuery(it) }
             )
         }
 

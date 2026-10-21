@@ -48,7 +48,7 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "MemoryConsolidator"
 
-private fun backgroundTextGenerationParams(
+internal fun backgroundTextGenerationParams(
     model: Model,
     sessionId: Uuid,
     reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,

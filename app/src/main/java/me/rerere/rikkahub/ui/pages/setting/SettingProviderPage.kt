@@ -55,9 +55,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberBottomSheetState
-import androidx.compose.material3.SheetValue
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.ui.util.fastForEachIndexed
+import me.rerere.rikkahub.ui.components.ui.cardGroupItemShape
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -614,38 +615,34 @@ private fun AddButton(onAdd: (ProviderSetting) -> Unit) {
     }
 
     if (showSheet) {
-        val sheetState = rememberBottomSheetState(
-            initialValue = SheetValue.Hidden,
-            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
-        )
         ModalBottomSheet(
-            sheetState = sheetState,
             onDismissRequest = { showSheet = false },
+            sheetState = rememberBottomSheetState(
+                initialValue = SheetValue.Hidden,
+                enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
+            )
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     text = stringResource(R.string.setting_provider_page_add_provider),
                     style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(bottom = 4.dp)
                 )
-                Text(
-                    text = stringResource(R.string.setting_provider_page_add_provider_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                CardGroup(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    templates.forEach { template ->
-                        item(
+                Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+                    templates.fastForEachIndexed { index, template ->
+                        Surface(
                             onClick = {
                                 showSheet = false
-                                onAdd(template.copyProvider(id = Uuid.random()))
-                            }
+                                onAdd(template.copyProvider(Uuid.random()))
+                            },
+                            shape = cardGroupItemShape(index, templates.size),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
                             Row(
                                 modifier = Modifier
@@ -654,16 +651,16 @@ private fun AddButton(onAdd: (ProviderSetting) -> Unit) {
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                val typeName = template.typeName()
                                 AutoAIIcon(
-                                    name = typeName,
+                                    name = template.name,
                                     modifier = Modifier.size(40.dp)
                                 )
                                 Text(
-                                    text = typeName,
+                                    text = template.name,
                                     style = MaterialTheme.typography.titleMediumEmphasized,
                                     modifier = Modifier.weight(1f),
                                 )
+                                Icon(HugeIcons.ArrowRight01, contentDescription = null)
                             }
                         }
                     }
@@ -671,21 +668,6 @@ private fun AddButton(onAdd: (ProviderSetting) -> Unit) {
             }
         }
     }
-}
-
-// 类型的显示名，和用户可改的 ProviderSetting.name 分开
-@Composable
-private fun ProviderSetting.typeName(): String = when (this) {
-    is ProviderSetting.OpenAI -> "OpenAI"
-    is ProviderSetting.Google -> "Google"
-    is ProviderSetting.Claude -> "Claude"
-    is ProviderSetting.ChatGPT -> stringResource(R.string.setting_provider_page_type_subscription, "ChatGPT")
-    is ProviderSetting.Grok -> stringResource(R.string.setting_provider_page_type_subscription, "Grok")
-    is ProviderSetting.Codex -> "Codex"
-    is ProviderSetting.GeminiOAuth -> "Gemini (OAuth)"
-    is ProviderSetting.AICore -> "AI Core (On-Device)"
-    is ProviderSetting.LiteRtLocal -> "LiteRT (Local)"
-    is ProviderSetting.LlamaCppLocal -> "Llama.cpp (Local)"
 }
 
 @OptIn(ExperimentalFoundationApi::class)

@@ -76,6 +76,17 @@ import kotlin.time.Clock
 private const val TAG = "ResponseAPI"
 
 /**
+ * A provider-side Response API error delivered as an SSE event. These errors are already a
+ * complete business response, so replaying the exact same request is both noisy and harmful
+ * (a context-length error, for example, can never succeed without changing the input).
+ */
+class ResponseStreamErrorException(
+    val code: String?,
+    message: String,
+    cause: Throwable? = null,
+) : java.io.IOException(message, cause)
+
+/**
  * Responses API 请求的目标：发往哪里、怎么鉴权，以及该网关对请求体的特殊要求（[capabilities]）。
  *
  * OpenAI 兼容提供商由 [ProviderSetting.OpenAI] 生成；地址写死的账号型提供商各自构造。

@@ -168,7 +168,7 @@ fun Conversation.lastContextTokens(): Int? {
     val checkpoint = messages.lastOrNull { it.isContextCheckpoint }
     if (checkpoint != null && checkpoint.createdAt > message.createdAt) return null
     // 旧消息没有 contextTokens，那时的 usage 只保留最后一步，可以直接用
-    return message.contextTokens ?: message.usage?.let { it.promptTokens + it.completionTokens }
+    return message.contextTokens() ?: message.usage?.let { it.promptTokens + it.completionTokens }
 }
 
 /** 在 [afterNodeId] 节点之后插入压缩检查点；该节点已不存在时返回 null。 */
