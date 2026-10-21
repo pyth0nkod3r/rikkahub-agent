@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.subagent
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -10,6 +11,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -55,6 +57,30 @@ class SubAgentCompletionWaitTest {
             Unit
         }
         assertNull("timeout must return null", outcome)
+    }
+
+    @Test fun `reply deferred awaits completion and distinguishes timeout`() = runBlocking {
+        val reply = CompletableDeferred<String?>()
+        coroutineScope {
+            launch {
+                kotlinx.coroutines.delay(50)
+                reply.complete("done")
+            }
+            val outcome = withTimeoutOrNull(2_000L) {
+                runCatching { reply.await() }.getOrNull()
+            }
+            assertEquals("done", outcome)
+            assertTrue(reply.isCompleted)
+        }
+    }
+
+    @Test fun `reply deferred timeout returns null when uncompleted`() = runBlocking {
+        val reply = CompletableDeferred<String?>()
+        val outcome = withTimeoutOrNull(50L) {
+            runCatching { reply.await() }.getOrNull()
+        }
+        assertNull("timeout must return null", outcome)
+        assertFalse("reply must remain uncompleted on timeout", reply.isCompleted)
     }
 
     /**

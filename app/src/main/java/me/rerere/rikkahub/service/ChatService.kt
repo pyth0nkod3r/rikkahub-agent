@@ -805,12 +805,20 @@ class ChatService(
         dispatchNextQueuedMessage(conversationId)
     }
 
-    fun sendMessage(conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true) {
-        if (content.isEmptyInputMessage()) return
+    fun sendMessage(
+        conversationId: Uuid,
+        content: List<UIMessagePart>,
+        answer: Boolean = true,
+        reply: CompletableDeferred<String?>? = null,
+    ) {
+        if (content.isEmptyInputMessage()) {
+            reply?.complete(null)
+            return
+        }
         val session = getOrCreateSession(conversationId)
         synchronized(session) {
             if (session.messageQueue.state.value.messages.isEmpty()) session.messageQueue.resume()
-            session.messageQueue.enqueue(content, answer)
+            session.messageQueue.enqueue(content, answer, reply = reply)
             dispatchNextQueuedMessage(conversationId)
         }
     }
@@ -1721,10 +1729,12 @@ class ChatService(
                 conversationModeInjectionIds = conversation.modeInjectionIds,
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = conversation.workspaceCwd,
-                memories = memoryRepository.getFiles(
-                    if (assistant.useGlobalMemory) MemoryRepository.GLOBAL_MEMORY_ID
-                    else assistant.id.toString()
-                ),
+                memories = if (me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "memory_tool")) {
+                    memoryRepository.getFiles(
+                        if (assistant.useGlobalMemory) MemoryRepository.GLOBAL_MEMORY_ID
+                        else assistant.id.toString()
+                    )
+                } else emptyList(),
                 inputTransformers = buildList {
                     addAll(inputTransformers)
                     add(templateTransformer)

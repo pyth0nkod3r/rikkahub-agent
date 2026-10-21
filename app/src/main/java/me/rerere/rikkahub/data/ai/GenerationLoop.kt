@@ -754,6 +754,7 @@ class GenerationLoop(
                     // envelope to the model without executing.
                     val hardlineReason = me.rerere.rikkahub.data.ai.tools
                         .HardlineCommandGuard.checkTool(tool.toolName, tool.input)
+                    val subAgentBlocked = !me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, tool.toolName)
                     val transformed = when {
                         hardlineReason != null && tool.approvalState is ToolApprovalState.Auto -> {
                             Log.w(TAG, "hardline-blocked ${tool.toolName}: $hardlineReason")
@@ -762,6 +763,12 @@ class GenerationLoop(
                                     "This command cannot run via the agent under any " +
                                     "circumstances. If the user genuinely needs it, they " +
                                     "should run it themselves in a terminal outside the agent."
+                            ))
+                        }
+                        subAgentBlocked -> {
+                            Log.w(TAG, "subagent-policy-blocked ${tool.toolName} for conversation $conversationId")
+                            tool.copy(approvalState = ToolApprovalState.Denied(
+                                "blocked by sub-agent security policy: tool '${tool.toolName}' is not allowed for this sub-agent run."
                             ))
                         }
                         // Tool needs approval and state is Auto:
@@ -1001,16 +1008,20 @@ class GenerationLoop(
                         // lists tools but contributes zero entries to the dispatch list, e.g.
                         // a newly mcp_add-ed server never enabled for this assistant).
                         val toolDef = toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
-                        if (toolDef == null) {
-                            Log.w(TAG, "tool ${tool.toolName} not found among ${toolsInternal.size} tools available this turn")
+                        val permitted = me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, tool.toolName)
+                        if (toolDef == null || !permitted) {
+                            Log.w(TAG, "tool ${tool.toolName} not found or not permitted among ${toolsInternal.size} tools available this turn (conversation=$conversationId)")
                             executedTools += tool.copy(
                                 output = listOf(
                                     UIMessagePart.Text(
                                         json.encodeToString(buildJsonObject {
-                                            put("error", JsonPrimitive("tool_not_found"))
+                                            put("error", JsonPrimitive(if (toolDef == null) "tool_not_found" else "tool_not_allowed"))
                                             put(
                                                 "detail",
-                                                JsonPrimitive("Tool '${tool.toolName}' was called but is not among the tools available this turn."),
+                                                JsonPrimitive(
+                                                    if (toolDef == null) "Tool '${tool.toolName}' was called but is not among the tools available this turn."
+                                                    else "Tool '${tool.toolName}' is not permitted by sub-agent tool policy."
+                                                ),
                                             )
                                             put(
                                                 "tools_available_this_turn",
@@ -1242,16 +1253,28 @@ class GenerationLoop(
         val internalMessages = buildList {
             // Conversation-level system prompt override (upstream): when the assistant
             // allows it and the conversation supplies one, it replaces the assistant prompt.
-            val effectiveSystemPrompt =
-                if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
+            // Sub-agents always use their own conversation prompt or default sub-agent prompt,
+            // never inheriting the parent assistant's full system prompt.
+            val isSubAgent = me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId)
+            val effectiveSystemPrompt = when {
+                isSubAgent -> {
+                    if (!conversationSystemPrompt.isNullOrBlank()) {
+                        conversationSystemPrompt
+                    } else {
+                        me.rerere.rikkahub.subagent.DEFAULT_SUBAGENT_SYSTEM_PROMPT
+                    }
+                }
+                assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank() -> {
                     conversationSystemPrompt
-                } else {
+                }
+                else -> {
                     assistant.systemPrompt
                 }
-            val memoryPrompt = if (assistant.enableMemory) {
+            }
+            val memoryPrompt = if (assistant.enableMemory && me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "memory_tool")) {
                 buildMemoryPrompt(files = memories)
             } else ""
-            val recentChatsPrompt = if (assistant.enableRecentChatsReference) {
+            val recentChatsPrompt = if (assistant.enableRecentChatsReference && !isSubAgent) {
                 buildRecentChatsPrompt(assistant, conversationRepo)
             } else ""
             val toolPrompts = tools.map { tool -> tool.systemPrompt(model, messages) }
@@ -1287,6 +1310,7 @@ class GenerationLoop(
             conversationLorebookIds = conversationLorebookIds,
             processingStatus = processingStatus,
             workspaceCwd = workspaceCwd,
+            conversationId = conversationId,
         )
 
         var messages: List<UIMessage> = messages

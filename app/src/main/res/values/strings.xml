@@ -2110,6 +2110,10 @@
   <string name="setting_sub_agents_page_delete">Delete</string>
   <string name="setting_sub_agents_page_cancel">Cancel</string>
   <string name="setting_sub_agents_page_confirm">Save</string>
+  <string name="setting_sub_agents_page_capabilities">Capabilities</string>
+  <string name="setting_sub_agents_page_capabilities_desc">Opt-in capabilities. Sub-agents default to workspace tools only.</string>
+  <string name="setting_sub_agents_page_tools">Role tools</string>
+  <string name="setting_sub_agents_page_tools_hint">Comma-separated list of explicit tool names to grant.</string>
 
   <!-- BrowserAiStripe redesign: outcome-aware, localized action trail -->
   <string name="browser_ai_stripe_stop">Stop</string>

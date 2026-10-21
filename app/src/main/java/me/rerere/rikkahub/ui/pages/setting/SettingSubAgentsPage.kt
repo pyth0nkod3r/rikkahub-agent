@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -21,6 +22,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.FloatingToolbarDefaults.floatingToolbarVerticalNestedScroll
 import androidx.compose.material3.HorizontalFloatingToolbar
@@ -63,6 +65,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.subagent.SubAgentCapability
 import me.rerere.rikkahub.subagent.SubAgentProfile
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -254,6 +257,19 @@ private fun SubAgentProfileCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    if (profile.capabilities.isNotEmpty() || profile.tools.isNotEmpty()) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            profile.capabilities.forEach { cap ->
+                                Tag(type = TagType.INFO) { Text(cap) }
+                            }
+                            profile.tools.forEach { tool ->
+                                Tag(type = TagType.DEFAULT) { Text(tool) }
+                            }
+                        }
+                    }
                     if (!profile.enabled) {
                         Tag(type = TagType.WARNING) {
                             Text(stringResource(R.string.setting_sub_agents_page_disabled))
@@ -381,6 +397,44 @@ private fun SubAgentProfileEditSheet(
                         .fillMaxWidth()
                         .height(160.dp),
                     minLines = 4,
+                )
+
+                FormItem(
+                    label = { Text(stringResource(R.string.setting_sub_agents_page_capabilities)) },
+                    description = { Text(stringResource(R.string.setting_sub_agents_page_capabilities_desc)) },
+                    content = {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            SubAgentCapability.entries.forEach { cap ->
+                                val selected = profile.capabilities.contains(cap.wire)
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = {
+                                        val newCaps = if (selected) {
+                                            profile.capabilities - cap.wire
+                                        } else {
+                                            profile.capabilities + cap.wire
+                                        }
+                                        onEdit(profile.copy(capabilities = newCaps))
+                                    },
+                                    label = { Text(cap.wire) },
+                                )
+                            }
+                        }
+                    },
+                )
+
+                OutlinedTextField(
+                    value = profile.tools.joinToString(", "),
+                    onValueChange = { input ->
+                        val parsed = input.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        onEdit(profile.copy(tools = parsed))
+                    },
+                    label = { Text(stringResource(R.string.setting_sub_agents_page_tools)) },
+                    supportingText = { Text(stringResource(R.string.setting_sub_agents_page_tools_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 

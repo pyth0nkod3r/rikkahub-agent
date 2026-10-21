@@ -21,6 +21,11 @@ object PromptInjectionTransformer : InputMessageTransformer {
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
+        // Sub-agents operate with an isolated context and must not inherit the parent
+        // assistant's mode injections or lorebooks.
+        if (me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(ctx.conversationId)) {
+            return messages
+        }
         return transformMessages(
             messages = messages,
             assistant = ctx.assistant,

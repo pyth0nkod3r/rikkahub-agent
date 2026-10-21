@@ -117,6 +117,14 @@ fun buildSubAgentToolPolicy(
 }
 
 /**
+ * Default system prompt for a sub-agent when none is specified.
+ * Instructs the model that it operates in an isolated environment with a restricted tool catalog.
+ */
+const val DEFAULT_SUBAGENT_SYSTEM_PROMPT = """You are a focused sub-agent executing a delegated task.
+You operate in an isolated environment with a restricted tool catalog (workspace tools and explicitly granted capabilities only).
+Focus solely on completing the assigned task and report your findings clearly and concisely."""
+
+/**
  * Process-scoped map from a sub-agent's conversation id to its policy. [SubAgentEngine]
  * registers the policy before the run starts and removes it when the run ends. [GenerationLoop]
  * and the tool rerun path consult it, so restrictions apply to every tool the model can see or
@@ -133,6 +141,13 @@ object SubAgentToolPolicies {
     fun unregister(conversationId: Uuid) {
         byConversation.remove(conversationId)
     }
+
+    /** True when [conversationId] is actively registered as a sub-agent run. */
+    fun isSubAgent(conversationId: Uuid?): Boolean =
+        conversationId != null && byConversation.containsKey(conversationId)
+
+    fun getPolicy(conversationId: Uuid?): SubAgentToolPolicy? =
+        if (conversationId != null) byConversation[conversationId] else null
 
     /** True when [toolName] may be offered to or executed in [conversationId]. */
     fun permits(conversationId: Uuid?, toolName: String): Boolean {

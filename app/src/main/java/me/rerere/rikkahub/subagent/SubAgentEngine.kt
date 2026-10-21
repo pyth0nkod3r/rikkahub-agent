@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.subagent
 
 import android.util.Log
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -396,13 +397,12 @@ class SubAgentEngine(
                 return
             }
         }
-        // The profile's system prompt is prepended to the task text itself (same technique as
-        // the wrap-up instruction below) rather than plumbed into Conversation/ChatService -
-        // sub-agent runs don't get a per-run system prompt override today, and wiring one in
-        // is out of scope here (see Non-goals: don't change how runs execute).
-        val effectiveTask = profile?.systemPrompt?.trim()?.takeIf { it.isNotEmpty() }
-            ?.let { "$it\n\n${request.task}" }
-            ?: request.task
+        // Sub-agent system prompt: explicit request system prompt wins, then profile system prompt,
+        // then the default restricted sub-agent prompt. Plumbed directly into customSystemPrompt
+        // so the sub-agent never inherits the parent assistant's full-privilege system prompt.
+        val subAgentSystemPrompt = request.systemPrompt?.trim()?.takeIf { it.isNotEmpty() }
+            ?: profile?.systemPrompt?.trim()?.takeIf { it.isNotEmpty() }
+            ?: DEFAULT_SUBAGENT_SYSTEM_PROMPT
         val conv = Conversation.ofId(
             id = Uuid.random(),
             assistantId = parentAsstUuid,
@@ -410,6 +410,7 @@ class SubAgentEngine(
         ).copy(
             title = "[Sub-agent] ${request.label?.take(40) ?: request.task.take(40)}",
             chatModelId = resolvedChatModelId,
+            customSystemPrompt = subAgentSystemPrompt,
         )
         // Restricted catalog: a sub-agent sees only workspace_ tools plus the explicit role
         // tools and opt-in capabilities from the dispatch and the profile. Unknown capability
@@ -434,24 +435,25 @@ class SubAgentEngine(
             // no closing text. Without explicit text the parent has nothing to harvest and
             // the sub-agent's findings are lost.
             val taskWithWrapup = buildString {
-                append(effectiveTask)
+                append(request.task)
                 appendLine()
                 appendLine()
                 append("When you have finished, end with one short paragraph in plain text that summarises what you did and what you found. Do NOT stop on a tool call — finish with assistant text. The dispatcher harvests only your final text reply, so this paragraph is the entire response the parent sees.")
             }
             SubAgentToolPolicies.register(conv.id, toolPolicy)
-            chatService.sendMessage(conv.id, listOf(UIMessagePart.Text(taskWithWrapup)))
-            // The naive form `withTimeoutOrNull { …first { it == null } }` followed by a
-            // `finished == null` check is BROKEN: `.first { it == null }` returns the matched
-            // value — which IS null on successful completion (the Job? went to null when the
-            // LLM finished). So `finished == null` was true on BOTH timeout AND success, and
-            // every sub-agent looked TIMED_OUT despite actually finishing. Use a Unit sentinel
-            // so the two outcomes are distinguishable.
-            val completed: Unit? = withTimeoutOrNull(request.timeoutSeconds * 1000L) {
-                chatService.getGenerationJobStateFlow(conv.id).first { it == null }
-                Unit
+            val reply = CompletableDeferred<String?>()
+            chatService.sendMessage(
+                conversationId = conv.id,
+                content = listOf(UIMessagePart.Text(taskWithWrapup)),
+                reply = reply,
+            )
+            // Wait for completion via the enqueued reply deferred so the policy stays registered
+            // for the full lifetime of the multi-step generation turn.
+            val waitResult: String? = withTimeoutOrNull(request.timeoutSeconds * 1000L) {
+                runCatching { reply.await() }.getOrNull()
             }
-            val timedOut = finishSubAgentWait(completed = completed != null) {
+            val completed = waitResult != null || reply.isCompleted
+            val timedOut = finishSubAgentWait(completed = completed) {
                 runCatching { chatService.stopGeneration(conv.id) }
                     .onFailure { Log.w(TAG, "sub-agent timeout: stopGeneration failed for $runId", it) }
             }
@@ -464,7 +466,7 @@ class SubAgentEngine(
             // we read the latest persisted state of the conversation and concatenate any
             // text parts from the last assistant message. This mirrors how the
             // CronJobWorker treats LLM-mode jobs.
-            val finalText = harvestFinalText(conv.id)
+            val finalText = waitResult?.takeIf { it.isNotBlank() } ?: harvestFinalText(conv.id)
             registry.update(runId) {
                 it.copy(
                     status = SubAgentStatus.SUCCEEDED,
