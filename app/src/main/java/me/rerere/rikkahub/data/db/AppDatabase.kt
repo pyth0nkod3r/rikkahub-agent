@@ -49,7 +49,6 @@ import me.rerere.rikkahub.data.db.migrations.Migration_16_17
 import me.rerere.rikkahub.data.db.migrations.Migration_20_21
 import me.rerere.rikkahub.data.db.migrations.Migration_21_22
 import me.rerere.rikkahub.data.db.migrations.Migration_22_23
-import me.rerere.rikkahub.data.db.migrations.Migration_31_32
 import me.rerere.rikkahub.data.db.migrations.Migration_8_9
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.workflow.db.WorkflowDao
@@ -132,9 +131,6 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         // AppDatabaseFactory) instead of a plain auto-migration: a database restored from an
         // upstream 2.5.x backup can already carry this column, and an unconditional ADD COLUMN
         // crash-loops the app on every launch (issue #105).
-        // v32: 3.0.0 merge brings memory_file, memory_consolidation, media_creation_*,
-        // translation_history, and config on ConversationEntity.
-        AutoMigration(from = 31, to = 32, spec = Migration_31_32::class),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
