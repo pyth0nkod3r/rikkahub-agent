@@ -46,6 +46,12 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Files02
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Video01
+import me.rerere.hugeicons.stroke.PaintBoard
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import me.rerere.ui.sketch.SketchDialog
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.ui.components.ui.ImagePreviewDialog
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -69,9 +75,53 @@ internal fun MediaFileInputRow(
         managedFiles.associate { it.relativePath.substringAfterLast('/') to it.displayName }
     }
 
-    var previewImageIndex by remember { mutableStateOf<Int?>(null) }
-    val imageUrls = remember(state.messageContent) {
-        state.messageContent.filterIsInstance<UIMessagePart.Image>().map { it.url }
+    val scope = rememberCoroutineScope()
+    var drawingOn by remember { mutableStateOf<UIMessagePart.Image?>(null) }
+    drawingOn?.let { part ->
+        SketchDialog(
+            image = part.url.toUri(),
+            onDismiss = { drawingOn = null },
+            onConfirm = { result ->
+                drawingOn = null
+                scope.launch {
+                    val uri = filesManager.createChatFileBySketch(result) ?: return@launch
+                    if (part !in state.messageContent) {
+                        filesManager.deleteChatFiles(listOf(uri))
+                        return@launch
+                    }
+                    state.messageContent = state.messageContent.map {
+                        if (it == part) UIMessagePart.Image(uri.toString()) else it
+                    }
+                    if (state.shouldDeleteFileOnRemove(part)) {
+                        filesManager.deleteChatFiles(listOf(part.url.toUri()))
+                    }
+                }
+            },
+        )
+    }
+
+    var previewing by remember { mutableStateOf<UIMessagePart.Image?>(null) }
+    previewing?.let { start ->
+        val images = state.messageContent.filterIsInstance<UIMessagePart.Image>()
+        ImagePreviewDialog(
+            images = images.map { it.url },
+            initialPage = images.indexOf(start).coerceAtLeast(0),
+            onDismissRequest = { previewing = null },
+            actions = { page ->
+                IconButton(
+                    onClick = {
+                        previewing = null
+                        drawingOn = images.getOrNull(page)
+                    }
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.PaintBoard,
+                        contentDescription = stringResource(R.string.sketch_draw_on_image),
+                        tint = Color.White,
+                    )
+                }
+            },
+        )
     }
 
     fun removePart(part: UIMessagePart, url: String) {
@@ -131,7 +181,7 @@ internal fun MediaFileInputRow(
                             }
                         },
                         onRemove = { removePart(part, part.url) },
-                        onClick = { previewImageIndex = imageUrls.indexOf(part.url).coerceAtLeast(0) }
+                        onClick = { previewing = part }
                     )
                 }
 
@@ -182,13 +232,7 @@ internal fun MediaFileInputRow(
         }
     }
 
-    previewImageIndex?.let { index ->
-        ImagePreviewDialog(
-            images = imageUrls,
-            initialPage = index,
-            onDismissRequest = { previewImageIndex = null }
-        )
-    }
+
 }
 
 @Composable

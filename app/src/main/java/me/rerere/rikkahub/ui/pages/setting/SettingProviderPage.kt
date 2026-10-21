@@ -52,6 +52,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.material3.SheetValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -117,6 +122,27 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
         }
     }
 
+    // 设置是异步写入的，等新提供商真正出现在列表里再滚过去；新建时会跳详情页，所以要能跨页面保存
+    var pendingScrollId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(pendingScrollId, filteredProviders) {
+        val id = pendingScrollId ?: return@LaunchedEffect
+        val index = filteredProviders.indexOfFirst { it.id.toString() == id }
+        if (index >= 0) {
+            lazyListState.animateScrollToItem(index)
+            pendingScrollId = null
+        }
+    }
+
+    fun addProvider(provider: ProviderSetting) {
+        searchQuery = ""
+        pendingScrollId = provider.id.toString()
+        vm.updateSettings(
+            settings.copy(
+                providers = listOf(provider) + settings.providers
+            )
+        )
+    }
+
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
@@ -128,25 +154,14 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                 },
                 actions = {
                     RecommendProviderButton { provider ->
-                        vm.updateSettings(
-                            settings.copy(
-                                providers = listOf(provider.copyProvider(Uuid.random())) + settings.providers
-                            )
-                        )
+                        addProvider(provider.copyProvider(Uuid.random()))
                     }
                     ImportProviderButton {
-                        vm.updateSettings(
-                            settings.copy(
-                                providers = listOf(it.copyProvider(Uuid.random())) + settings.providers
-                            )
-                        )
+                        addProvider(it.copyProvider(Uuid.random()))
                     }
-                    AddButton {
-                        vm.updateSettings(
-                            settings.copy(
-                                providers = listOf(it) + settings.providers
-                            )
-                        )
+                    AddButton { provider ->
+                        addProvider(provider)
+                        navController.navigate(Screen.SettingProviderDetail(providerId = provider.id.toString()))
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -581,53 +596,96 @@ private fun handleImageQRCode(
 
 @Composable
 private fun AddButton(onAdd: (ProviderSetting) -> Unit) {
-    val dialogState = useEditState<ProviderSetting> {
-        onAdd(it.copyProvider(name = it.name.trim()))
+    var showSheet by remember { mutableStateOf(false) }
+    val templates = remember {
+        listOf(
+            ProviderSetting.OpenAI(),
+            ProviderSetting.Google(),
+            ProviderSetting.Claude(),
+            ProviderSetting.ChatGPT(),
+            ProviderSetting.Grok(),
+        )
     }
 
     IconButton(
-        onClick = {
-            dialogState.open(ProviderSetting.OpenAI())
-        }
+        onClick = { showSheet = true }
     ) {
         Icon(HugeIcons.Add01, stringResource(R.string.accessibility_add_provider))
     }
 
-    if (dialogState.isEditing) {
-        AlertDialog(
-            onDismissRequest = {
-                dialogState.dismiss()
-            },
-            title = {
-                Text(stringResource(R.string.setting_provider_page_add_provider))
-            },
-            text = {
-                dialogState.currentState?.let {
-                    ProviderConfigure(it) { newState ->
-                        dialogState.currentState = newState
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        dialogState.confirm()
-                    }
-                ) {
-                    Text(stringResource(R.string.setting_provider_page_add))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        dialogState.dismiss()
-                    }
-                ) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
+    if (showSheet) {
+        val sheetState = rememberBottomSheetState(
+            initialValue = SheetValue.Hidden,
+            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
         )
+        ModalBottomSheet(
+            sheetState = sheetState,
+            onDismissRequest = { showSheet = false },
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.setting_provider_page_add_provider),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = stringResource(R.string.setting_provider_page_add_provider_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                CardGroup(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    templates.forEach { template ->
+                        item(
+                            onClick = {
+                                showSheet = false
+                                onAdd(template.copyProvider(id = Uuid.random()))
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                val typeName = template.typeName()
+                                AutoAIIcon(
+                                    name = typeName,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                                Text(
+                                    text = typeName,
+                                    style = MaterialTheme.typography.titleMediumEmphasized,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+// 类型的显示名，和用户可改的 ProviderSetting.name 分开
+@Composable
+private fun ProviderSetting.typeName(): String = when (this) {
+    is ProviderSetting.OpenAI -> "OpenAI"
+    is ProviderSetting.Google -> "Google"
+    is ProviderSetting.Claude -> "Claude"
+    is ProviderSetting.ChatGPT -> stringResource(R.string.setting_provider_page_type_subscription, "ChatGPT")
+    is ProviderSetting.Grok -> stringResource(R.string.setting_provider_page_type_subscription, "Grok")
+    is ProviderSetting.Codex -> "Codex"
+    is ProviderSetting.GeminiOAuth -> "Gemini (OAuth)"
+    is ProviderSetting.AICore -> "AI Core (On-Device)"
+    is ProviderSetting.LiteRtLocal -> "LiteRT (Local)"
+    is ProviderSetting.LlamaCppLocal -> "Llama.cpp (Local)"
 }
 
 @OptIn(ExperimentalFoundationApi::class)

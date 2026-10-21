@@ -287,6 +287,7 @@ val appModule = module {
             workspaceRepository = get(),
             folderRepository = get(),
             memoryConsolidationScheduler = get(),
+            usageRecorder = get(),
         )
     }
 

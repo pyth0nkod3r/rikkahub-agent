@@ -19,8 +19,8 @@ android {
         applicationId = "excp.rikkahub.agent"
         minSdk = 26
         targetSdk = 37
-        versionCode = 187
-        versionName = "2.5.1"
+        versionCode = 193
+        versionName = "3.1.0-agent"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -85,12 +85,14 @@ android {
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
             buildConfigField("String", "UPDATE_API_URL", "\"\"")
+            buildConfigField("boolean", "IS_PLAY_STORE", "false")
         }
         debug {
             applicationIdSuffix = ".debug"
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
             buildConfigField("String", "UPDATE_API_URL", "\"\"")
+            buildConfigField("boolean", "IS_PLAY_STORE", "false")
         }
     }
     compileOptions {

@@ -89,6 +89,18 @@ import me.rerere.rikkahub.ui.components.ui.Favicon
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.context.LocalWorkspaceId
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.contentColorFor
+import androidx.compose.material3.ripple
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.unit.lerp
 import me.rerere.rikkahub.ui.theme.LocalChatFontFamily
 import me.rerere.rikkahub.ui.theme.rememberChatFontFamily
 import me.rerere.rikkahub.ui.theme.extendColors
@@ -177,7 +189,10 @@ fun ChatMessage(
                 )
             }
         }
-        ProvideTextStyle(textStyle) {
+        CompositionLocalProvider(
+            LocalTextStyle provides textStyle,
+            LocalWorkspaceId provides assistant?.workspaceId?.toString(),
+        ) {
             MessagePartsBlock(
                 assistant = assistant,
                 role = message.role,
@@ -417,40 +432,39 @@ private fun MessagePartsBlock(
                             role != MessageRole.USER && SkillWebviewCardOrNull(part)
                         val textContent = @Composable {
                             if (role == MessageRole.USER) {
-                                Surface(
-                                    modifier = Modifier.animateContentSize(),
-                                    shape = RoundedCornerShape(16.dp),
+                                ChatMessageBubble(
+                                    role = role,
                                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity),
                                     onClick = { onUserMessageClick?.invoke() },
+                                    // 用户气泡不占满整行，和助手的回复错开
+                                    modifier = Modifier
+                                        .padding(start = 24.dp)
+                                        .animateContentSize(),
                                 ) {
-                                    Column(modifier = Modifier.padding(8.dp)) {
-                                        MarkdownBlock(
-                                            content = part.text.replaceRegexes(
-                                                assistant = assistant,
-                                                scope = AssistantAffectScope.USER,
-                                                visual = true,
-                                            ),
-                                            onClickCitation = handleClickCitation
-                                        )
-                                    }
+                                    MarkdownBlock(
+                                        content = part.text.replaceRegexes(
+                                            assistant = assistant,
+                                            scope = AssistantAffectScope.USER,
+                                            visual = true,
+                                        ),
+                                        onClickCitation = handleClickCitation
+                                    )
                                 }
                             } else {
                                 if (settings.displaySetting.showAssistantBubble) {
-                                    Surface(
-                                        modifier = Modifier.animateContentSize(),
-                                        shape = RoundedCornerShape(16.dp),
+                                    ChatMessageBubble(
+                                        role = role,
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
+                                        modifier = Modifier.animateContentSize(),
                                     ) {
-                                        Column(modifier = Modifier.padding(8.dp)) {
-                                            MarkdownBlock(
-                                                content = part.text.replaceRegexes(
-                                                    assistant = assistant,
-                                                    scope = AssistantAffectScope.ASSISTANT,
-                                                    visual = true,
-                                                ),
-                                                onClickCitation = handleClickCitation,
-                                            )
-                                        }
+                                        MarkdownBlock(
+                                            content = part.text.replaceRegexes(
+                                                assistant = assistant,
+                                                scope = AssistantAffectScope.ASSISTANT,
+                                                visual = true,
+                                            ),
+                                            onClickCitation = handleClickCitation,
+                                        )
                                     }
                                 } else {
                                     MarkdownBlock(
@@ -685,5 +699,60 @@ private fun MessagePartsBlock(
                 Text(stringResource(R.string.citations_count, annotations.size))
             }
         }
+    }
+}
+
+private val BubbleCorner = 24.dp
+private val BubbleTailCorner = 6.dp
+private val BubblePressedCorner = 12.dp
+
+/**
+ * 消息气泡：大圆角，靠头像一侧的顶角收紧；可点击时按下其余圆角也跟着收紧
+ */
+@Composable
+private fun ChatMessageBubble(
+    role: MessageRole,
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressProgress by animatePressProgress(interactionSource)
+    val corner = lerp(BubbleCorner, BubblePressedCorner, pressProgress)
+    val shape = if (role == MessageRole.USER) {
+        RoundedCornerShape(topStart = corner, topEnd = BubbleTailCorner, bottomEnd = corner, bottomStart = corner)
+    } else {
+        RoundedCornerShape(topStart = BubbleTailCorner, topEnd = corner, bottomEnd = corner, bottomStart = corner)
+    }
+    val contentColor = contentColorFor(color)
+    Box(
+        modifier = modifier
+            .clipDrawing(shape)
+            .background(color)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(interactionSource = interactionSource, indication = ripple(), onClick = onClick)
+                } else {
+                    Modifier
+                },
+            )
+            // MarkdownBlock 自带 4dp 的水平内边距
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+    ) {
+        CompositionLocalProvider(LocalContentColor provides contentColor) { content() }
+    }
+}
+
+/**
+ * 只裁剪绘制内容，不像 [clip] 那样把形状设成图层轮廓。
+ *
+ * 四个角半径不同时图层轮廓是 Path，Compose 判断触摸点是否落在轮廓内时用 Path 求交，
+ * 坐标超过 8192px 后 float 精度不够，求交结果为空，长消息下半部分（例如展开的长代码块）就收不到触摸了。
+ */
+private fun Modifier.clipDrawing(shape: Shape): Modifier = drawWithCache {
+    val path = Path().apply { addOutline(shape.createOutline(size, layoutDirection, this@drawWithCache)) }
+    onDrawWithContent {
+        clipPath(path) { this@onDrawWithContent.drawContent() }
     }
 }

@@ -460,6 +460,7 @@ internal fun resumableToolsIncludingUnexecutedAuto(
 class GenerationLoop(
     private val context: Context,
     private val providerManager: ProviderManager,
+    private val usageRecorder: UsageRecorder,
     private val json: Json,
     private val memoryRepo: MemoryRepository,
     private val conversationRepo: ConversationRepository,
@@ -505,7 +506,10 @@ class GenerationLoop(
         workspaceCwd: String? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
-        val providerImpl = providerManager.getProviderByType(provider)
+        val providerImpl = usageRecorder.wrap(
+            providerManager.getProviderByType(provider),
+            UsageTag(UsageSource.CHAT, assistant.id, conversationId)
+        )
 
         // Replay safety: scan the input messages for tools that were Approved + began
         // execution but never produced output (process killed mid-execute). Without this

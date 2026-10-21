@@ -23,6 +23,7 @@ import me.rerere.rikkahub.data.db.dao.ScheduledJobRunDao
 import me.rerere.rikkahub.data.db.dao.SshHostDao
 import me.rerere.rikkahub.data.db.dao.TelegramChatDao
 import me.rerere.rikkahub.data.db.dao.TranslationHistoryDAO
+import me.rerere.rikkahub.data.db.dao.UsageRecordDAO
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.ConversationCompactionEntity
@@ -42,6 +43,7 @@ import me.rerere.rikkahub.data.db.entity.ScheduledJobRunEntity
 import me.rerere.rikkahub.data.db.entity.SshHostEntity
 import me.rerere.rikkahub.data.db.entity.TelegramChatEntity
 import me.rerere.rikkahub.data.db.entity.TranslationHistoryEntity
+import me.rerere.rikkahub.data.db.entity.UsageRecordEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.db.migrations.Migration_16_17
 import me.rerere.rikkahub.data.db.migrations.Migration_20_21
@@ -79,8 +81,9 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         MediaCreationNodeEntity::class,
         MediaCreationRecordEntity::class,
         TranslationHistoryEntity::class,
+        UsageRecordEntity::class,
     ],
-    version = 32,
+    version = 33,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -173,6 +176,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun mediaCreationDao(): MediaCreationDAO
 
     abstract fun translationHistoryDao(): TranslationHistoryDAO
+
+    abstract fun usageRecordDao(): UsageRecordDAO
 }
 
 object TokenUsageConverter {

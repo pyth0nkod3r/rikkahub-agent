@@ -98,6 +98,10 @@ import me.rerere.hugeicons.stroke.Download04
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.ui.context.LocalWorkspaceId
+import androidx.compose.runtime.produceState
+import org.koin.compose.koinInject
 import me.rerere.rikkahub.ui.components.table.DataTable
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.modifier.onClick
@@ -523,7 +527,7 @@ private fun MarkdownNode(
             ) {
                 // 这里可以使用Coil等图片加载库加载图片
                 ZoomableAsyncImage(
-                    model = imageUrl,
+                    model = rememberWorkspaceImageUrl(imageUrl),
                     contentDescription = altText,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -1290,4 +1294,16 @@ private fun List<ASTNode>.trim(type: IElementType, size: Int): List<ASTNode> {
         trimmed++
     }
     return this.subList(start, end)
+}
+
+@Composable
+private fun rememberWorkspaceImageUrl(url: String): String? {
+    val workspaceId = LocalWorkspaceId.current
+    if (workspaceId == null || !url.startsWith("/") || url.startsWith("//")) return url
+    val path = remember(url) { url.toUri().path } ?: return url
+    val workspaceRepository: WorkspaceRepository = koinInject()
+    val resolved by produceState<String?>(initialValue = null, workspaceId, path) {
+        value = workspaceRepository.resolveAbsoluteFile(workspaceId, path)?.absolutePath ?: url
+    }
+    return resolved
 }

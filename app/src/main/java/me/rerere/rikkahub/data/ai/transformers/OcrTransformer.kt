@@ -19,6 +19,9 @@ import me.rerere.common.cache.SingleFileCacheStore
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.ai.UsageRecorder
+import me.rerere.rikkahub.data.ai.UsageSource
+import me.rerere.rikkahub.data.ai.UsageTag
 import me.rerere.rikkahub.data.datastore.findProvider
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
@@ -126,7 +129,10 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
         val settings = get<SettingsStore>().settingsFlow.value
         val model = settings.findModelById(settings.ocrModelId) ?: return "[Image]"
         val providerSetting = model.findProvider(settings.providers) ?: return "[Image]"
-        val provider = get<ProviderManager>().getProviderByType(providerSetting)
+        val provider = get<UsageRecorder>().wrap(
+            get<ProviderManager>().getProviderByType(providerSetting),
+            UsageTag(UsageSource.OCR),
+        )
         val result = withTimeoutOrNull(OCR_TIMEOUT_MS) {
             provider.generateText(
                 providerSetting = providerSetting,

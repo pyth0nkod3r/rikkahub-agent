@@ -106,7 +106,9 @@ import me.rerere.rikkahub.ui.components.ai.ModelAbilityTag
 import me.rerere.rikkahub.ui.components.ai.ModelModalityTag
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ModelTypeTag
-import me.rerere.rikkahub.ui.components.ai.ProviderBalanceText
+import me.rerere.rikkahub.ui.components.ai.ProviderQuotaText
+import me.rerere.ai.provider.supportsQuota
+import me.rerere.rikkahub.data.ai.account.preserveCredential
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.ShareSheet
@@ -122,9 +124,8 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.CustomHeaders
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.CodexProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.GeminiProviderConfigure
-import me.rerere.rikkahub.ui.pages.setting.components.GrokProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConnectionTester
-import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
+import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderQuotaQuery
 import me.rerere.rikkahub.ui.pages.setting.components.isUsingDefaultBaseUrl
 import me.rerere.rikkahub.ui.pages.setting.components.resetBaseUrlToDefault
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -187,8 +188,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                 actions = {
                     if (
                         provider !is ProviderSetting.Codex &&
-                        provider !is ProviderSetting.Grok &&
-                        provider !is ProviderSetting.GeminiOAuth
+                        provider !is ProviderSetting.GeminiOAuth &&
+                        provider !is ProviderSetting.Account
                     ) {
                         val shareSheetState = rememberShareSheetState()
                         ShareSheet(shareSheetState)
@@ -277,13 +278,6 @@ private fun SettingProviderConfigPage(
         )
         return
     }
-    if (provider is ProviderSetting.Grok) {
-        GrokProviderConfigure(
-            provider = provider,
-            onEdit = onEdit,
-        )
-        return
-    }
     if (provider is ProviderSetting.GeminiOAuth) {
         GeminiProviderConfigure(
             provider = provider,
@@ -309,13 +303,14 @@ private fun SettingProviderConfigPage(
             }
         )
 
-        if (internalProvider is ProviderSetting.OpenAI) {
-            SettingProviderBalanceOption(
-                provider = internalProvider,
-                balanceOption = internalProvider.balanceOption,
-                onEdit = { internalProvider = internalProvider.copyProvider(balanceOption = it) }
+        (internalProvider as? ProviderSetting.ApiKey)?.let { apiKeyProvider ->
+            SettingProviderQuotaQuery(
+                provider = apiKeyProvider,
+                supportingContent = if (provider.supportsQuota) {
+                    { ProviderQuotaText(providerSetting = provider) }
+                } else null,
+                onEdit = { internalProvider = apiKeyProvider.copyApiKey(quotaQuery = it) }
             )
-            ProviderBalanceText(providerSetting = provider, style = MaterialTheme.typography.labelSmall)
         }
 
         Row(

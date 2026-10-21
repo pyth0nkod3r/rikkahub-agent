@@ -87,6 +87,7 @@ private const val PENDING_WINDOW_MS = 7L * 24 * 60 * 60 * 1000
  */
 class MemoryConsolidator(
     private val providerManager: ProviderManager,
+    private val usageRecorder: UsageRecorder,
     private val memoryRepository: MemoryRepository,
     private val conversationRepo: ConversationRepository,
     private val consolidationDao: MemoryConsolidationDAO,
@@ -95,12 +96,18 @@ class MemoryConsolidator(
 
     override suspend fun pendingOf(conversation: Conversation): PendingMemoryConversation? =
         withContext(Dispatchers.IO) {
-            val memoryId = settingsStore.awaitLoaded().memoryIdOf(conversation) ?: return@withContext null
+            val assistant = settingsStore.awaitLoaded().getAssistantById(conversation.assistantId)
+                ?.takeIf { it.enableMemory } ?: return@withContext null
             val pending = loadPendingTurns(conversation)
             if (pending.turns.isEmpty()) {
                 null
             } else {
-                PendingMemoryConversation(conversation.id, memoryId, pending.totalTurns)
+                PendingMemoryConversation(
+                    conversationId = conversation.id,
+                    memoryId = assistant.memoryId,
+                    turns = pending.totalTurns,
+                    automatic = assistant.autoConsolidateMemory,
+                )
             }
         }
 
@@ -116,22 +123,28 @@ class MemoryConsolidator(
 
     override suspend fun findPending(memoryId: String): List<PendingMemoryConversation> =
         withContext(Dispatchers.IO) {
-            val assistantIds = settingsStore.awaitLoaded().assistants
+            val assistants = settingsStore.awaitLoaded().assistants
                 .filter { it.enableMemory && it.memoryId == memoryId }
-                .map { it.id.toString() }
-            if (assistantIds.isEmpty()) return@withContext emptyList()
-            val candidates = consolidationDao.getUpdatedConversationIds(
-                assistantIds = assistantIds,
-                since = System.currentTimeMillis() - PENDING_WINDOW_MS,
-                limit = MAX_SCANNED_CONVERSATIONS,
-            )
-            collectPending(candidates, limit = MAX_CONVERSATIONS_PER_RUN) { id ->
-                conversationRepo.getConversationById(Uuid.parse(id))?.let { pendingOf(it) }
-            }
+            assistants.partition { it.autoConsolidateMemory }.toList()
+                .filter { it.isNotEmpty() }
+                .flatMap { group -> findPendingOf(group.map { it.id.toString() }) }
         }
 
-    override suspend fun markConsolidated(conversation: Conversation) = withContext(Dispatchers.IO) {
-        advance(conversation.id, maxOf(System.currentTimeMillis(), conversation.updateAt.toEpochMilli()))
+    private suspend fun findPendingOf(assistantIds: List<String>): List<PendingMemoryConversation> {
+        val candidates = consolidationDao.getUpdatedConversationIds(
+            assistantIds = assistantIds,
+            since = System.currentTimeMillis() - PENDING_WINDOW_MS,
+            limit = MAX_SCANNED_CONVERSATIONS,
+        )
+        return collectPending(candidates, limit = MAX_CONVERSATIONS_PER_RUN) { id ->
+            conversationRepo.getConversationById(Uuid.parse(id))?.let { pendingOf(it) }
+        }
+    }
+
+    override suspend fun markConsolidated(conversation: Conversation) {
+        withContext(Dispatchers.IO) {
+            advance(conversation.id, maxOf(System.currentTimeMillis(), conversation.updateAt.toEpochMilli()))
+        }
     }
 
     override suspend fun consolidate(
@@ -193,7 +206,10 @@ class MemoryConsolidator(
 
         val finished = runAgent(
             request = AgentRequest(
-                provider = providerManager.getProviderByType(providerSetting),
+                provider = usageRecorder.wrap(
+                    providerManager.getProviderByType(providerSetting),
+                    UsageTag(UsageSource.MEMORY),
+                ),
                 providerSetting = providerSetting,
                 messages = listOf(
                     UIMessage.user(
@@ -249,14 +265,12 @@ class MemoryConsolidator(
         return pending
     }
 
-    private suspend fun advance(conversationId: Uuid, consolidatedAt: Long) {
-        runCatching {
-            consolidationDao.upsert(MemoryConsolidationEntity(conversationId.toString(), consolidatedAt))
-        }.onFailure {
-            // 对话在整理期间被删掉时外键约束会拒绝写入
-            Logging.log(TAG, "advance $conversationId: $it")
-        }
-    }
+    private suspend fun advance(conversationId: Uuid, consolidatedAt: Long): Boolean = runCatching {
+        consolidationDao.upsert(MemoryConsolidationEntity(conversationId.toString(), consolidatedAt))
+    }.onFailure {
+        // 对话在整理期间被删掉时外键约束会拒绝写入
+        Logging.log(TAG, "advance $conversationId: $it")
+    }.isSuccess
 }
 
 private class Batch(val conversation: Conversation, val pending: PendingMemoryTurns) {

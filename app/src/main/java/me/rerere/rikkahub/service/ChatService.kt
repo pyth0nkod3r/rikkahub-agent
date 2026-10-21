@@ -77,6 +77,9 @@ import me.rerere.rikkahub.data.ai.ContextCompactionPresentation
 import me.rerere.rikkahub.data.ai.CompactedMessageView
 import me.rerere.rikkahub.data.ai.ContextCompactionView
 import me.rerere.rikkahub.data.ai.TranslationHandler
+import me.rerere.rikkahub.data.ai.UsageRecorder
+import me.rerere.rikkahub.data.ai.UsageSource
+import me.rerere.rikkahub.data.ai.UsageTag
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.ai.tools.InvalidMcpServerNamesException
@@ -412,6 +415,7 @@ class ChatService(
     private val workspaceRepository: WorkspaceRepository,
     private val folderRepository: FolderRepository,
     private val memoryConsolidationScheduler: MemoryConsolidationScheduler,
+    private val usageRecorder: UsageRecorder,
 ) {
     // workspace 系统提示注入 (依赖 workspaceRepository, 故在类内构造)
     private val workspaceReminderTransformer = WorkspaceReminderTransformer(workspaceRepository)
@@ -2193,7 +2197,10 @@ class ChatService(
                 return@runCatching
             }
 
-            val providerHandler = providerManager.getProviderByType(provider)
+            val providerHandler = usageRecorder.wrap(
+                providerManager.getProviderByType(provider),
+                UsageTag(UsageSource.TITLE, assistantId = null, conversationId = conversationId),
+            )
             val result = providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(
@@ -2243,7 +2250,10 @@ class ChatService(
                 )
             }
 
-            val providerHandler = providerManager.getProviderByType(provider)
+            val providerHandler = usageRecorder.wrap(
+                providerManager.getProviderByType(provider),
+                UsageTag(UsageSource.SUGGESTION, assistantId = null, conversationId = conversationId),
+            )
             val result = providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(
@@ -2666,7 +2676,10 @@ class ChatService(
             )
         }
 
-        val providerHandler = providerManager.getProviderByType(provider)
+        val providerHandler = usageRecorder.wrap(
+            providerManager.getProviderByType(provider),
+            UsageTag(UsageSource.COMPRESSION, assistantId = null, conversationId = conversation.id),
+        )
         // In token-threshold mode the user has supplied an explicit request-size ceiling for
         // this model family. Prefer it over missing/stale provider metadata. In percent mode we
         // still use the model's advertised context, falling back to the planner's conservative

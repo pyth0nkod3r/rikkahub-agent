@@ -58,6 +58,7 @@ import me.rerere.hugeicons.stroke.Camera01
 import me.rerere.hugeicons.stroke.Codesandbox
 import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Files02
+import me.rerere.hugeicons.stroke.PaintBoard
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.MusicNote03
@@ -107,6 +108,7 @@ internal fun FilesPicker(
     onPickVideo: () -> Unit,
     onPickAudio: () -> Unit,
     onPickFile: () -> Unit,
+    onSketch: () -> Unit,
     onStartVoiceMode: (() -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
@@ -128,6 +130,8 @@ internal fun FilesPicker(
             TakePicButton(onLaunchCamera = onTakePic)
 
             ImagePickButton(onClick = onPickImage)
+
+            SketchButton(onClick = onSketch)
 
             if (provider != null && provider is ProviderSetting.Google) {
                 VideoPickButton(onClick = onPickVideo)
@@ -455,6 +459,17 @@ private fun ImagePickButton(onClick: () -> Unit = {}) {
         Icon(HugeIcons.Image02, null)
     }, text = {
         Text(stringResource(R.string.photo))
+    }) {
+        onClick()
+    }
+}
+
+@Composable
+fun SketchButton(onClick: () -> Unit = {}) {
+    BigIconTextButton(icon = {
+        Icon(HugeIcons.PaintBoard, null)
+    }, text = {
+        Text(stringResource(R.string.sketch))
     }) {
         onClick()
     }

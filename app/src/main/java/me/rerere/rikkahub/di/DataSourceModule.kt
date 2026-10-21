@@ -20,6 +20,9 @@ import me.rerere.rikkahub.data.ai.GenerationLoop
 import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.ai.MemoryConsolidator
 import me.rerere.rikkahub.data.ai.TranslationHandler
+import me.rerere.rikkahub.data.ai.UsageRecorder
+import me.rerere.rikkahub.data.ai.account.ProviderAccountManager
+import me.rerere.rikkahub.data.ai.ConversationMetaGenerator
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.remote.RemoteFileStore
 import me.rerere.rikkahub.service.memoryDreamKeepAlive
@@ -136,6 +139,14 @@ val dataSourceModule = module {
     }
 
     single {
+        get<AppDatabase>().usageRecordDao()
+    }
+
+    single {
+        UsageRecorder(dao = get(), scope = get<AppScope>())
+    }
+
+    single {
         MessageFtsManager(get())
     }
 
@@ -151,6 +162,7 @@ val dataSourceModule = module {
     single {
         MemoryConsolidator(
             providerManager = get(),
+            usageRecorder = get(),
             memoryRepository = get(),
             conversationRepo = get(),
             consolidationDao = get(),
@@ -171,6 +183,7 @@ val dataSourceModule = module {
         GenerationLoop(
             context = get(),
             providerManager = get(),
+            usageRecorder = get(),
             json = get(),
             memoryRepo = get(),
             conversationRepo = get(),
@@ -182,7 +195,7 @@ val dataSourceModule = module {
     single { me.rerere.rikkahub.data.ai.SystemPromptBuilder() }
 
     single {
-        TranslationHandler(providerManager = get())
+        TranslationHandler(providerManager = get(), usageRecorder = get())
     }
 
     single<OkHttpClient> {
@@ -358,10 +371,18 @@ val dataSourceModule = module {
     }
 
     single {
+        ProviderAccountManager(
+            settingsStore = get(),
+            appScope = get(),
+            client = get(),
+        )
+    }
+
+    single {
         val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore = get()
         val codexRepository: CodexAccountRepository = get()
         val json: Json = get()
-        ProviderManager(client = get(), context = get()).also { pm ->
+        ProviderManager(client = get(), context = get(), accountCredentials = get<ProviderAccountManager>()).also { pm ->
             pm.registerProvider(
                 "local_litert",
                 me.rerere.locallm.litert.LiteRtProvider(
