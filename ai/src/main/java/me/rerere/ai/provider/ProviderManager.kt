@@ -67,7 +67,7 @@ class ProviderManager(
             is ProviderSetting.AICore -> "aicore"
             is ProviderSetting.LiteRtLocal -> "local_litert"
             is ProviderSetting.LlamaCppLocal -> "local_llamacpp"
-            is ProviderSetting.Codex -> "chatgpt"
+            is ProviderSetting.Codex -> "codex"
             is ProviderSetting.GeminiOAuth -> "gemini_oauth"
         }
         return getProvider<T>(type)
