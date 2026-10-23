@@ -1454,7 +1454,7 @@ class ChatService(
         model: Model,
         settings: Settings,
     ): List<Tool> = buildList {
-        if (assistant.enableWebSearch) {
+        if (assistant.enableWebSearch || me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "search_web")) {
             addAll(createSearchTools(settings))
         }
         val invocationCtx = me.rerere.rikkahub.data.ai.tools.ToolInvocationContext(
@@ -1746,7 +1746,7 @@ class ChatService(
                 },
                 outputTransformers = outputTransformers,
                 tools = buildList {
-                    if (useExternalWebSearch) {
+                    if (useExternalWebSearch || me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "search_web")) {
                         addAll(createSearchTools(settings))
                     }
                     // Pass the caller context so context-aware tools (subagent_dispatch
@@ -1829,10 +1829,11 @@ class ChatService(
                         )
                     }
                 }.let { allTools ->
+                    val permittedTools = me.rerere.rikkahub.subagent.SubAgentToolPolicies.filter(conversationId, allTools) { it.name }
                     if (me.rerere.rikkahub.data.ai.ConversationAgentMode.isPlanMode(conversationId)) {
-                        allTools.filter { me.rerere.rikkahub.data.ai.ConversationAgentMode.isToolAllowedInPlanMode(it.name) }
+                        permittedTools.filter { me.rerere.rikkahub.data.ai.ConversationAgentMode.isToolAllowedInPlanMode(it.name) }
                     } else {
-                        allTools
+                        permittedTools
                     }
                 },
             ).onCompletion { completionCause ->

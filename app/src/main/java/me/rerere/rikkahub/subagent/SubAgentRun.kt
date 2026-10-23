@@ -33,6 +33,8 @@ data class SubAgentRun(
     val tokensIn: Long = 0,
     val tokensOut: Long = 0,
     val tripCount: Int = 0,
+    val conversationId: String? = null,
+    val capabilities: List<String> = emptyList(),
 )
 
 @Serializable

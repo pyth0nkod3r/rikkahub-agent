@@ -13,13 +13,23 @@ import kotlin.uuid.Uuid
  * Tool names are matched exactly. A tool that belongs to no category stays hidden from
  * sub-agents unless it is named as a role tool (fail closed).
  */
-enum class SubAgentCapability(val wire: String, val toolNames: Set<String>) {
+enum class SubAgentCapability(
+    val wire: String,
+    val displayName: String,
+    val toolNames: Set<String>,
+) {
     MEMORY(
         "memory",
-        setOf("memory_tool"),
+        "Memory (save_memory)",
+        setOf(
+            "memory_read", "memory_write", "memory_str_replace",
+            "memory_append", "memory_delete", "memory_list",
+            "save_memory", "memory_tool",
+        ),
     ),
     SCHEDULE(
         "schedule",
+        "Schedule & Workflows (cron/automation)",
         setOf(
             "schedule_job", "list_jobs", "delete_job", "pause_job", "resume_job",
             "trigger_job_now", "get_job_history",
@@ -27,8 +37,51 @@ enum class SubAgentCapability(val wire: String, val toolNames: Set<String>) {
             "workflow_delete", "workflow_set_enabled", "workflow_run",
         ),
     ),
+    BROWSER(
+        "browser",
+        "Browser Automation (CDP web driver)",
+        setOf(
+            "browser_open", "browser_current_url", "browser_screenshot", "browser_get_text",
+            "browser_get_dom", "browser_get_links", "browser_back", "browser_forward",
+            "browser_wait_for", "browser_click", "browser_type", "browser_scroll",
+            "browser_submit", "browser_select", "browser_press_key", "browser_eval_js",
+            "browser_click_and_read", "browser_done",
+        ),
+    ),
+    SSH(
+        "ssh",
+        "SSH Remote Execution",
+        setOf(
+            "ssh_exec", "save_ssh_host", "list_ssh_hosts", "delete_ssh_host",
+            "ssh_forget_host_key", "ssh_exec_saved", "ssh_upload", "ssh_download",
+        ),
+    ),
+    SUBAGENT(
+        "subagent",
+        "Recursive Sub-Agents",
+        setOf(
+            "subagent_dispatch", "subagent_list", "subagent_get",
+            "subagent_cancel", "subagent_reinject",
+        ),
+    ),
+    KEYSTORE(
+        "keystore",
+        "Keystore & Cryptography",
+        setOf(
+            "keystore_generate_key", "keystore_sign", "keystore_verify", "keystore_encrypt",
+            "keystore_decrypt", "keystore_delete_key", "keystore_list_keys",
+        ),
+    ),
+    SEARCH(
+        "search",
+        "Web Search & Scraping",
+        setOf(
+            "search_web", "scrape_web", "web_fetch", "web_extract",
+        ),
+    ),
     ANDROID(
         "android",
+        "Android System & Device Control",
         setOf(
             "get_battery_status", "get_audio_info", "get_telephony_info", "get_wifi_info",
             "list_sensors", "read_sensor", "get_storage_info", "show_toast", "post_notification",
@@ -54,24 +107,6 @@ enum class SubAgentCapability(val wire: String, val toolNames: Set<String>) {
             "keyboard_set_cursor", "keyboard_select_range", "create_calendar_event",
             "create_contact", "send_email_intent", "send_sms_intent", "open_wifi_settings",
             "show_location_on_map", "chart_display",
-        ),
-    ),
-    SSH(
-        "ssh",
-        setOf(
-            "ssh_exec", "save_ssh_host", "list_ssh_hosts", "delete_ssh_host",
-            "ssh_forget_host_key", "ssh_exec_saved", "ssh_upload", "ssh_download",
-        ),
-    ),
-    SUBAGENT(
-        "subagent",
-        setOf("subagent_dispatch", "subagent_list", "subagent_get", "subagent_cancel"),
-    ),
-    KEYSTORE(
-        "keystore",
-        setOf(
-            "keystore_generate_key", "keystore_sign", "keystore_verify", "keystore_encrypt",
-            "keystore_decrypt", "keystore_delete_key", "keystore_list_keys",
         ),
     );
 

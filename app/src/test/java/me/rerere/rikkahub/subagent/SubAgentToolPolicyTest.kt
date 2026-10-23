@@ -94,4 +94,45 @@ class SubAgentToolPolicyTest {
         SubAgentToolPolicies.unregister(convId)
         assertFalse(SubAgentToolPolicies.isSubAgent(convId))
     }
+
+    @Test
+    fun `browser search and subagent capabilities grant comprehensive toolsets`() {
+        val build = buildSubAgentToolPolicy(
+            roleTools = emptyList(),
+            capabilities = listOf("browser", "search", "subagent", "schedule"),
+        )
+        assertTrue(build is SubAgentPolicyBuild.Ok)
+        val policy = (build as SubAgentPolicyBuild.Ok).policy
+
+        // Browser tools
+        assertTrue(policy.allows("browser_open"))
+        assertTrue(policy.allows("browser_click"))
+        assertTrue(policy.allows("browser_type"))
+        assertTrue(policy.allows("browser_screenshot"))
+        assertTrue(policy.allows("browser_eval_js"))
+        assertTrue(policy.allows("browser_scroll"))
+
+        // Search tools
+        assertTrue(policy.allows("search_web"))
+        assertTrue(policy.allows("scrape_web"))
+        assertTrue(policy.allows("web_fetch"))
+        assertTrue(policy.allows("web_extract"))
+
+        // SubAgent recursive tools
+        assertTrue(policy.allows("subagent_dispatch"))
+        assertTrue(policy.allows("subagent_list"))
+        assertTrue(policy.allows("subagent_get"))
+        assertTrue(policy.allows("subagent_cancel"))
+        assertTrue(policy.allows("subagent_reinject"))
+
+        // Schedule & workflow tools
+        assertTrue(policy.allows("schedule_job"))
+        assertTrue(policy.allows("workflow_create"))
+        assertTrue(policy.allows("workflow_run"))
+
+        // Denied tools (keystore, ssh, android not in granted list)
+        assertFalse(policy.allows("keystore_sign"))
+        assertFalse(policy.allows("ssh_exec"))
+        assertFalse(policy.allows("tap"))
+    }
 }

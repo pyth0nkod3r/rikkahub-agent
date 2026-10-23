@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.subagent
 
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
@@ -13,6 +14,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import kotlin.uuid.Uuid
 
 private fun errEnv(error: String, detail: String): List<UIMessagePart> {
     val obj = buildJsonObject {
@@ -24,6 +26,7 @@ private fun errEnv(error: String, detail: String): List<UIMessagePart> {
 
 internal fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject = buildJsonObject {
     put("id", run.id)
+    if (run.conversationId != null) put("conversation_id", run.conversationId)
     put("status", run.status.name)
     put("label", run.label)
     if (run.modelId != null) put("model_id", run.modelId)
@@ -41,13 +44,16 @@ internal fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject 
     put("tokens_in", run.tokensIn)
     put("tokens_out", run.tokensOut)
     put("trip_count", run.tripCount)
+    if (run.capabilities.isNotEmpty()) {
+        put("capabilities", buildJsonArray {
+            run.capabilities.forEach { add(it) }
+        })
+    }
 }
 
 /**
- * Phase 11 — sub-agent dispatch + observation tools. The four register only when the
- * assistant has the `Sub-agents` Local Tools toggle on, AND the calling conversation is
- * NOT itself headless (the engine refuses recursive dispatch — these tools are not
- * useful inside a sub-agent run).
+ * Phase 11 — sub-agent dispatch + observation tools. The tools register when the
+ * assistant has the `Sub-agents` Local Tools toggle on.
  */
 
 fun subagentDispatchTool(
@@ -153,15 +159,17 @@ fun subagentDispatchTool(
         },
         needsApproval = { true },
         execute = { args ->
-            // Hard recursion guard — refuse the dispatch if the caller is itself a headless
-            // run (cron / workflow / external-automation / another sub-agent). The engine's
-            // own guard relies on a registered conversation id; cron / workflow direct-mode
-            // paths have no conversation so the engine guard wouldn't fire there. Catch it here.
+            // Recursion guard — refuse the dispatch if the caller is itself a headless run
+            // UNLESS it has explicitly been granted the Recursive Sub-Agents ('subagent') capability.
             if (callerContext.isHeadless) {
-                return@Tool errEnv(
-                    "no_recursion",
-                    "sub-agent dispatch is not allowed from inside a headless run (cron / workflow / sub-agent / external automation). Run the work inline instead.",
-                )
+                val callerConvUuid = callerContext.callerConversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+                val permitsSubagent = SubAgentToolPolicies.permits(callerConvUuid, "subagent_dispatch")
+                if (!permitsSubagent) {
+                    return@Tool errEnv(
+                        "no_recursion",
+                        "sub-agent dispatch is not allowed from inside a headless run (cron / workflow / sub-agent / external automation) unless the Recursive Sub-Agents ('subagent') capability is granted.",
+                    )
+                }
             }
             val params = args.jsonObject
             val task = params["task"]?.jsonPrimitive?.contentOrNull
@@ -183,13 +191,6 @@ fun subagentDispatchTool(
                 capabilities = params["capabilities"]?.let { runCatching { it.jsonArray }.getOrNull() }
                     ?.mapNotNull { it.jsonPrimitive.contentOrNull },
             )
-            // The engine's recursion guard checks `HeadlessConversations.isHeadless(parentChatId)`
-            // — if the calling conversation is itself headless (cron / sub-agent / workflow /
-            // external-automation) we refuse the dispatch. ToolInvocationContext propagation
-            // (added 2026-05-07 stability pass) gives us the calling conversation id at tool-
-            // construction time. Empty fallback is a no-knowledge sentinel — engine treats it
-            // as "not in a headless run" which is correct for the legacy registration paths
-            // that don't yet wire context (one-off / test).
             val parentAssistantId = callerContext.callerAssistantId.orEmpty()
             val parentChatId: String? = callerContext.callerConversationId
             when (val res = engine.dispatch(parentAssistantId, parentChatId, request)) {
@@ -281,5 +282,74 @@ fun subagentCancelTool(registry: SubAgentRegistry): Tool = Tool(
             put("ok", cancelled)
             put("id", id)
         }.toString()))
+    },
+)
+
+fun subagentReinjectTool(
+    engine: SubAgentEngine,
+    callerContext: me.rerere.rikkahub.data.ai.tools.ToolInvocationContext =
+        me.rerere.rikkahub.data.ai.tools.ToolInvocationContext.EMPTY,
+): Tool = Tool(
+    name = "subagent_reinject",
+    description = """
+        Reinject a continuation prompt to a sub-agent that failed, timed out, was cancelled,
+        or needs follow-up work. The sub-agent retains its full conversation history, past tool
+        results, and workspace context, and resumes execution with your new prompt.
+
+        Pass `id` (the sub-agent run id) and `prompt` (guidance, corrective instructions, or
+        the next step). Set `run_in_background=true` for asynchronous execution.
+    """.trimIndent().replace("\n", " "),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("id", buildJsonObject {
+                    put("type", "string")
+                    put("description", "The id of the sub-agent run to reinject/resume.")
+                })
+                put("prompt", buildJsonObject {
+                    put("type", "string")
+                    put("description", "The new prompt or continuation instruction for the sub-agent.")
+                })
+                put("run_in_background", buildJsonObject {
+                    put("type", "boolean")
+                    put("description", "Whether to run asynchronously in the background. Defaults to previous setting.")
+                })
+                put("timeout_seconds", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Timeout in seconds for this continuation. Defaults to 300.")
+                })
+                put("capabilities", buildJsonObject {
+                    put("type", "array")
+                    put("items", buildJsonObject { put("type", "string") })
+                    put("description", "Optional extra capability suites to grant for this continuation.")
+                })
+            },
+            required = listOf("id", "prompt"),
+        )
+    },
+    needsApproval = { true },
+    execute = { args ->
+        val params = args.jsonObject
+        val id = params["id"]?.jsonPrimitive?.contentOrNull
+            ?: return@Tool errEnv("invalid_id", "id is required")
+        val prompt = params["prompt"]?.jsonPrimitive?.contentOrNull
+            ?: return@Tool errEnv("invalid_prompt", "prompt is required")
+        val runInBackground = params["run_in_background"]?.jsonPrimitive?.booleanOrNull
+        val timeoutSeconds = params["timeout_seconds"]?.jsonPrimitive?.intOrNull
+        val capabilities = params["capabilities"]?.let { runCatching { it.jsonArray }.getOrNull() }
+            ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+
+        when (val res = engine.reinject(
+            runId = id,
+            prompt = prompt,
+            additionalCapabilities = capabilities,
+            runInBackground = runInBackground,
+            timeoutSeconds = timeoutSeconds,
+        )) {
+            is SubAgentEngine.DispatchResult.Reject ->
+                errEnv(res.error, res.detail)
+            is SubAgentEngine.DispatchResult.Ok ->
+                listOf(UIMessagePart.Text(encodeRun(res.run).toString()))
+        }
     },
 )

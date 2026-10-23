@@ -25,6 +25,7 @@ import me.rerere.rikkahub.service.ChatService
 import kotlin.uuid.Uuid
 
 private const val TAG = "SubAgentEngine"
+private const val MAX_RECURSION_DEPTH = 3
 
 /**
  * Turn a wait-for-completion outcome into a stop decision, stopping the still-running
@@ -174,8 +175,7 @@ internal object SubAgentProfileResolver {
  * if [profile] is non-null and its `modelId` is set - otherwise this is a no-op, exactly
  * preserving the behavior before named sub-agent profiles when no agent was requested. Split
  * out as a pure function (same rationale as [finishSubAgentWait]) so the precedence rule is
- * unit-testable without a live
- * [SubAgentEngine].
+ * unit-testable without a live [SubAgentEngine].
  */
 internal fun resolveSubAgentModel(
     modelResolution: SubAgentModelResolver.Result,
@@ -194,12 +194,9 @@ internal fun resolveSubAgentModel(
  * re-implement [me.rerere.rikkahub.data.ai.GenerationHandler] — that path is already
  * battle-tested and any duplicate would diverge.
  *
- * Recursion guard: SubAgentEngine refuses to dispatch if the calling conversation is
- * itself headless (i.e. we're already inside a sub-agent / cron / external-automation
- * run). The four `subagent_*` tools are also not registered for headless conversations
- * via the standard tool gating in [me.rerere.rikkahub.data.ai.tools.LocalTools] — but the
- * engine-level check is the load-bearing guard since a misconfigured assistant could
- * still try to call us. v1: no recursion.
+ * Recursion guard: SubAgentEngine permits sub-agent recursion only when the calling
+ * conversation has been explicitly granted the `Recursive Sub-Agents` ("subagent")
+ * capability, capped at a maximum nesting depth of [MAX_RECURSION_DEPTH].
  *
  * Concurrency caps:
  *  - Per-assistant cap from [me.rerere.rikkahub.data.model.Assistant.maxConcurrentSubAgents]
@@ -218,36 +215,31 @@ class SubAgentEngine(
      * gone on restart. Writing each sub-agent run to the persistent ledger closes that gap:
      * a run left `running` when the process dies is flipped to `process_lost` by
      * [me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery] on next start, so the user
-     * (and `subagent_get`, via the ledger) can see what actually happened. No DI-cycle
-     * risk: AgentRunRepository depends only on its DAO.
+     * (and `subagent_get`, via the ledger) can see what actually happened.
      */
     private val agentRunRepo: AgentRunRepository,
 ) {
 
-    /**
-     * [ChatService] is resolved lazily via Koin to break the construction cycle:
-     *   - [ChatService] constructor takes [LocalTools]
-     *   - [LocalTools] constructor takes [SubAgentEngine] (so subagent_dispatch can fire)
-     *   - [SubAgentEngine] needs [ChatService] only at dispatch time (sendMessage), so
-     *     eager constructor injection here would close the cycle.
-     * Same lazy-Koin pattern as [me.rerere.rikkahub.workflow.execution.WorkflowEngine.localTools].
-     * Verified post-DI-fix 2026-05-08 — installed APK reaches MainActivity without crash.
-     */
     private val chatService: ChatService by lazy {
         org.koin.java.KoinJavaComponent.getKoin().get<ChatService>()
     }
 
-    /**
-     * Phase 24 — maps a sub-agent run id to its `agent_runs` ledger row id. Populated when
-     * the run is dispatched, consulted by [executeRun] / [markTerminal] when transitioning
-     * the ledger row, removed when the run reaches a terminal status. A run with no entry
-     * here simply skips the ledger write (best-effort — the ledger never breaks a run).
-     */
     private val ledgerIds = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     sealed class DispatchResult {
         data class Ok(val run: SubAgentRun) : DispatchResult()
         data class Reject(val error: String, val detail: String) : DispatchResult()
+    }
+
+    private fun getRecursionDepth(parentChatId: String): Int {
+        var depth = 1
+        var currParent: String? = parentChatId
+        while (currParent != null && depth < 10) {
+            val parentRun = registry.runs.value.values.firstOrNull { it.conversationId == currParent || it.id == currParent }
+            currParent = parentRun?.parentChatId
+            if (currParent != null) depth++
+        }
+        return depth
     }
 
     /**
@@ -260,15 +252,24 @@ class SubAgentEngine(
         parentChatId: String?,
         request: SubAgentRequest,
     ): DispatchResult = withContext(Dispatchers.Default) {
-        // Recursion guard: if the caller is in a headless context already (cron job /
-        // workflow / another sub-agent), reject. v1 does not allow nested sub-agents.
+        // Recursion guard: if the caller is in a headless context already, check Recursive Sub-Agents capability
         if (parentChatId != null) {
             val parentUuid = runCatching { Uuid.parse(parentChatId) }.getOrNull()
             if (parentUuid != null && HeadlessConversations.isHeadless(parentUuid)) {
-                return@withContext DispatchResult.Reject(
-                    "no_recursion",
-                    "sub-agent dispatch is not allowed from inside another headless run"
-                )
+                val permitsSubagent = SubAgentToolPolicies.permits(parentUuid, "subagent_dispatch")
+                if (!permitsSubagent) {
+                    return@withContext DispatchResult.Reject(
+                        "no_recursion",
+                        "sub-agent dispatch is not allowed from inside another headless run unless the Recursive Sub-Agents ('subagent') capability is granted."
+                    )
+                }
+                val depth = getRecursionDepth(parentChatId)
+                if (depth >= MAX_RECURSION_DEPTH) {
+                    return@withContext DispatchResult.Reject(
+                        "max_recursion_depth",
+                        "sub-agent reached max nesting depth of $MAX_RECURSION_DEPTH"
+                    )
+                }
             }
         }
         val validation = SubAgentRequestValidator.validate(request)
@@ -293,9 +294,11 @@ class SubAgentEngine(
         }
 
         val runId = Uuid.random().toString()
+        val convId = Uuid.random()
         val now = System.currentTimeMillis()
         val initialRun = SubAgentRun(
             id = runId,
+            conversationId = convId.toString(),
             parentChatId = parentChatId,
             parentAssistantId = parentAssistantId,
             label = cleaned.label?.takeIf { it.isNotBlank() } ?: cleaned.task.take(60),
@@ -308,13 +311,11 @@ class SubAgentEngine(
             maxTrips = cleaned.maxTrips,
             status = SubAgentStatus.PENDING,
             startedAtMs = now,
+            capabilities = cleaned.capabilities.orEmpty(),
         )
         registry.addPending(initialRun)
 
         // Phase 24 — open the cross-pillar ledger row. domain_id is the sub-agent run id.
-        // The row starts in `queued` (the execution coroutine hasn't been launched yet);
-        // executeRun() flips it to `running`. If the process dies before then, boot
-        // recovery flips the stranded `queued` row to `process_lost`.
         val ledgerId = agentRunRepo.open(
             kind = AgentRunKind.SubAgent,
             domainId = runId,
@@ -324,12 +325,13 @@ class SubAgentEngine(
                 put("label", initialRun.label)
                 put("parent_assistant_id", parentAssistantId)
                 put("run_in_background", cleaned.runInBackground)
+                put("conversation_id", convId.toString())
             },
         )
         ledgerIds[runId] = ledgerId
 
         val executionJob = appScope.launch(Dispatchers.IO) {
-            executeRun(runId, parentAssistantId, parentChatId, cleaned)
+            executeRun(runId, convId, parentAssistantId, parentChatId, cleaned)
         }
         registry.setJob(runId, executionJob)
 
@@ -360,6 +362,7 @@ class SubAgentEngine(
 
     private suspend fun executeRun(
         runId: String,
+        convId: Uuid,
         parentAssistantId: String,
         parentChatId: String?,
         request: SubAgentRequest,
@@ -373,9 +376,6 @@ class SubAgentEngine(
                 return
             }
         val settings = settingsStore.settingsFlow.first()
-        // #36: resolve `agent` before `model_id` so model_id's own resolution can
-        // fall back to the profile's model when model_id is absent - `model_id` still wins
-        // when both are given (see SubAgentTools' parameter description).
         val profileResolution = SubAgentProfileResolver.resolve(request.agentName, settings.subAgents)
         val profile = when (profileResolution) {
             is SubAgentProfileResolver.Result.NotRequested -> null
@@ -397,14 +397,11 @@ class SubAgentEngine(
                 return
             }
         }
-        // Sub-agent system prompt: explicit request system prompt wins, then profile system prompt,
-        // then the default restricted sub-agent prompt. Plumbed directly into customSystemPrompt
-        // so the sub-agent never inherits the parent assistant's full-privilege system prompt.
         val subAgentSystemPrompt = request.systemPrompt?.trim()?.takeIf { it.isNotEmpty() }
             ?: profile?.systemPrompt?.trim()?.takeIf { it.isNotEmpty() }
             ?: DEFAULT_SUBAGENT_SYSTEM_PROMPT
         val conv = Conversation.ofId(
-            id = Uuid.random(),
+            id = convId,
             assistantId = parentAsstUuid,
             newConversation = true,
         ).copy(
@@ -412,9 +409,6 @@ class SubAgentEngine(
             chatModelId = resolvedChatModelId,
             customSystemPrompt = subAgentSystemPrompt,
         )
-        // Restricted catalog: a sub-agent sees only workspace_ tools plus the explicit role
-        // tools and opt-in capabilities from the dispatch and the profile. Unknown capability
-        // names fail the run rather than being dropped.
         val toolPolicy = when (val built = buildSubAgentToolPolicy(
             roleTools = request.tools.orEmpty() + profile?.tools.orEmpty(),
             capabilities = request.capabilities.orEmpty() + profile?.capabilities.orEmpty(),
@@ -428,12 +422,7 @@ class SubAgentEngine(
         conversationRepo.insertConversation(conv)
         chatService.initializeConversation(conv.id)
         HeadlessConversations.mark(conv.id)
-        // Policy is registered inside the try block below so the finally always unregisters it.
         try {
-            // Prepend a wrap-up instruction. Some models naturally write a summary paragraph
-            // after their tool-call sequence; others stop after the last tool result and emit
-            // no closing text. Without explicit text the parent has nothing to harvest and
-            // the sub-agent's findings are lost.
             val taskWithWrapup = buildString {
                 append(request.task)
                 appendLine()
@@ -447,8 +436,6 @@ class SubAgentEngine(
                 content = listOf(UIMessagePart.Text(taskWithWrapup)),
                 reply = reply,
             )
-            // Wait for completion via the enqueued reply deferred so the policy stays registered
-            // for the full lifetime of the multi-step generation turn.
             val waitResult: String? = withTimeoutOrNull(request.timeoutSeconds * 1000L) {
                 runCatching { reply.await() }.getOrNull()
             }
@@ -462,10 +449,6 @@ class SubAgentEngine(
                 notifyParentIfBackground(parentChatId, registry.get(runId))
                 return
             }
-            // Harvest the assistant's final text from the conversation. Best-effort —
-            // we read the latest persisted state of the conversation and concatenate any
-            // text parts from the last assistant message. This mirrors how the
-            // CronJobWorker treats LLM-mode jobs.
             val finalText = waitResult?.takeIf { it.isNotBlank() } ?: harvestFinalText(conv.id)
             registry.update(runId) {
                 it.copy(
@@ -480,13 +463,160 @@ class SubAgentEngine(
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } catch (t: Throwable) {
             Log.w(TAG, "sub-agent run failed", t)
-            // CancellationException → CANCELLED, anything else → FAILED.
             val terminal = if (t is kotlinx.coroutines.CancellationException) SubAgentStatus.CANCELLED else SubAgentStatus.FAILED
             markTerminal(runId, terminal, "${t::class.simpleName}: ${t.message.orEmpty()}")
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } finally {
             SubAgentToolPolicies.unregister(conv.id)
             HeadlessConversations.unmark(conv.id)
+            registry.clearJob(runId)
+        }
+    }
+
+    /**
+     * Reinject a prompt into an existing sub-agent run that died, failed, timed out, or was
+     * cancelled, allowing it to continue with its full prior context, tool call history, and findings.
+     */
+    suspend fun reinject(
+        runId: String,
+        prompt: String,
+        additionalCapabilities: List<String>? = null,
+        runInBackground: Boolean? = null,
+        timeoutSeconds: Int? = null,
+    ): DispatchResult = withContext(Dispatchers.Default) {
+        val existingRun = registry.get(runId)
+            ?: return@withContext DispatchResult.Reject(
+                "unknown_run",
+                "no sub-agent run with id $runId found in active registry"
+            )
+
+        val convIdStr = existingRun.conversationId
+            ?: return@withContext DispatchResult.Reject(
+                "no_conversation",
+                "run $runId has no associated conversation to continue"
+            )
+
+        val convUuid = runCatching { Uuid.parse(convIdStr) }.getOrNull()
+            ?: return@withContext DispatchResult.Reject(
+                "invalid_conversation_id",
+                "conversation id $convIdStr is invalid"
+            )
+
+        conversationRepo.getConversationById(convUuid)
+            ?: return@withContext DispatchResult.Reject(
+                "conversation_not_found",
+                "conversation $convIdStr was not found in storage"
+            )
+
+        // Cancel previous job if still hanging
+        if (existingRun.status == SubAgentStatus.RUNNING) {
+            registry.requestCancel(runId)
+        }
+
+        val isBackground = runInBackground ?: existingRun.runInBackground
+        val timeout = timeoutSeconds ?: existingRun.timeoutSeconds
+        val effectiveCaps = (existingRun.capabilities + (additionalCapabilities.orEmpty())).distinct()
+
+        val toolPolicy = when (val built = buildSubAgentToolPolicy(
+            roleTools = existingRun.tools.orEmpty(),
+            capabilities = effectiveCaps,
+        )) {
+            is SubAgentPolicyBuild.Ok -> built.policy
+            is SubAgentPolicyBuild.UnknownCapability -> {
+                return@withContext DispatchResult.Reject(
+                    "unknown_capability",
+                    "unknown capability: ${built.names.joinToString()}"
+                )
+            }
+        }
+
+        registry.update(runId) {
+            it.copy(
+                status = SubAgentStatus.RUNNING,
+                error = null,
+                result = null,
+                finishedAtMs = null,
+                startedAtMs = System.currentTimeMillis(),
+                runInBackground = isBackground,
+                timeoutSeconds = timeout,
+                capabilities = effectiveCaps,
+            )
+        }
+        ledgerIds[runId]?.let { agentRunRepo.setStatus(it, AgentRunStatus.running) }
+
+        val executionJob = appScope.launch(Dispatchers.IO) {
+            executeReinject(runId, convUuid, existingRun.parentChatId, prompt, timeout, toolPolicy)
+        }
+        registry.setJob(runId, executionJob)
+
+        if (isBackground) {
+            DispatchResult.Ok(registry.get(runId) ?: existingRun)
+        } else {
+            try {
+                executionJob.join()
+            } catch (t: Throwable) {
+                Log.w(TAG, "reinject sub-agent join failed for $runId", t)
+            }
+            DispatchResult.Ok(registry.get(runId) ?: existingRun)
+        }
+    }
+
+    private suspend fun executeReinject(
+        runId: String,
+        convId: Uuid,
+        parentChatId: String?,
+        prompt: String,
+        timeoutSeconds: Int,
+        toolPolicy: SubAgentToolPolicy,
+    ) {
+        HeadlessConversations.mark(convId)
+        try {
+            val promptWithWrapup = buildString {
+                append(prompt)
+                appendLine()
+                appendLine()
+                append("When you have finished, end with one short paragraph in plain text that summarises what you did and what you found. Do NOT stop on a tool call — finish with assistant text. The dispatcher harvests only your final text reply, so this paragraph is the entire response the parent sees.")
+            }
+            SubAgentToolPolicies.register(convId, toolPolicy)
+            val reply = CompletableDeferred<String?>()
+            chatService.sendMessage(
+                conversationId = convId,
+                content = listOf(UIMessagePart.Text(promptWithWrapup)),
+                reply = reply,
+            )
+            val waitResult: String? = withTimeoutOrNull(timeoutSeconds * 1000L) {
+                runCatching { reply.await() }.getOrNull()
+            }
+            val completed = waitResult != null || reply.isCompleted
+            val timedOut = finishSubAgentWait(completed = completed) {
+                runCatching { chatService.stopGeneration(convId) }
+                    .onFailure { Log.w(TAG, "sub-agent reinject timeout: stopGeneration failed for $runId", it) }
+            }
+            if (timedOut) {
+                markTerminal(runId, SubAgentStatus.TIMED_OUT, "exceeded $timeoutSeconds-second cap on reinject")
+                notifyParentIfBackground(parentChatId, registry.get(runId))
+                return
+            }
+            val finalText = waitResult?.takeIf { it.isNotBlank() } ?: harvestFinalText(convId)
+            registry.update(runId) {
+                it.copy(
+                    status = SubAgentStatus.SUCCEEDED,
+                    result = finalText,
+                    finishedAtMs = System.currentTimeMillis(),
+                )
+            }
+            ledgerIds.remove(runId)?.let {
+                agentRunRepo.markTerminal(it, AgentRunStatus.succeeded)
+            }
+            notifyParentIfBackground(parentChatId, registry.get(runId))
+        } catch (t: Throwable) {
+            Log.w(TAG, "sub-agent reinject failed", t)
+            val terminal = if (t is kotlinx.coroutines.CancellationException) SubAgentStatus.CANCELLED else SubAgentStatus.FAILED
+            markTerminal(runId, terminal, "${t::class.simpleName}: ${t.message.orEmpty()}")
+            notifyParentIfBackground(parentChatId, registry.get(runId))
+        } finally {
+            SubAgentToolPolicies.unregister(convId)
+            HeadlessConversations.unmark(convId)
             registry.clearJob(runId)
         }
     }
@@ -499,9 +629,6 @@ class SubAgentEngine(
                 finishedAtMs = System.currentTimeMillis(),
             )
         }
-        // Phase 24 — mirror the terminal status into the cross-pillar ledger. TIMED_OUT and
-        // FAILED both map to `failed`; CANCELLED maps to `cancelled`. (SUCCEEDED never
-        // routes through here — it transitions the ledger row inline in executeRun.)
         ledgerIds.remove(runId)?.let { ledgerId ->
             val ledgerStatus = when (status) {
                 SubAgentStatus.CANCELLED -> AgentRunStatus.cancelled
@@ -512,24 +639,6 @@ class SubAgentEngine(
         }
     }
 
-    /**
-     * Wake the parent conversation when a backgrounded sub-agent finishes — the parent's
-     * LLM gets a synthetic user message describing the completion and naturally synthesises
-     * a reply. Without this, the parent has no way to know the sub-agent finished except by
-     * the user manually asking "what happened?".
-     *
-     * Skip rules:
-     *  - Foreground runs: dispatch is synchronous (executionJob.join() in dispatch()), so the
-     *    tool result already carries the final state. No wake needed.
-     *  - Parents in headless mode: would loop / fork weirdly with cron + sub-agent + workflow
-     *    runs. The parent must be a regular interactive (in-app or Telegram-bot) conversation.
-     *  - parentChatId / runs missing: defensive.
-     *
-     * Cancellation hygiene: ChatService.sendMessage cancels any in-flight generation in the
-     * target conversation. To avoid stomping on a turn the user is engaged with, we wait up
-     * to 5 minutes for the parent to be idle before posting. After 5 minutes we post anyway
-     * — better to interrupt than to silently lose the completion.
-     */
     private suspend fun notifyParentIfBackground(parentChatId: String?, run: SubAgentRun?) {
         if (parentChatId == null || run == null || !run.runInBackground) return
         val parentUuid = runCatching { Uuid.parse(parentChatId) }.getOrNull() ?: return
@@ -537,6 +646,7 @@ class SubAgentEngine(
 
         val message = buildString {
             appendLine("[Sub-agent ${run.label} — ${run.status.name}]")
+            appendLine("Run ID: ${run.id}")
             run.error?.takeIf { it.isNotBlank() }?.let {
                 appendLine("Error: $it")
             }
@@ -545,6 +655,10 @@ class SubAgentEngine(
                     appendLine()
                     append(it)
                 }
+            }
+            if (run.status != SubAgentStatus.SUCCEEDED) {
+                appendLine()
+                append("To continue or resume this sub-agent, call subagent_reinject(id=\"${run.id}\", prompt=\"...\").")
             }
         }.trimEnd()
 
@@ -560,17 +674,6 @@ class SubAgentEngine(
     }
 
     private suspend fun harvestFinalText(conversationId: Uuid): String {
-        // The Conversation persisted by the generation pipeline contains the full message
-        // history (messageNodes). Each MessageNode holds parallel branches in
-        // `messages: List<UIMessage>` keyed by `selectIndex`. Walk the currently-selected
-        // branch and pull text from the last assistant message — that's the sub-agent's
-        // final summary.
-        //
-        // Robustness: if the last assistant message has NO Text part (some models stop
-        // after a tool call and emit no closing text), walk back through previous assistant
-        // messages and concatenate their Text parts so we don't return empty. Better to
-        // surface partial intermediate text than to return "" and lose the sub-agent's
-        // work entirely.
         return runCatching {
             val conv = conversationRepo.getConversationById(conversationId) ?: return@runCatching ""
             val selectedMessages = conv.messageNodes.mapNotNull { node ->
@@ -581,14 +684,12 @@ class SubAgentEngine(
             }
             if (assistantMessages.isEmpty()) return@runCatching ""
 
-            // Try the last assistant message's text first.
             val lastTexts = assistantMessages.last().parts
                 .filterIsInstance<UIMessagePart.Text>()
                 .joinToString("\n") { it.text }
                 .trim()
             if (lastTexts.isNotBlank()) return@runCatching lastTexts
 
-            // Fallback: collect text from all assistant messages (preserve order).
             assistantMessages
                 .flatMap { it.parts.filterIsInstance<UIMessagePart.Text>() }
                 .joinToString("\n") { it.text }

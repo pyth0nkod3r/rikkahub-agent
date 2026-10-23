@@ -1,7 +1,12 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -263,7 +268,8 @@ private fun SubAgentProfileCard(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             profile.capabilities.forEach { cap ->
-                                Tag(type = TagType.INFO) { Text(cap) }
+                                val capTitle = SubAgentCapability.fromWire(cap)?.displayName ?: cap
+                                Tag(type = TagType.INFO) { Text(capTitle) }
                             }
                             profile.tools.forEach { tool ->
                                 Tag(type = TagType.DEFAULT) { Text(tool) }
@@ -403,24 +409,77 @@ private fun SubAgentProfileEditSheet(
                     label = { Text(stringResource(R.string.setting_sub_agents_page_capabilities)) },
                     description = { Text(stringResource(R.string.setting_sub_agents_page_capabilities_desc)) },
                     content = {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            SubAgentCapability.entries.forEach { cap ->
-                                val selected = profile.capabilities.contains(cap.wire)
-                                FilterChip(
-                                    selected = selected,
-                                    onClick = {
-                                        val newCaps = if (selected) {
-                                            profile.capabilities - cap.wire
-                                        } else {
-                                            profile.capabilities + cap.wire
+                            SubAgentCapability.entries.chunked(2).forEach { rowCaps ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    rowCaps.forEach { cap ->
+                                        val selected = profile.capabilities.contains(cap.wire)
+                                        Card(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable {
+                                                    val newCaps = if (selected) {
+                                                        profile.capabilities - cap.wire
+                                                    } else {
+                                                        profile.capabilities + cap.wire
+                                                    }
+                                                    onEdit(profile.copy(capabilities = newCaps))
+                                                },
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (selected) {
+                                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                                                } else {
+                                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                                },
+                                            ),
+                                            border = if (selected) {
+                                                BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                                            } else {
+                                                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                                            },
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                            ) {
+                                                Text(
+                                                    text = cap.displayName,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Medium,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .padding(end = 6.dp),
+                                                    maxLines = 3,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                                Switch(
+                                                    checked = selected,
+                                                    onCheckedChange = { isChecked ->
+                                                        val newCaps = if (isChecked) {
+                                                            profile.capabilities + cap.wire
+                                                        } else {
+                                                            profile.capabilities - cap.wire
+                                                        }
+                                                        onEdit(profile.copy(capabilities = newCaps))
+                                                    },
+                                                )
+                                            }
                                         }
-                                        onEdit(profile.copy(capabilities = newCaps))
-                                    },
-                                    label = { Text(cap.wire) },
-                                )
+                                    }
+                                    if (rowCaps.size == 1) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
                             }
                         }
                     },

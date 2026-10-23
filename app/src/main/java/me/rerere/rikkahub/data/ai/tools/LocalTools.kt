@@ -776,6 +776,63 @@ class LocalTools(
         options: List<LocalToolOption>,
         invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
     ): List<Tool> {
+        val callerUuid = runCatching {
+            invocationContext.callerConversationId?.takeIf { it.isNotBlank() }?.let { kotlin.uuid.Uuid.parse(it) }
+        }.getOrNull()
+        val isSubAgent = me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(callerUuid)
+        val options = if (isSubAgent) {
+            (options + listOf(
+                LocalToolOption.Browser,
+                LocalToolOption.Ssh,
+                LocalToolOption.Keystore,
+                LocalToolOption.CronJobs,
+                LocalToolOption.Workflows,
+                LocalToolOption.SubAgents,
+                LocalToolOption.SystemIntents,
+                LocalToolOption.Battery,
+                LocalToolOption.AudioInfo,
+                LocalToolOption.TelephonyInfo,
+                LocalToolOption.WifiInfo,
+                LocalToolOption.Sensors,
+                LocalToolOption.StorageInfo,
+                LocalToolOption.Toast,
+                LocalToolOption.Notification,
+                LocalToolOption.Share,
+                LocalToolOption.Torch,
+                LocalToolOption.Vibrate,
+                LocalToolOption.Brightness,
+                LocalToolOption.Volume,
+                LocalToolOption.MediaPlayer,
+                LocalToolOption.MediaScanner,
+                LocalToolOption.Download,
+                LocalToolOption.Location,
+                LocalToolOption.Contacts,
+                LocalToolOption.CallLog,
+                LocalToolOption.SmsInbox,
+                LocalToolOption.CameraPhoto,
+                LocalToolOption.MicRecorder,
+                LocalToolOption.SpeechToText,
+                LocalToolOption.Fingerprint,
+                LocalToolOption.Shizuku,
+                LocalToolOption.ScreenAutomation,
+                LocalToolOption.AppLauncher,
+                LocalToolOption.Termux,
+                LocalToolOption.NotificationListener,
+                LocalToolOption.Files,
+                LocalToolOption.ExternalAutomation,
+                LocalToolOption.Reliability,
+                LocalToolOption.CostGuards,
+                LocalToolOption.SmsSend,
+                LocalToolOption.Wallpaper,
+                LocalToolOption.Nfc,
+                LocalToolOption.ExternalStorage,
+                LocalToolOption.Archive,
+                LocalToolOption.KeyboardControl,
+                LocalToolOption.ChartDisplay,
+            )).distinct()
+        } else {
+            options
+        }
         val tools = mutableListOf<Tool>()
         tools.add(createProposePlanTool(invocationContext))
         if (options.contains(LocalToolOption.JavascriptEngine)) {
@@ -1017,6 +1074,7 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.subagent.subagentListTool(subAgentRegistry))
             tools.add(me.rerere.rikkahub.subagent.subagentGetTool(subAgentRegistry))
             tools.add(me.rerere.rikkahub.subagent.subagentCancelTool(subAgentRegistry))
+            tools.add(me.rerere.rikkahub.subagent.subagentReinjectTool(subAgentEngine, invocationContext))
         }
         if (options.contains(LocalToolOption.CostGuards)) {
             tools.add(me.rerere.rikkahub.costguards.checkTokenUsageTool(settingsStore, conversationRepo))
@@ -1065,7 +1123,7 @@ class LocalTools(
             // DataStore caches the latest Preferences instance after the first decode.
             val browserPrefs = browserPreferences.snapshotBlocking()
             me.rerere.rikkahub.browser.BrowserToolDefaults.ALL_TOOLS.forEach { name ->
-                if (browserPrefs[name] == true) {
+                if (isSubAgent || browserPrefs[name] == true) {
                     me.rerere.rikkahub.data.ai.tools.local.createBrowserTool(
                         toolName = name,
                         context = context,
@@ -1078,7 +1136,7 @@ class LocalTools(
         }
         // web_fetch/web_extract are always-on unless disabled in Search settings, no
         // per-assistant toggle.
-        if (settingsStore.settingsFlow.value.enableWebFetchTools) {
+        if (settingsStore.settingsFlow.value.enableWebFetchTools || isSubAgent) {
             tools.add(webFetchTool(okHttpClient))
             tools.add(webExtractTool(okHttpClient))
         }
@@ -1130,13 +1188,18 @@ class LocalTools(
         // Centralised opt-in to needsApproval. Tool factories themselves don't have to know
         // whether their op is destructive — ToolApprovalDefaults is the single source of
         // truth, and the GenerationHandler / Telegram/in-app prompt path keys off needsApproval.
-        return tools.map { t ->
+        val mappedTools = tools.map { t ->
             val withApproval = if (ToolApprovalDefaults.requiresApproval(t.name)) {
                 t.copy(needsApproval = { true })
             } else {
                 t
             }
             addHumanErrorEnvelopes(appendTopToolExample(withApproval))
+        }
+        return if (isSubAgent) {
+            me.rerere.rikkahub.subagent.SubAgentToolPolicies.filter(callerUuid, mappedTools) { it.name }
+        } else {
+            mappedTools
         }
     }
 }

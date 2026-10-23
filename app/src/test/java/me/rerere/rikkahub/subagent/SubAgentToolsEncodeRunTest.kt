@@ -50,4 +50,14 @@ class SubAgentToolsEncodeRunTest {
         assertFalse(json.containsKey("result"))
         assertFalse(json.containsKey("result_suppressed"))
     }
+
+    @Test fun `conversation_id and capabilities encoded when present`() {
+        val run = makeRun().copy(
+            conversationId = "conv-123",
+            capabilities = listOf("browser", "search"),
+        )
+        val json = encodeRun(run)
+        assertEquals("conv-123", json["conversation_id"]?.toString()?.trim('"'))
+        assertTrue(json.containsKey("capabilities"))
+    }
 }
