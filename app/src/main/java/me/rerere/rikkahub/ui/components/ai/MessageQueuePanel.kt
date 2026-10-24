@@ -42,6 +42,7 @@ internal fun MessageQueuePanel(
     onBeginEdit: (Uuid) -> QueuedMessage?,
     onFinishEdit: (Uuid, List<UIMessagePart>?) -> Unit,
     onResume: () -> Unit,
+    onSteer: (Uuid) -> Unit = {},
 ) {
     var editing by remember { mutableStateOf<QueuedMessage?>(null) }
     if (state.messages.isNotEmpty()) {
@@ -100,6 +101,10 @@ internal fun MessageQueuePanel(
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                            TextButton(
+                                enabled = !message.isEditing,
+                                onClick = { onSteer(message.id) },
+                            ) { Text(stringResource(R.string.chat_page_queue_steer)) }
                             TextButton(
                                 enabled = !message.isEditing,
                                 onClick = { editing = onBeginEdit(message.id) },

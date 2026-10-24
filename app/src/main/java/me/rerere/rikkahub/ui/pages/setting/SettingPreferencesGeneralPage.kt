@@ -32,6 +32,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.DisplaySetting
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.draw.clip
+import me.rerere.rikkahub.data.datastore.SteeringMode
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.hooks.rememberSharedPreferenceBoolean
@@ -44,6 +53,7 @@ import kotlin.math.roundToInt
 fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
+    var showSteeringModeDialog by remember { mutableStateOf(false) }
     var ttsPlaybackSpeed by remember(settings.defaultTTSPlaybackSpeed) {
         mutableFloatStateOf(settings.defaultTTSPlaybackSpeed)
     }
@@ -104,6 +114,17 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                                     updateDisplaySetting(displaySetting.copy(sendOnEnter = it))
                                 }
                             )
+                        },
+                    )
+                    item(
+                        onClick = { showSteeringModeDialog = true },
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_steering_mode_title)) },
+                        supportingContent = {
+                            val modeText = when (displaySetting.steeringMode) {
+                                SteeringMode.QUEUE -> stringResource(R.string.steering_mode_queue)
+                                SteeringMode.SEND_IMMEDIATELY -> stringResource(R.string.steering_mode_send_immediately)
+                            }
+                            Text(modeText)
                         },
                     )
                     item(
@@ -348,6 +369,72 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                 }
             }
         }
+    }
+
+    if (showSteeringModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showSteeringModeDialog = false },
+            title = { Text(stringResource(R.string.setting_display_page_steering_mode_title)) },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.setting_display_page_steering_mode_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    SteeringMode.entries.forEach { mode ->
+                        val (titleRes, descRes) = when (mode) {
+                            SteeringMode.QUEUE -> Pair(
+                                R.string.steering_mode_queue,
+                                R.string.steering_mode_queue_desc
+                            )
+                            SteeringMode.SEND_IMMEDIATELY -> Pair(
+                                R.string.steering_mode_send_immediately,
+                                R.string.steering_mode_send_immediately_desc
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    updateDisplaySetting(displaySetting.copy(steeringMode = mode))
+                                    showSteeringModeDialog = false
+                                }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = displaySetting.steeringMode == mode,
+                                onClick = {
+                                    updateDisplaySetting(displaySetting.copy(steeringMode = mode))
+                                    showSteeringModeDialog = false
+                                },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = stringResource(titleRes),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                Text(
+                                    text = stringResource(descRes),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSteeringModeDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
     }
 }
 

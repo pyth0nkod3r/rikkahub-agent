@@ -827,6 +827,103 @@ class ChatService(
         }
     }
 
+    /**
+     * Steer the conversation immediately:
+     * If a generation job is actively running, cancel it gracefully so partial assistant text
+     * and completed tool executions are preserved up to this moment. Then immediately dispatch
+     * this new user prompt to redirect the ongoing conversation.
+     */
+    fun steerMessage(
+        conversationId: Uuid,
+        content: List<UIMessagePart>,
+        answer: Boolean = true,
+        reply: CompletableDeferred<String?>? = null,
+    ) {
+        if (content.isEmptyInputMessage()) {
+            reply?.complete(null)
+            return
+        }
+        val session = getOrCreateSession(conversationId)
+        appScope.launch {
+            // Cancel active generation job(s) and wait for coroutine completion & persistence
+            val jobs = synchronized(session) {
+                session.cancelJobs()
+            }
+            jobs.forEach { it.join() }
+
+            // Ensure any pending tools from the interrupted turn are marked cancelled
+            val convMutex = mutexFor(conversationId)
+            convMutex.withLock {
+                ensureHydrated(conversationId)
+                val currentConversation = getConversationFlow(conversationId).value
+                var changed = false
+                val updatedNodes = currentConversation.messageNodes.map { node ->
+                    node.copy(
+                        messages = node.messages.map { msg ->
+                            val updated = msg.finishPendingTools(::cancelToolByUser)
+                            if (updated !== msg) changed = true
+                            updated
+                        }
+                    )
+                }
+                if (changed) {
+                    val updatedConversation = currentConversation.copy(messageNodes = updatedNodes)
+                    saveConversation(conversationId, updatedConversation)
+                }
+            }
+
+            // Unpause the message queue and immediately dispatch the steering prompt
+            session.messageQueue.resume()
+            val queued = QueuedMessage(
+                parts = content.toList(),
+                answer = answer,
+                reply = reply,
+            )
+            session.submittingMessage = queued
+            sendQueuedMessage(session, queued)
+        }
+    }
+
+    /**
+     * Steer the conversation using an already queued message:
+     * Removes the message from the queue, halts the active generation, and executes it immediately.
+     */
+    fun steerQueuedMessage(conversationId: Uuid, messageId: Uuid) {
+        val session = sessions[conversationId] ?: return
+        val queued = session.messageQueue.remove(messageId) ?: return
+        cleanupQueuedAttachments(queued)
+        appScope.launch {
+            val jobs = synchronized(session) {
+                session.cancelJobs()
+            }
+            jobs.forEach { it.join() }
+
+            val convMutex = mutexFor(conversationId)
+            convMutex.withLock {
+                ensureHydrated(conversationId)
+                val currentConversation = getConversationFlow(conversationId).value
+                var changed = false
+                val updatedNodes = currentConversation.messageNodes.map { node ->
+                    node.copy(
+                        messages = node.messages.map { msg ->
+                            val updated = msg.finishPendingTools(::cancelToolByUser)
+                            if (updated !== msg) changed = true
+                            updated
+                        }
+                    )
+                }
+                if (changed) {
+                    val updatedConversation = currentConversation.copy(messageNodes = updatedNodes)
+                    saveConversation(conversationId, updatedConversation)
+                }
+            }
+
+            session.messageQueue.resume()
+            session.submittingMessage = queued
+            sendQueuedMessage(session, queued)
+        }
+    }
+
     /** Enqueue immediately; the result belongs to this item even after edits or later turns. */
     fun enqueueVoiceMessage(conversationId: Uuid, text: String): Deferred<String?> {
         val session = getOrCreateSession(conversationId)

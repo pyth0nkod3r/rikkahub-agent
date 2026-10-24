@@ -351,6 +351,7 @@ private fun ChatPageContent(
                     onBeginEditQueuedMessage = vm::beginEditQueuedMessage,
                     onFinishEditQueuedMessage = vm::finishEditQueuedMessage,
                     onResumeMessageQueue = vm::resumeMessageQueue,
+                    onSteerQueuedMessage = vm::steerQueuedMessage,
                     loading = loadingJob != null,
                     settings = setting,
                     hazeState = hazeState,
@@ -434,6 +435,58 @@ private fun ChatPageContent(
                             }
 
                             vm.handleMessageSend(finalContents)
+                            scope.launch {
+                                delay(100.milliseconds)
+                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                            }
+                        }
+                        inputState.clearInput()
+                    },
+                    onSteerClick = {
+                        if (currentChatModel == null) {
+                            toaster.show(
+                                context.getString(R.string.chat_select_model_first),
+                                type = ToastType.Error,
+                            )
+                            return@ChatInput
+                        }
+                        if (inputState.isEditing()) {
+                            vm.handleMessageEdit(
+                                parts = inputState.getContents(),
+                                messageId = inputState.editingMessage!!,
+                            )
+                        } else {
+                            val contents = inputState.getContents()
+                            val textPart = contents.firstOrNull() as? UIMessagePart.Text
+                            val rawText = textPart?.text?.trim().orEmpty()
+
+                            // Check slash commands
+                            if (contents.size == 1 && textPart != null && rawText.equals("/plan", ignoreCase = true)) {
+                                ConversationAgentMode.set(conversation.id, AgentMode.PLAN)
+                                toaster.show("Switched to Plan mode", type = ToastType.Success)
+                                inputState.clearInput()
+                                return@ChatInput
+                            }
+                            if (contents.size == 1 && textPart != null && rawText.equals("/build", ignoreCase = true)) {
+                                ConversationAgentMode.set(conversation.id, AgentMode.BUILD)
+                                toaster.show("Switched to Build mode", type = ToastType.Success)
+                                inputState.clearInput()
+                                return@ChatInput
+                            }
+
+                            val finalContents = if (textPart != null && rawText.startsWith("/plan ", ignoreCase = true)) {
+                                ConversationAgentMode.set(conversation.id, AgentMode.PLAN)
+                                toaster.show("Switched to Plan mode", type = ToastType.Success)
+                                listOf(UIMessagePart.Text(rawText.removePrefix("/plan ").trim())) + contents.drop(1)
+                            } else if (textPart != null && rawText.startsWith("/build ", ignoreCase = true)) {
+                                ConversationAgentMode.set(conversation.id, AgentMode.BUILD)
+                                toaster.show("Switched to Build mode", type = ToastType.Success)
+                                listOf(UIMessagePart.Text(rawText.removePrefix("/build ").trim())) + contents.drop(1)
+                            } else {
+                                contents
+                            }
+
+                            vm.handleMessageSteer(finalContents)
                             scope.launch {
                                 delay(100.milliseconds)
                                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)

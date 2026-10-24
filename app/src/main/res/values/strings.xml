@@ -711,6 +711,15 @@
   <string name="setting_display_page_paste_long_text_threshold_title">Text Length Threshold</string>
   <string name="setting_display_page_send_on_enter_desc">Press Enter to send message instead of adding a new line</string>
   <string name="setting_display_page_send_on_enter_title">Send on Enter</string>
+  <string name="setting_display_page_steering_mode_title">Conversation Steering</string>
+  <string name="setting_display_page_steering_mode_desc">Behavior when sending a message while generation is in progress</string>
+  <string name="steering_mode_queue">Queue</string>
+  <string name="steering_mode_queue_desc">Buffer message in queue to run after active turn finishes</string>
+  <string name="steering_mode_send_immediately">Send Immediately (Steer)</string>
+  <string name="steering_mode_send_immediately_desc">Interrupt active generation and immediately steer the agent</string>
+  <string name="chat_input_steer">Steer</string>
+  <string name="chat_input_queue">Queue</string>
+  <string name="chat_page_queue_steer">Steer</string>
   <string name="setting_display_page_show_assistant_bubble_desc">Whether to show bubble background for assistant messages</string>
   <string name="setting_display_page_show_assistant_bubble_title">Show Assistant Message Bubble</string>
   <string name="setting_display_page_show_datetime_in_message_desc">Show date and time below each message</string>

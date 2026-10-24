@@ -136,11 +136,13 @@ fun ChatInput(
     onCancelClick: () -> Unit,
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
+    onSteerClick: () -> Unit = {},
     messageQueue: MessageQueueState = MessageQueueState(),
     onRemoveQueuedMessage: (Uuid) -> Unit = {},
     onBeginEditQueuedMessage: (Uuid) -> QueuedMessage? = { null },
     onFinishEditQueuedMessage: (Uuid, List<UIMessagePart>?) -> Unit = { _, _ -> },
     onResumeMessageQueue: () -> Unit = {},
+    onSteerQueuedMessage: (Uuid) -> Unit = {},
     onStartVoiceMode: (() -> Unit)? = null,
     voiceState: VoiceSessionState = VoiceSessionState(),
     onStopVoiceMode: () -> Unit = {},
@@ -165,13 +167,34 @@ fun ChatInput(
     fun sendMessage() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
-        if (loading && state.isEmpty()) onCancelClick() else onSendClick()
+        if (loading && state.isEmpty()) {
+            onCancelClick()
+        } else if (loading && !state.isEmpty()) {
+            if (settings.displaySetting.steeringMode == me.rerere.rikkahub.data.datastore.SteeringMode.SEND_IMMEDIATELY) {
+                onSteerClick()
+            } else {
+                onSendClick()
+            }
+        } else {
+            onSendClick()
+        }
     }
 
     fun sendMessageWithoutAnswer() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
-        if (loading && state.isEmpty()) onCancelClick() else onLongSendClick()
+        if (loading && state.isEmpty()) {
+            onCancelClick()
+        } else if (loading && !state.isEmpty()) {
+            // When long-pressing while generating: perform the alternate steering action
+            if (settings.displaySetting.steeringMode == me.rerere.rikkahub.data.datastore.SteeringMode.SEND_IMMEDIATELY) {
+                onSendClick()
+            } else {
+                onSteerClick()
+            }
+        } else {
+            onLongSendClick()
+        }
     }
 
     val asr = LocalASRState.current
@@ -222,6 +245,7 @@ fun ChatInput(
                 onBeginEdit = onBeginEditQueuedMessage,
                 onFinishEdit = onFinishEditQueuedMessage,
                 onResume = onResumeMessageQueue,
+                onSteer = onSteerQueuedMessage,
             )
             Surface(
                 modifier = Modifier
@@ -367,6 +391,7 @@ fun ChatInput(
                             SendButton(
                                 loading = loading,
                                 empty = state.isEmpty(),
+                                steeringMode = settings.displaySetting.steeringMode,
                                 onClick = { sendMessage() },
                                 onLongClick = { sendMessageWithoutAnswer() },
                             )
@@ -388,19 +413,23 @@ fun ChatInput(
 private fun SendButton(
     loading: Boolean,
     empty: Boolean,
+    steeringMode: me.rerere.rikkahub.data.datastore.SteeringMode = me.rerere.rikkahub.data.datastore.SteeringMode.QUEUE,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val showStop = loading && empty
+    val isSteering = loading && !empty && steeringMode == me.rerere.rikkahub.data.datastore.SteeringMode.SEND_IMMEDIATELY
     val containerColor = when {
         showStop -> MaterialTheme.colorScheme.errorContainer
         empty -> MaterialTheme.colorScheme.surfaceContainerHigh
+        isSteering -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.primary
     }
     val contentColor = when {
         showStop -> MaterialTheme.colorScheme.onErrorContainer
         empty -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        isSteering -> MaterialTheme.colorScheme.onTertiary
         else -> MaterialTheme.colorScheme.onPrimary
     }
     Box(
@@ -423,7 +452,14 @@ private fun SendButton(
         )
         Icon(
             imageVector = if (showStop) HugeIcons.Cancel01 else HugeIcons.ArrowUp02,
-            contentDescription = stringResource(if (showStop) R.string.stop else R.string.send),
+            contentDescription = stringResource(
+                when {
+                    showStop -> R.string.stop
+                    isSteering -> R.string.chat_input_steer
+                    loading -> R.string.chat_input_queue
+                    else -> R.string.send
+                }
+            ),
             tint = contentColor,
             modifier = Modifier.size(18.dp)
         )

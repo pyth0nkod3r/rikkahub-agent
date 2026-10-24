@@ -136,6 +136,7 @@ class ChatVM(
         chatService.finishEditQueuedMessage(_conversationId, id, parts)
 
     fun resumeMessageQueue() = chatService.resumeMessageQueue(_conversationId)
+    fun steerQueuedMessage(id: Uuid) = chatService.steerQueuedMessage(_conversationId, id)
 
     // 生成完成
     val generationDoneFlow: SharedFlow<Uuid> = chatService.generationDoneFlow
@@ -207,6 +208,12 @@ class ChatVM(
         if (content.isEmptyInputMessage()) return
 
         chatService.sendMessage(_conversationId, content, answer)
+    }
+
+    fun handleMessageSteer(content: List<UIMessagePart>, answer: Boolean = true) {
+        if (content.isEmptyInputMessage()) return
+
+        chatService.steerMessage(_conversationId, content, answer)
     }
 
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {

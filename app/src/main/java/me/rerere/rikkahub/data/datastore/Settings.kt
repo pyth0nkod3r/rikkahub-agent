@@ -210,7 +210,16 @@ data class DisplaySetting(
     val enableVolumeKeyScroll: Boolean = false,
     val volumeKeyScrollRatio: Float = 1.0f,
     val conversationSortOrder: ConversationSortOrder = ConversationSortOrder.UPDATE_TIME,
+    val steeringMode: SteeringMode = SteeringMode.QUEUE,
 )
+
+@Serializable
+enum class SteeringMode {
+    @SerialName("queue")
+    QUEUE,
+    @SerialName("send_immediately")
+    SEND_IMMEDIATELY,
+}
 
 @Serializable
 data class WebDavConfig(
