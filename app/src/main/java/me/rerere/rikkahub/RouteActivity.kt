@@ -49,6 +49,7 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
+import coil3.memory.MemoryCache
 import coil3.gif.AnimatedImageDecoder
 import coil3.gif.GifDecoder
 import coil3.network.cachecontrol.CacheControlCacheStrategy
@@ -199,6 +200,11 @@ class RouteActivity : ComponentActivity() {
                 setSingletonImageLoaderFactory { context ->
                     ImageLoader.Builder(context)
                         .crossfade(true)
+                        .memoryCache {
+                            MemoryCache.Builder()
+                                .maxSizePercent(context, 0.10)
+                                .build()
+                        }
                         .components {
                             add(OkHttpNetworkFetcherFactory(
                                 callFactory = { okHttpClient },

@@ -16,6 +16,8 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import android.database.sqlite.SQLiteDatabase
+import coil3.SingletonImageLoader
 import me.rerere.rikkahub.data.files.FileFolders
 import java.io.File
 import kotlinx.coroutines.SupervisorJob
@@ -98,8 +100,8 @@ class RikkaHubApp : Application() {
         // Sweep orphan headless conversations created by workers that were killed mid-execute.
         sweepOrphanHeadlessConversations()
 
-        // set cursor window size to 32MB
-        DatabaseUtil.setCursorWindowSize(32 * 1024 * 1024)
+        // set cursor window size to 4MB (balanced for chat history without bloating native heap)
+        DatabaseUtil.setCursorWindowSize(4 * 1024 * 1024)
 
         // install crash handler
         CrashHandler.install(this)
@@ -107,23 +109,9 @@ class RikkaHubApp : Application() {
         // Init QuickJS native library
         QuickJSLoader.init()
 
-        // delete temp files
-        deleteTempFiles()
-
-        // cleanup stale tool output files
-        cleanupToolOutputs()
-
-        // cleanup workspace temp dirs (proot + rootfs /tmp)
-        cleanupWorkspaceTempDirs()
-
-        // check workspace integrity (mark workspaces with missing files as broken after backup restore)
-        checkWorkspaceIntegrity()
-
-        // sync upload files to DB
-        syncManagedFiles()
-
-        // Extract builtin skills from assets after install/update
-        extractBuiltinSkills()
+        // Defer non-critical filesystem and background maintenance tasks so the main thread
+        // renders the UI instantly without CPU/IO contention or device lag
+        scheduleDeferredMaintenance()
 
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
@@ -158,11 +146,6 @@ class RikkaHubApp : Application() {
         // termuxPreferences.
         eagerlyInitTermuxPreferences()
 
-        // Copy any default skills bundled in assets/default-skills/* into the user's skills
-        // dir on first launch. SkillManager guards via a per-skill .seeded sentinel so this
-        // is a one-time install — user edits / deletes are respected on subsequent launches.
-        seedDefaultSkillsIfNeeded()
-
         // Increment launch count
         incrementLaunchCount()
 
@@ -188,25 +171,41 @@ class RikkaHubApp : Application() {
         // makes background sub-agents survivable across process death.
         runAgentRunBootRecovery()
 
-        // Auto-recover from a prior native crash inside a local-runtime JNI lib
-        // (LiteRT-LM 0.11.0 has known SIGSEGVs on the GPU/NNAPI backend during
-        // inference on Pixel Tensor-G). If we detect one, force the runtime to
-        // CPU on the next load and stamp a recovery banner the LiteRT settings
-        // page picks up — so users see "Recovered: switched to CPU" instead of
-        // a silent re-crash.
-        sweepLocalLlmNativeCrashes()
-
-        // Clear stale per-device decisions (cached accelerator, vision-unavailable set,
-        // crash-recovery banner) when the bundled LiteRT-LM SDK has been bumped since
-        // the last app start. An older SDK's "GPU is broken on Adreno 7xx" / "vision
-        // encoder unavailable" decisions can mask a fix shipped in the new SDK; without
-        // this sweep, a 0.11→0.12 bump would silently stay on CPU even though 0.12 may
-        // have fixed the GPU path. Decisions are re-inferred from a fresh probe on the
-        // next inference / re-detect tap. User-set knobs (force-CPU toggle, max-context
-        // override) are NOT touched.
-        invalidateLocalLlmDecisionsOnSdkUpgrade()
-
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        try {
+            SingletonImageLoader.get(this).memoryCache?.let { cache ->
+                if (level >= TRIM_MEMORY_RUNNING_CRITICAL || level >= TRIM_MEMORY_MODERATE) {
+                    cache.clear()
+                } else if (level >= TRIM_MEMORY_UI_HIDDEN || level >= TRIM_MEMORY_RUNNING_LOW) {
+                    cache.trimToSize(cache.size / 2)
+                }
+            }
+        } catch (_: Throwable) {}
+
+        try {
+            if (level >= TRIM_MEMORY_RUNNING_LOW || level >= TRIM_MEMORY_UI_HIDDEN) {
+                SQLiteDatabase.releaseMemory()
+            }
+        } catch (_: Throwable) {}
+
+        if (level >= TRIM_MEMORY_RUNNING_CRITICAL) {
+            System.gc()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        try {
+            SingletonImageLoader.get(this).memoryCache?.clear()
+        } catch (_: Throwable) {}
+        try {
+            SQLiteDatabase.releaseMemory()
+        } catch (_: Throwable) {}
+        System.gc()
     }
 
     /**
@@ -420,63 +419,35 @@ class RikkaHubApp : Application() {
         }
     }
 
-    private fun cleanupWorkspaceTempDirs() {
+    private fun scheduleDeferredMaintenance() {
         get<AppScope>().launch(Dispatchers.IO) {
+            // Give the main thread 2.5 seconds to complete first frame composition and display
+            delay(2500)
             runCatching {
-                get<WorkspaceManager>().cleanupAllTempDirs()
-            }.onFailure {
-                Log.e(TAG, "cleanupWorkspaceTempDirs failed", it)
+                val dir = appTempFolder
+                if (dir.exists()) dir.deleteRecursively()
             }
-        }
-    }
-
-    private fun seedDefaultSkillsIfNeeded() {
-        get<AppScope>().launch(Dispatchers.IO) {
-            runCatching {
-                get<me.rerere.rikkahub.data.files.SkillManager>().seedDefaultSkillsIfNeeded()
-            }.onFailure {
-                Log.e(TAG, "seedDefaultSkillsIfNeeded failed", it)
-            }
-        }
-    }
-
-    private fun checkWorkspaceIntegrity() {
-        get<AppScope>().launch(Dispatchers.IO) {
-            runCatching {
-                get<WorkspaceRepository>().checkIntegrity()
-            }.onFailure {
-                Log.e(TAG, "checkWorkspaceIntegrity failed", it)
-            }
-        }
-    }
-
-    private fun deleteTempFiles() {
-        get<AppScope>().launch(Dispatchers.IO) {
-            val dir = appTempFolder
-            if (dir.exists()) {
-                dir.deleteRecursively()
-            }
-        }
-    }
-
-    private fun cleanupToolOutputs() {
-        get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
                 val dir = File(filesDir, FileFolders.TOOL_OUTPUTS)
-                if (dir.exists()) {
-                    dir.deleteRecursively()
-                }
+                if (dir.exists()) dir.deleteRecursively()
             }
-        }
-    }
-
-    private fun syncManagedFiles() {
-        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching {
+                get<WorkspaceManager>().cleanupAllTempDirs()
+            }
+            runCatching {
+                get<WorkspaceRepository>().checkIntegrity()
+            }
             runCatching {
                 get<FilesManager>().syncFolder()
-            }.onFailure {
-                Log.e(TAG, "syncManagedFiles failed", it)
             }
+            runCatching {
+                get<SkillManager>().ensureBuiltinSkillsExtracted()
+            }
+            runCatching {
+                get<SkillManager>().seedDefaultSkillsIfNeeded()
+            }
+            sweepLocalLlmNativeCrashes()
+            invalidateLocalLlmDecisionsOnSdkUpgrade()
         }
     }
 
@@ -518,12 +489,6 @@ class RikkaHubApp : Application() {
             }.onFailure {
                 Log.e(TAG, "startWebServerIfEnabled failed", it)
             }
-        }
-    }
-
-    private fun extractBuiltinSkills() {
-        get<AppScope>().launch(Dispatchers.IO) {
-            get<SkillManager>().ensureBuiltinSkillsExtracted()
         }
     }
 

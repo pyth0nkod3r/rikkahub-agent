@@ -119,3 +119,26 @@
 -keepclassmembers class me.rerere.rikkahub.shizuku.ShizukuUserService {
     public <init>(...);
 }
+
+# Optional JVM-only dependencies in OkHttp, Ktor, Pebble, SnakeYAML, Metadata-Extractor, CronUtils
+-dontwarn org.yaml.snakeyaml.**
+-dontwarn com.drew.**
+-dontwarn com.mitchellbosecke.pebble.**
+-dontwarn io.ktor.**
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn org.apache.commons.**
+-dontwarn com.cronutils.**
+-dontwarn javax.jmdns.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+
+# Room DAOs, Entities, and Database subclasses
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep interface * extends androidx.room.RoomDatabase { *; }
+-keep @androidx.room.Dao interface * { *; }
+-keep @androidx.room.Entity class * { *; }
+
+# Koin and ViewModel
+-keep class * extends androidx.lifecycle.ViewModel { *; }
