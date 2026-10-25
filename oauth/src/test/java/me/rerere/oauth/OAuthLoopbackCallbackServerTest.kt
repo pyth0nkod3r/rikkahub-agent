@@ -6,10 +6,12 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 import kotlin.time.Duration.Companion.seconds
 
 class OAuthLoopbackCallbackServerTest {
@@ -44,9 +46,20 @@ class OAuthLoopbackCallbackServerTest {
         }
     }
 
-    private fun execute(url: String) = httpClient.newCall(
-        Request.Builder()
-            .url(url)
-            .build()
-    ).execute()
+    private fun execute(url: String): Response {
+        var lastException: IOException? = null
+        for (attempt in 1..10) {
+            try {
+                return httpClient.newCall(
+                    Request.Builder()
+                        .url(url)
+                        .build()
+                ).execute()
+            } catch (e: java.net.ConnectException) {
+                lastException = e
+                Thread.sleep(100)
+            }
+        }
+        throw lastException ?: IOException("Failed to connect to $url")
+    }
 }
