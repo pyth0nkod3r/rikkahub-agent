@@ -9,6 +9,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -20,6 +23,7 @@ import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.ImportedDatabaseReconciler
 import me.rerere.rikkahub.data.db.SQLiteConfiguration
 import me.rerere.rikkahub.data.files.FileFolders
+import me.rerere.rikkahub.data.files.MediaCreationFiles
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -43,10 +47,11 @@ class BackupManager(
         val archive = File.createTempFile("backup_${timestamp}_", ".zip", context.cacheDir)
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
         try {
-            val settings = settingsStore.settingsFlowRaw.first()
+            val settings = settingsStore.awaitLoaded()
             ZipOutputStream(FileOutputStream(archive)).use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
-                zip.write(json.encodeToString(settings).toByteArray(Charsets.UTF_8))
+                val settingsJson = json.encodeSettings(settings, settingsStore.launchCountFlow.first())
+                zip.write(settingsJson.toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
                 if (includeDatabase) {
                     val snapshot = File(staging, SQLiteConfiguration.DATABASE_NAME)
@@ -54,12 +59,16 @@ class BackupManager(
                     addFile(zip, snapshot, DatabaseBackup.ARCHIVE_DATABASE)
                 }
                 if (includeFiles) {
-                    for (folder in listOf(FileFolders.UPLOAD, FileFolders.SKILLS, FileFolders.FONTS, FileFolders.IMAGES)) {
+                    for (folder in ATTACHMENT_FOLDERS) {
                         val directory = File(context.filesDir, folder)
-                        val files = if (folder == FileFolders.SKILLS) directory.walkTopDown().asSequence()
+                        val files = if (folder in NESTED_ATTACHMENT_FOLDERS) directory.walkTopDown().asSequence()
                         else directory.listFiles().orEmpty().asSequence()
                         for (file in files.filter { it.isFile }) {
                             currentCoroutineContext().ensureActive()
+                            // A media result still being downloaded is incomplete and gets renamed when it finishes.
+                            if (folder == FileFolders.MEDIA_CREATION &&
+                                file.name.endsWith(MediaCreationFiles.PARTIAL_SUFFIX)
+                            ) continue
                             val relative = file.relativeTo(directory).invariantSeparatorsPath
                             PendingRestore.resolveInside(directory, relative)
                             addFile(zip, file, "$folder/$relative")
@@ -133,10 +142,11 @@ class BackupManager(
 
                     val settingsFile = File(staging, "settings.json")
                     if (settingsFile.exists()) {
-                        val settings = json.decodeFromString<Settings>(SettingsJsonMigrator.migrate(settingsFile.readText()))
+                        val migrated = SettingsJsonMigrator.migrate(settingsFile.readText())
+                        val settings = json.decodeFromString<Settings>(migrated)
                         require(!settings.init) { "Backup contains uninitialized settings" }
                         // Persist the migrated value once, including generated IDs, for restart/retry consistency.
-                        PendingRestore.writeDurably(settingsFile, json.encodeToString(settings))
+                        PendingRestore.writeDurably(settingsFile, json.encodeSettings(settings, json.launchCountOf(migrated)))
                     }
                     currentCoroutineContext().ensureActive()
                     restore.publish(staging)
@@ -148,10 +158,10 @@ class BackupManager(
 
     private fun isAttachment(name: String): Boolean {
         val folder = name.substringBefore('/')
-        if (folder !in listOf(FileFolders.UPLOAD, FileFolders.SKILLS, FileFolders.FONTS, FileFolders.IMAGES) || '/' !in name) return false
+        if (folder !in ATTACHMENT_FOLDERS || '/' !in name) return false
         val relative = name.substringAfter('/')
         require(relative.isNotBlank()) { "Invalid backup attachment: $name" }
-        require(folder == FileFolders.SKILLS || '/' !in relative) { "Invalid backup attachment: $name" }
+        require(folder in NESTED_ATTACHMENT_FOLDERS || '/' !in relative) { "Invalid backup attachment: $name" }
         return true
     }
 
@@ -162,6 +172,12 @@ class BackupManager(
     }
 
     companion object {
+        private val ATTACHMENT_FOLDERS =
+            listOf(FileFolders.UPLOAD, FileFolders.SKILLS, FileFolders.FONTS, FileFolders.MEDIA_CREATION, FileFolders.IMAGES)
+
+        /** Backed up with their subdirectories; the other folders only contain top-level files. */
+        private val NESTED_ATTACHMENT_FOLDERS = setOf(FileFolders.SKILLS, FileFolders.MEDIA_CREATION)
+
         private fun pendingRestore(context: Context) = PendingRestore(
             root = File(context.noBackupFilesDir, "backup-restore"),
             databaseFile = context.getDatabasePath(SQLiteConfiguration.DATABASE_NAME),
@@ -177,6 +193,11 @@ class BackupManager(
 
         // 启动次数不在 Settings 里，备份文件里仍放在 settings.json 的这个字段，和旧备份保持一致
         private const val LAUNCH_COUNT_KEY = "launchCount"
+
+        private fun Json.encodeSettings(settings: Settings, launchCount: Int): String {
+            val fields = encodeToJsonElement(settings).jsonObject + (LAUNCH_COUNT_KEY to JsonPrimitive(launchCount))
+            return encodeToString(JsonObject(fields))
+        }
 
         // 更早的备份没有这个字段，按 0 恢复，和它还在 Settings 里时的默认值一致
         private fun Json.launchCountOf(settingsJson: String): Int =

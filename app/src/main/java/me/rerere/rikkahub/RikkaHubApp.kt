@@ -504,9 +504,16 @@ class RikkaHubApp : Application() {
                         // loading a 2-4 GB LiteRT / GGUF model the instant the user presses
                         // Home starves Android Launcher and SystemUI of RAM and CPU.
                         val settings = runCatching { get<SettingsStore>().settingsFlow.value }.getOrNull()
-                        val provider = settings?.consolidationModel()?.first?.findProvider(settings.providers)
-                        val isLocalOnDevice = provider is ProviderSetting.LiteRtLocal ||
-                            provider is ProviderSetting.LlamaCppLocal
+                        val isLocalOnDevice = settings != null && (
+                            listOfNotNull(
+                                settings.consolidationModel()?.first?.findProvider(settings.providers),
+                                settings.findModelById(settings.fastModelId)?.findProvider(settings.providers),
+                            ).any { it is ProviderSetting.LiteRtLocal || it is ProviderSetting.LlamaCppLocal } ||
+                            settings.assistants.filter { it.enableMemory }.any { assistant ->
+                                val provider = settings.consolidationModel(assistant = assistant)?.first?.findProvider(settings.providers)
+                                provider is ProviderSetting.LiteRtLocal || provider is ProviderSetting.LlamaCppLocal
+                            }
+                        )
                         if (!isLocalOnDevice) {
                             get<MemoryConsolidationScheduler>().onAppHidden()
                         }

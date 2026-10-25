@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.ai.tools.dialogueMessages
 import me.rerere.rikkahub.data.ai.tools.memoryWritePath
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getAssistantById
@@ -305,8 +306,8 @@ private fun List<Batch>.withinTranscriptBudget(): List<Batch> {
 
 // 依次用记忆整理模型、快速模型，推理强度跟着用上的那个；整理要调用工具，都不支持时退回对话模型
 internal fun Settings.consolidationModel(
-    conversation: Conversation?,
-    assistant: Assistant,
+    conversation: Conversation? = null,
+    assistant: Assistant = getCurrentAssistant(),
 ): Pair<Model, ReasoningLevel>? {
     fun toolModel(id: Uuid?) = id?.let { findModelById(it) }?.takeIf { ModelAbility.TOOL in it.abilities }
     val (model, reasoningLevel) = toolModel(memoryModelId)?.let { it to memoryModelReasoningLevel }
