@@ -69,6 +69,11 @@ object SettingsJsonMigrator {
                 root["contextCompactionTargetTokensK"] = JsonNull
             }
 
+            // V5: 提供商的余额查询 balanceOption 改成自定义额度查询 quotaQuery
+            (root["providers"] as? JsonArray)?.let { providers ->
+                root["providers"] = JsonArray(providers.map(::migrateProviderQuotaQuery))
+            }
+
             JsonInstant.encodeToString(JsonObject(root))
         }.onFailure {
             Log.e(TAG, "migrate: Failed to migrate settings JSON, using original", it)
