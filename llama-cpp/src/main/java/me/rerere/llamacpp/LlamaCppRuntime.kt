@@ -192,9 +192,28 @@ class LlamaCppRuntime(private val native: LlamaCppNative = RealLlamaCppNative) {
         plan
     }
 
+    /** True when a native GGUF model handle is currently resident in memory. */
+    fun isLoaded(): Boolean = modelHandle != 0L
+
     /** Releases the loaded model and context, if any. Waits for an in-flight [generate]
      *  to finish first, since [mutex] is shared with it. */
     suspend fun unload() = mutex.withLock { unloadLocked() }
+
+    /**
+     * Immediately releases the loaded model and context if [mutex] is free (no load or
+     * generation in flight). Returns true if a resident model was freed; never blocks or
+     * interrupts an active generation.
+     */
+    fun unloadIfIdle(): Boolean {
+        if (!mutex.tryLock()) return false
+        return try {
+            val hadModel = modelHandle != 0L || contextHandle != 0L
+            unloadLocked()
+            hadModel
+        } finally {
+            mutex.unlock()
+        }
+    }
 
     private fun unloadLocked() {
         synchronized(cancelFreeLock) {

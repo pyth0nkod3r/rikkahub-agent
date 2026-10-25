@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.components.ui
 
 import android.graphics.drawable.AnimatedVectorDrawable
 import android.widget.ImageView
-import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -22,7 +21,7 @@ fun RabbitLoadingIndicator(modifier: Modifier = Modifier) {
             modifier = modifier,
             factory = { context ->
                 ImageView(context).apply {
-                    val drawable = AppCompatResources.getDrawable(context, R.drawable.rabbit) as? AnimatedVectorDrawable
+                    val drawable = context.getDrawable(R.drawable.rabbit) as? AnimatedVectorDrawable
                     setImageDrawable(drawable)
                     drawable?.setTint(primaryColor)
                     drawable?.start()

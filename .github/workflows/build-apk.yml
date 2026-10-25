@@ -60,6 +60,12 @@ jobs:
           if [ -n "$KEY_BASE64" ]; then
             echo "$KEY_BASE64" | base64 -d > app/app.key
             echo "${{ secrets.SIGNING_CONFIG }}" > local.properties
+          elif [ -f "signing/ci-release.keystore" ]; then
+            echo "Using repository persistent CI keystore"
+            echo "storeFile=$(pwd)/signing/ci-release.keystore" > local.properties
+            echo "storePassword=ci_store_pass_9f3k" >> local.properties
+            echo "keyAlias=cikey" >> local.properties
+            echo "keyPassword=ci_store_pass_9f3k" >> local.properties
           else
             echo "No keystore secrets - generating throwaway CI keystore"
             keytool -genkeypair -v -keystore /tmp/ci-release.keystore -alias cikey -keyalg RSA -keysize 2048 -validity 10000 -storepass ci_store_pass_9f3k -keypass ci_store_pass_9f3k -dname "CN=CI Build, O=CI"

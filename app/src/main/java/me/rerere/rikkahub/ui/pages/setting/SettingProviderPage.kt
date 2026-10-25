@@ -76,10 +76,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ui.toast.ToastType
-import io.github.g00fy2.quickie.QRResult
-import io.github.g00fy2.quickie.ScanQRCode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.ui.QRCodeScannerDialog
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.RECOMMENDED_PROVIDERS
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -396,9 +395,20 @@ private fun ImportProviderButton(
     val toaster = LocalToaster.current
     val context = LocalContext.current
     var showImportDialog by remember { mutableStateOf(false) }
+    var showScanner by remember { mutableStateOf(false) }
 
-    val scanQrCodeLauncher = rememberLauncherForActivityResult(ScanQRCode()) { result ->
-        handleQRResult(result, onAdd, toaster, context)
+    if (showScanner) {
+        QRCodeScannerDialog(
+            onResult = { content ->
+                showScanner = false
+                handleScannedQRCode(content, onAdd, toaster, context)
+            },
+            onPermissionDenied = {
+                showScanner = false
+                toaster.show(context.getString(R.string.setting_provider_page_no_permission), type = ToastType.Error)
+            },
+            onDismissRequest = { showScanner = false },
+        )
     }
 
     val pickImageLauncher = rememberLauncherForActivityResult(
@@ -444,7 +454,7 @@ private fun ImportProviderButton(
                         Button(
                             onClick = {
                                 showImportDialog = false
-                                scanQrCodeLauncher.launch(null)
+                                showScanner = true
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -520,41 +530,19 @@ private fun ImportProviderButton(
     }
 }
 
-private fun handleQRResult(
-    result: QRResult,
+private fun handleScannedQRCode(
+    content: String,
     onAdd: (ProviderSetting) -> Unit,
     toaster: me.rerere.ui.toast.ToasterState,
     context: android.content.Context
 ) {
     runCatching {
-        when (result) {
-            is QRResult.QRError -> {
-                toaster.show(
-                    context.getString(
-                        R.string.setting_provider_page_scan_error,
-                        result
-                    ), type = ToastType.Error
-                )
-            }
-
-            QRResult.QRMissingPermission -> {
-                toaster.show(
-                    context.getString(R.string.setting_provider_page_no_permission),
-                    type = ToastType.Error
-                )
-            }
-
-            is QRResult.QRSuccess -> {
-                val setting = decodeProviderSetting(result.content.rawValue ?: "")
-                onAdd(setting)
-                toaster.show(
-                    context.getString(R.string.setting_provider_page_import_success),
-                    type = ToastType.Success
-                )
-            }
-
-            QRResult.QRUserCanceled -> {}
-        }
+        val setting = decodeProviderSetting(content)
+        onAdd(setting)
+        toaster.show(
+            context.getString(R.string.setting_provider_page_import_success),
+            type = ToastType.Success
+        )
     }.onFailure { error ->
         toaster.show(
             context.getString(R.string.setting_provider_page_qr_decode_failed, error.message ?: ""),

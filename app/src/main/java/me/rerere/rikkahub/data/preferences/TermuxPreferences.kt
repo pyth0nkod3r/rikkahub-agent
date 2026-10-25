@@ -55,78 +55,46 @@ class TermuxPreferences(private val context: Context) {
         // registration site). The one-time blocking read is acceptable — DataStore caches the
         // latest Preferences instance after its first decode, so steady-state cost is
         // a flow .first() against an in-memory replay.
-        val initial = snapshotBlocking()
-        TermuxRuntime.commandTimeoutMs   = initial.commandTimeoutMs
-        TermuxRuntime.verifyTimeoutMs    = initial.verifyTimeoutMs
-        TermuxRuntime.defaultWorkingDir  = initial.defaultWorkingDir
-        TermuxRuntime.maxStdoutBytes     = initial.maxStdoutBytes
-        TermuxRuntime.maxStderrBytes     = initial.maxStderrBytes
-        TermuxRuntime.aptWrapEnabled     = initial.aptWrapEnabled
-        ToolRuntimeLimits.turnBudgetMs   = initial.turnBudgetMs
-        ToolRuntimeLimits.maxToolSteps   = initial.maxToolSteps
-        // Issue #14: restore the "verified/connected" indicator across app restarts. Without
-        // this, TermuxIntegration.lastVerifiedOkAtMs starts at 0 every launch and the user
-        // has to re-run the verify smoke test even though nothing about the Termux
-        // integration actually changed.
-        me.rerere.rikkahub.data.ai.tools.local.TermuxIntegration.restoreVerifiedAt(initial.lastVerifiedMs)
-
-        // Async collectors keep the holders live on subsequent user edits. This scope is
-        // intentionally NOT stored as a field — it is process-lived and we want it to stay
-        // alive as long as the singleton itself. SupervisorJob means one failing collector
-        // doesn't kill the others.
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         // Wire the write-back path so every future markVerifiedOk()/clearVerified() persists,
         // instead of only being restorable for the run that already set it.
         me.rerere.rikkahub.data.ai.tools.local.TermuxIntegration.persister = { ms ->
             scope.launch { setLastVerifiedMs(ms) }
         }
+        // Single DataStore collector instead of 8 parallel perpetual coroutines.
         scope.launch {
-            commandTimeoutFlow()
-                .distinctUntilChanged()
-                .onEach { TermuxRuntime.commandTimeoutMs = it }
-                .collect {}
-        }
-        scope.launch {
-            turnBudgetFlow()
-                .distinctUntilChanged()
-                .onEach { ToolRuntimeLimits.turnBudgetMs = it }
-                .collect {}
-        }
-        scope.launch {
-            maxToolStepsFlow()
-                .distinctUntilChanged()
-                .onEach { ToolRuntimeLimits.maxToolSteps = it }
-                .collect {}
-        }
-        scope.launch {
-            verifyTimeoutFlow()
-                .distinctUntilChanged()
-                .onEach { TermuxRuntime.verifyTimeoutMs = it }
-                .collect {}
-        }
-        scope.launch {
-            defaultWorkingDirFlow()
-                .distinctUntilChanged()
-                .onEach { TermuxRuntime.defaultWorkingDir = it }
-                .collect {}
-        }
-        scope.launch {
-            maxStdoutFlow()
-                .distinctUntilChanged()
-                .onEach { TermuxRuntime.maxStdoutBytes = it }
-                .collect {}
-        }
-        scope.launch {
-            maxStderrFlow()
-                .distinctUntilChanged()
-                .onEach { TermuxRuntime.maxStderrBytes = it }
-                .collect {}
-        }
-        scope.launch {
-            aptWrapEnabledFlow()
-                .distinctUntilChanged()
-                .onEach { TermuxRuntime.aptWrapEnabled = it }
-                .collect {}
+            var restoredVerifiedOnce = false
+            store.data.collect { prefs ->
+                TermuxRuntime.commandTimeoutMs = TermuxDefaults.clampCommandTimeoutMs(
+                    prefs[commandTimeoutKey] ?: TermuxDefaults.DEFAULT_COMMAND_TIMEOUT_MS
+                )
+                ToolRuntimeLimits.turnBudgetMs = TermuxDefaults.clampTurnBudgetMs(
+                    prefs[turnBudgetKey] ?: TermuxDefaults.DEFAULT_TURN_BUDGET_MS
+                )
+                ToolRuntimeLimits.maxToolSteps = TermuxDefaults.clampMaxToolSteps(
+                    prefs[maxToolStepsKey] ?: TermuxDefaults.DEFAULT_MAX_TOOL_STEPS
+                )
+                TermuxRuntime.verifyTimeoutMs = TermuxDefaults.clampVerifyTimeoutMs(
+                    prefs[verifyTimeoutKey] ?: TermuxDefaults.DEFAULT_VERIFY_TIMEOUT_MS
+                )
+                TermuxRuntime.defaultWorkingDir = TermuxDefaults.clampWorkingDir(
+                    prefs[workingDirKey] ?: TermuxDefaults.DEFAULT_WORKING_DIR
+                )
+                TermuxRuntime.maxStdoutBytes = TermuxDefaults.clampMaxStdout(
+                    prefs[maxStdoutKey] ?: TermuxDefaults.DEFAULT_MAX_STDOUT
+                )
+                TermuxRuntime.maxStderrBytes = TermuxDefaults.clampMaxStderr(
+                    prefs[maxStderrKey] ?: TermuxDefaults.DEFAULT_MAX_STDERR
+                )
+                TermuxRuntime.aptWrapEnabled =
+                    prefs[aptWrapKey] ?: TermuxDefaults.DEFAULT_APT_WRAP_ENABLED
+                if (!restoredVerifiedOnce) {
+                    restoredVerifiedOnce = true
+                    me.rerere.rikkahub.data.ai.tools.local.TermuxIntegration.restoreVerifiedAt(
+                        prefs[lastVerifiedMsKey] ?: 0L
+                    )
+                }
+            }
         }
     }
 

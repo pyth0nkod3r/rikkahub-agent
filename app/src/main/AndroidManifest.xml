@@ -3,11 +3,6 @@
   xmlns:tools="http://schemas.android.com/tools">
 
   <uses-permission android:name="android.permission.INTERNET" />
-  <!-- Required for ConnectivityManager.registerNetworkCallback (NetworkChangeMonitor)
-       which evicts the OkHttp connection pool on default-network changes. Fixes the
-       post-Termux-interactive-session DNS bug where the JVM negative-cached a transient
-       lookup failure during background and held onto it after return. Auto-granted (normal
-       permission) but declaring is required. -->
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <uses-permission android:name="android.permission.CAMERA" />
   <uses-permission
@@ -17,11 +12,6 @@
   <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
   <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-  <!-- Android 17 (API 37) gates all local-network sockets behind this runtime
-       permission. Required by SSH (LAN hosts) and the web server (LAN access);
-       the runtime check is centralized in RikkaHubApp / SshTool / the toggle UI
-       and short-circuits to "always granted" on older API levels where the
-       permission doesn't exist. -->
   <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -38,13 +28,7 @@
   <uses-permission android:name="android.permission.READ_PHONE_STATE" />
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-  <!-- Phase 12 — required for geofence triggers on Android 10+. The user grants this
-       lazily when they enable the first geofence workflow; without it, geofence
-       registration silently fails and the workflow row's last_run_status surfaces
-       "Unavailable on this device". -->
   <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-  <!-- Phase 12 — required for bluetooth_device_connected / bluetooth_device_disconnected
-       triggers on Android 12+. -->
   <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
   <uses-permission android:name="android.permission.WRITE_SETTINGS"
       tools:ignore="ProtectedPermissions" />
@@ -54,13 +38,6 @@
   <uses-permission android:name="android.permission.READ_CALL_LOG" />
   <uses-permission android:name="android.permission.READ_SMS" />
   <uses-permission android:name="android.permission.RECORD_AUDIO" />
-  <!-- Required so list_files / find_files / read_file can enumerate and read
-       files the app didn't create itself. Without this, scoped storage on
-       Android 11+ hides every pre-existing file from File.listFiles(), even
-       though stat() still works (which is why file_info appeared to work
-       while list_files returned only directories + own creations). Granted
-       via Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION when the
-       user toggles the Files tool on. -->
   <uses-permission
       android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
       tools:ignore="ScopedStorage" />
@@ -73,28 +50,13 @@
   <uses-permission
       android:name="android.permission.QUERY_ALL_PACKAGES"
       tools:ignore="QueryAllPackagesPermission" />
-  <!-- Custom permission Termux's RunCommandService gates access by. Without this declaration
-       ActivityManager rejects our intent with "Permission Denial requires
-       com.termux.permission.RUN_COMMAND" before Termux even sees it. The user still needs
-       allow-external-apps=true in ~/.termux/termux.properties on their side. -->
   <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
 
-  <!-- Phase 25 — Phase 3 second cut. SEND_SMS is a runtime (dangerous) permission granted
-       at toggle-on for the send_sms tool. SET_WALLPAPER and NFC are install-time. SAF and
-       the archive tools need no manifest change (SAF is grant-driven; zip is pure JDK). -->
   <uses-permission android:name="android.permission.SEND_SMS" />
   <uses-permission android:name="android.permission.SET_WALLPAPER" />
   <uses-permission android:name="android.permission.NFC" />
 
-  <!-- Signature-protected permission exposed by the co-signed agent-keyboard IME. Granted
-       at install time because both apps are signed with the same key; lets RikkaHub bind
-       agent-keyboard's KeyboardApiService and drive the active text field over AIDL. -->
   <uses-permission android:name="dev.patrickgold.florisboard.permission.AGENT_KEYBOARD_API" />
-
-  <!-- Shizuku's documented setup: gates the pre-v11 (API 23) provider handshake path some
-       older Shizuku server builds still use. Also merged in automatically from the
-       dev.rikka.shizuku:provider artifact's own manifest; declared here too per the
-       library's setup instructions. -->
   <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
 
   <uses-feature
@@ -118,20 +80,12 @@
     <intent>
       <action android:name="android.intent.action.TTS_SERVICE" />
     </intent>
-    <!-- Required so launch_app / list_installed_apps can see other launcher apps and so
-         screen-time can resolve app names on Android 11+. QUERY_ALL_PACKAGES above is the
-         catch-all; this is the safer alternative the system queries when it is denied. -->
     <intent>
       <action android:name="android.intent.action.MAIN" />
       <category android:name="android.intent.category.LAUNCHER" />
     </intent>
-    <!-- Android 11+ package visibility: required so KeyboardApiClient can bindService into
-         the agent-keyboard package. Without this the bind silently fails on API 30+. -->
     <package android:name="dev.patrickgold.florisboard" />
-    <!-- Android 11+ package visibility: required so ShizukuManager.isInstalled can see the
-         Shizuku app (moe.shizuku.privileged.api) without QUERY_ALL_PACKAGES. -->
     <package android:name="moe.shizuku.privileged.api" />
-    <!-- Resolve the home launcher so screen-time can exclude it. -->
     <intent>
       <action android:name="android.intent.action.MAIN" />
       <category android:name="android.intent.category.HOME" />
@@ -140,7 +94,6 @@
 
   <application
     android:name=".RikkaHubApp"
-    android:largeHeap="true"
     android:allowBackup="true"
     android:appCategory="productivity"
     android:dataExtractionRules="@xml/data_extraction_rules"
@@ -152,14 +105,6 @@
     android:theme="@style/Theme.Rikkahub"
     android:usesCleartextTraffic="true"
     tools:targetApi="37">
-    <!--
-      Game Mode preferences. Declares to the OEM Game Mode framework (Pixel, Samsung,
-      Asus, Nothing, Xiaomi, etc.) that this app accepts PERFORMANCE and BATTERY mode
-      treatment. Local LLM inference is a heavy compute workload that benefits from
-      sustained higher GPU clocks + relaxed DCVS throttling, exactly what game-mode
-      perf delivers. Non-game opt-in — appCategory stays "productivity".
-      See res/xml/game_mode_config.xml for the rationale per attribute.
-    -->
     <meta-data
       android:name="android.game_mode_config"
       android:resource="@xml/game_mode_config" />
@@ -251,18 +196,11 @@
       </intent-filter>
     </activity>
     <activity
-      android:name="com.yalantis.ucrop.UCropActivity"
-      android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
-    <activity
       android:name=".data.ai.tools.local.ToolHostActivity"
       android:exported="false"
       android:excludeFromRecents="true"
       android:theme="@style/Theme.Rikkahub.ToolHost" />
 
-    <!-- In-app Browser Activity. Hosts the WebView the LLM drives via the browser_*
-         tools. INTERNET is already declared at the top of this manifest; nothing else
-         needed at install time. configChanges keeps the WebView alive across rotation
-         and keyboard show/hide so the AI doesn't lose its session mid-task. -->
     <activity
       android:name=".browser.BrowserActivity"
       android:exported="false"
@@ -270,11 +208,6 @@
       android:hardwareAccelerated="true"
       android:theme="@style/Theme.Rikkahub" />
 
-    <!-- Phase 13: External Automation Intent API. Exported activity that accepts
-         RUN_TASK / RUN_CHAT intents from Tasker / MacroDroid / Locale / app callers.
-         Translucent + NoTitleBar so trusted-caller fires don't flash a window. The
-         feature is OFF by default — even with the activity registered here, the
-         dispatcher rejects every call until ExternalAutomationConfig.enabled is true. -->
     <activity
       android:name=".automation.ExternalAutomationActivity"
       android:exported="true"
@@ -288,10 +221,6 @@
       </intent-filter>
     </activity>
 
-    <!-- ADB-shell entry point for the same RUN_TASK flow. App callers should target the
-         activity above instead — Android 14+ blocks manifest receivers from launching
-         activities in the background. Default-deny: rejects with `untrusted_caller`
-         until the user explicitly opts in via Settings. -->
     <receiver
       android:name=".automation.ExternalAutomationReceiver"
       android:exported="true">
@@ -318,8 +247,6 @@
       </intent-filter>
     </service>
 
-    <!-- Handles hardware media-button broadcasts (headset, Bluetooth) and routes them
-         to the active MediaSession via the AndroidX media-compat helper. -->
     <receiver
       android:name="androidx.media.session.MediaButtonReceiver"
       android:exported="true">
@@ -363,10 +290,6 @@
       </intent-filter>
     </receiver>
 
-    <!-- Phase 12 — geofence transition receiver. Play Services delivers via
-         PendingIntent.getBroadcast outside any active component, so this MUST be a
-         manifest receiver. Not exported — the only sender is Play Services running in
-         our process. -->
     <receiver
       android:name=".workflow.trigger.GeofenceTriggerReceiver"
       android:exported="false">
@@ -423,8 +346,6 @@
         <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
       </intent-filter>
     </provider>
-    <!-- Required by Shizuku: receives the binder handed off from the Shizuku app / service.
-         Declaration matches the library's documented setup (Shizuku-API demo manifest). -->
     <provider
       android:name="rikka.shizuku.ShizukuProvider"
       android:authorities="${applicationId}.shizuku"

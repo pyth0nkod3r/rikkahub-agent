@@ -29,19 +29,44 @@ internal class NotificationTriggerFamily(
 
     override val name = "notification"
 
-    @Volatile private var matching: List<WorkflowDefinition> = emptyList()
+    private data class CompiledRule(
+        val workflowId: String,
+        val spec: TriggerSpec.NotificationReceived,
+        val titlePattern: java.util.regex.Pattern?,
+        val titleRegexInvalid: Boolean,
+        val textPattern: java.util.regex.Pattern?,
+        val textRegexInvalid: Boolean,
+    )
+
+    @Volatile private var compiledRules: List<CompiledRule> = emptyList()
     @Volatile private var fireCallback: TriggerFireCallback? = null
 
     override fun handles(spec: TriggerSpec): Boolean = spec is TriggerSpec.NotificationReceived
 
     override suspend fun sync(matching: List<WorkflowDefinition>, callback: TriggerFireCallback) {
-        this.matching = matching
+        this.compiledRules = matching.mapNotNull { wf ->
+            val t = wf.trigger as? TriggerSpec.NotificationReceived ?: return@mapNotNull null
+            val titlePat = t.titleMatches?.takeIf { it.isNotBlank() }?.let { raw ->
+                runCatching { java.util.regex.Pattern.compile(raw) }.getOrNull()
+            }
+            val textPat = t.textMatches?.takeIf { it.isNotBlank() }?.let { raw ->
+                runCatching { java.util.regex.Pattern.compile(raw) }.getOrNull()
+            }
+            CompiledRule(
+                workflowId = wf.id,
+                spec = t,
+                titlePattern = titlePat,
+                titleRegexInvalid = !t.titleMatches.isNullOrBlank() && titlePat == null,
+                textPattern = textPat,
+                textRegexInvalid = !t.textMatches.isNullOrBlank() && textPat == null,
+            )
+        }
         this.fireCallback = callback
         NotificationTriggerDispatcher.bind(this)
     }
 
     override suspend fun shutdown() {
-        matching = emptyList()
+        compiledRules = emptyList()
         fireCallback = null
     }
 
@@ -51,12 +76,11 @@ internal class NotificationTriggerFamily(
      */
     fun onPosted(packageName: String?, title: String?, text: String?) {
         val cb = fireCallback ?: return
-        val snap = matching
+        val snap = compiledRules
         if (snap.isEmpty()) return
         val fires = mutableListOf<Pair<String, TriggerSpec>>()
-        for (wf in snap) {
-            val t = wf.trigger as? TriggerSpec.NotificationReceived ?: continue
-            if (matches(t, packageName, title, text)) fires += wf.id to t
+        for (rule in snap) {
+            if (matches(rule, packageName, title, text)) fires += rule.workflowId to rule.spec
         }
         if (fires.isEmpty()) return
         scope.launch(Dispatchers.IO) {
@@ -68,7 +92,9 @@ internal class NotificationTriggerFamily(
         }
     }
 
-    private fun matches(t: TriggerSpec.NotificationReceived, pkg: String?, title: String?, text: String?): Boolean {
+    private fun matches(rule: CompiledRule, pkg: String?, title: String?, text: String?): Boolean {
+        val t = rule.spec
+        if (rule.titleRegexInvalid || rule.textRegexInvalid) return false
         if (!t.packageName.isNullOrBlank() && !t.packageName.equals(pkg, ignoreCase = false)) return false
         if (!t.titleContains.isNullOrBlank()) {
             if (title.isNullOrBlank()) return false
@@ -78,13 +104,13 @@ internal class NotificationTriggerFamily(
             if (text.isNullOrBlank()) return false
             if (!text.contains(t.textContains, ignoreCase = true)) return false
         }
-        if (!t.titleMatches.isNullOrBlank()) {
+        if (rule.titlePattern != null) {
             if (title.isNullOrBlank()) return false
-            if (!regexFind(t.titleMatches, title)) return false
+            if (!rule.titlePattern.matcher(title).find()) return false
         }
-        if (!t.textMatches.isNullOrBlank()) {
+        if (rule.textPattern != null) {
             if (text.isNullOrBlank()) return false
-            if (!regexFind(t.textMatches, text)) return false
+            if (!rule.textPattern.matcher(text).find()) return false
         }
         return true
     }

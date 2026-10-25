@@ -12,49 +12,53 @@ import androidx.compose.runtime.tooling.ComposeStackTraceMode
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import android.database.sqlite.SQLiteDatabase
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
+import coil3.SingletonImageLoader
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import android.database.sqlite.SQLiteDatabase
-import coil3.SingletonImageLoader
-import me.rerere.rikkahub.data.files.FileFolders
-import java.io.File
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.common.android.Logging
 import me.rerere.common.android.appTempFolder
-import com.whl.quickjs.android.QuickJSLoader
+import me.rerere.rikkahub.browser.HeadlessBrowserSessionPool
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
+import me.rerere.rikkahub.data.ai.consolidationModel
+import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.files.FileFolders
+import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.files.SkillManager
+import me.rerere.rikkahub.data.remote.ModelsDevUpdater
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.data.sync.BackupManager
+import me.rerere.rikkahub.data.sync.RestoreFailedException
 import me.rerere.rikkahub.di.appModule
 import me.rerere.rikkahub.di.dataSourceModule
 import me.rerere.rikkahub.di.repositoryModule
 import me.rerere.rikkahub.di.viewModelModule
-import me.rerere.rikkahub.data.files.FilesManager
-import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
-import me.rerere.rikkahub.data.sync.BackupManager
-import me.rerere.rikkahub.data.sync.RestoreFailedException
-import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.service.MediaCreationService
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.DatabaseUtil
-import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.workspace.WorkspaceManager
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.ProcessLifecycleOwner
-import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
-import me.rerere.rikkahub.service.MediaCreationService
-import me.rerere.rikkahub.data.files.SkillManager
 import org.koin.android.ext.android.get
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
+import java.io.File
 
 private const val TAG = "RikkaHubApp"
 
@@ -68,16 +72,19 @@ class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
         // Restore files and settings before eager Koin singletons or workers can access them.
-        try {
-            val restored = runBlocking(Dispatchers.IO) {
-                BackupManager.applyPendingRestore(this@RikkaHubApp, JsonInstant)
+        // Skip runBlocking(Dispatchers.IO) completely on normal cold starts when no restore is staged.
+        if (BackupManager.hasPendingRestore(this)) {
+            try {
+                val restored = runBlocking(Dispatchers.IO) {
+                    BackupManager.applyPendingRestore(this@RikkaHubApp, JsonInstant)
+                }
+                if (restored) {
+                    Toast.makeText(this, R.string.backup_page_restore_success, Toast.LENGTH_LONG).show()
+                }
+            } catch (e: RestoreFailedException) {
+                Log.e(TAG, "Backup restore rolled back", e)
+                Toast.makeText(this, "备份恢复失败，已保留原数据。请重新导入备份。", Toast.LENGTH_LONG).show()
             }
-            if (restored) {
-                Toast.makeText(this, R.string.backup_page_restore_success, Toast.LENGTH_LONG).show()
-            }
-        } catch (e: RestoreFailedException) {
-            Log.e(TAG, "Backup restore rolled back", e)
-            Toast.makeText(this, "备份恢复失败，已保留原数据。请重新导入备份。", Toast.LENGTH_LONG).show()
         }
 
         // :ai (and other sub-:app modules) have no BuildConfig of their own, so this is
@@ -106,12 +113,12 @@ class RikkaHubApp : Application() {
         // install crash handler
         CrashHandler.install(this)
 
-        // Init QuickJS native library
-        QuickJSLoader.init()
-
         // Defer non-critical filesystem and background maintenance tasks so the main thread
         // renders the UI instantly without CPU/IO contention or device lag
         scheduleDeferredMaintenance()
+
+        // Load models.dev data for model capability matching, then refresh it in background
+        updateModelsDev()
 
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
@@ -119,14 +126,6 @@ class RikkaHubApp : Application() {
         // Resume media generations interrupted by the last process death
         resumeMediaCreations()
         resumeMemoryConsolidation()
-
-        // Eagerly construct ChatService on the main thread. Its constructor calls
-        // LifecycleRegistry.addObserver which throws if it runs off-main, and the Telegram
-        // bot service runs on Dispatchers.IO — without this priming, the first inbound bot
-        // message after a fresh app start crashes the bot's handleIncoming with
-        // "addObserver must be called on the main thread" because Koin's lazy factory
-        // builds ChatService on the IO thread.
-        eagerlyInitChatService()
 
         // Start Telegram bot if previously enabled — service is START_NOT_STICKY so OS won't
         // auto-revive it after a process kill; we need to bring it back ourselves.
@@ -137,14 +136,6 @@ class RikkaHubApp : Application() {
         // sandbox for `.learnings/`, scratch files, and skill state without scoped-
         // storage friction. Termux-style: private, persistent, OS-blessed.
         me.rerere.rikkahub.data.ai.tools.local.AgentWorkspace.init(this)
-
-        // TermuxPreferences is already constructed transitively via eagerlyInitChatService()
-        // above (ChatService -> LocalTools -> TermuxPreferences), which runs its init{}
-        // restore + persister wiring for TermuxIntegration.lastVerifiedOkAtMs (GitHub #14).
-        // This explicit touch is a decoupled safety net so that persistence still initializes
-        // if that construction chain is later refactored or throws before reaching
-        // termuxPreferences.
-        eagerlyInitTermuxPreferences()
 
         // Increment launch count
         incrementLaunchCount()
@@ -189,6 +180,7 @@ class RikkaHubApp : Application() {
         try {
             if (level >= TRIM_MEMORY_RUNNING_LOW || level >= TRIM_MEMORY_UI_HIDDEN) {
                 SQLiteDatabase.releaseMemory()
+                evictIdleHeavyRuntimes(forceBrowserEvict = level >= TRIM_MEMORY_RUNNING_CRITICAL || level >= TRIM_MEMORY_BACKGROUND)
             }
         } catch (_: Throwable) {}
 
@@ -204,8 +196,19 @@ class RikkaHubApp : Application() {
         } catch (_: Throwable) {}
         try {
             SQLiteDatabase.releaseMemory()
+            evictIdleHeavyRuntimes(forceBrowserEvict = true)
         } catch (_: Throwable) {}
         System.gc()
+    }
+
+    private fun evictIdleHeavyRuntimes(forceBrowserEvict: Boolean) {
+        runCatching { HeadlessBrowserSessionPool.evictOnMemoryPressure(forceAll = forceBrowserEvict) }
+        runCatching {
+            get<AppScope>().launch(Dispatchers.IO) {
+                runCatching { get<me.rerere.locallm.litert.LiteRtRuntime>().unloadIfIdle() }
+                runCatching { get<me.rerere.llamacpp.LlamaCppRuntime>().unloadIfIdle() }
+            }
+        }
     }
 
     /**
@@ -378,27 +381,6 @@ class RikkaHubApp : Application() {
         }
     }
 
-    private fun eagerlyInitChatService() {
-        try {
-            // Just resolving the singleton triggers Koin's factory; the side effect we care
-            // about is the LifecycleRegistry.addObserver call inside ChatService.<init>,
-            // which Android requires to happen on the main thread.
-            get<me.rerere.rikkahub.service.ChatService>()
-        } catch (t: Throwable) {
-            Log.e(TAG, "eagerlyInitChatService failed", t)
-        }
-    }
-
-    // Decoupled safety net: normally a no-op since eagerlyInitChatService() already
-    // constructed TermuxPreferences transitively; kept independent in case that chain changes.
-    private fun eagerlyInitTermuxPreferences() {
-        try {
-            get<me.rerere.rikkahub.data.preferences.TermuxPreferences>()
-        } catch (t: Throwable) {
-            Log.e(TAG, "eagerlyInitTermuxPreferences failed", t)
-        }
-    }
-
     private fun startTelegramBotIfEnabled() {
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
@@ -448,6 +430,12 @@ class RikkaHubApp : Application() {
             }
             sweepLocalLlmNativeCrashes()
             invalidateLocalLlmDecisionsOnSdkUpgrade()
+        }
+    }
+
+    private fun updateModelsDev() {
+        get<AppScope>().launch {
+            get<ModelsDevUpdater>().start()
         }
     }
 
@@ -505,10 +493,31 @@ class RikkaHubApp : Application() {
     private fun resumeMemoryConsolidation() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_STOP) get<MemoryConsolidationScheduler>().onAppHidden()
+                when (event) {
+                    Lifecycle.Event.ON_START -> {
+                        runCatching { get<me.rerere.locallm.litert.LiteRtRuntime>().isAppForeground = true }
+                    }
+                    Lifecycle.Event.ON_STOP -> {
+                        runCatching { get<me.rerere.locallm.litert.LiteRtRuntime>().isAppForeground = false }
+                        // Never trigger automatic background memory consolidation when the
+                        // configured consolidation/fast/chat model is an on-device local LLM:
+                        // loading a 2-4 GB LiteRT / GGUF model the instant the user presses
+                        // Home starves Android Launcher and SystemUI of RAM and CPU.
+                        val settings = runCatching { get<SettingsStore>().settingsFlow.value }.getOrNull()
+                        val provider = settings?.consolidationModel()?.first?.findProvider(settings.providers)
+                        val isLocalOnDevice = provider is ProviderSetting.LiteRtLocal ||
+                            provider is ProviderSetting.LlamaCppLocal
+                        if (!isLocalOnDevice) {
+                            get<MemoryConsolidationScheduler>().onAppHidden()
+                        }
+                    }
+                    else -> {}
+                }
             }
         )
         get<AppScope>().launch(Dispatchers.IO) {
+            // Defer pending memory scan until after UI startup settles
+            delay(4000)
             runCatching {
                 get<MemoryConsolidationScheduler>().resumePending()
             }.onFailure {
@@ -570,10 +579,10 @@ class RikkaHubApp : Application() {
 }
 
 class AppScope : CoroutineScope by CoroutineScope(
-    SupervisorJob()
-        + Dispatchers.Main
-        + CoroutineName("AppScope")
-        + CoroutineExceptionHandler { _, e ->
-        Log.e(TAG, "AppScope exception", e)
-    }
+    SupervisorJob() +
+        Dispatchers.Main +
+        CoroutineName("AppScope") +
+        CoroutineExceptionHandler { _, e ->
+            Log.e(TAG, "AppScope exception", e)
+        }
 )

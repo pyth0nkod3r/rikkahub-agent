@@ -72,6 +72,7 @@ import me.rerere.hugeicons.stroke.Refresh03
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.tools.local.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.ui.components.message.tools.ToolUIContext
 import me.rerere.rikkahub.ui.components.message.tools.ToolUIRegistry
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
@@ -90,7 +91,6 @@ import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 private fun JsonElement?.getStringContent(key: String): String? =
     this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.contentOrNull
 
-private const val ASK_USER_TOOL_NAME = "ask_user"
 private const val PROPOSE_PLAN_TOOL_NAME = "propose_plan"
 
 @Composable

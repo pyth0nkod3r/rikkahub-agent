@@ -39,7 +39,7 @@ object AccessibilityServiceHandle {
     ): JsonObject {
         val svc = RikkaAccessibilityService.instance
             ?: return notActiveEnvelope()
-        return block(svc)
+        return svc.withInteractiveSession { block(it) }
     }
 
     fun notActiveEnvelope(): JsonObject = buildJsonObject {

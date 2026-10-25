@@ -1,15 +1,18 @@
 package me.rerere.rikkahub.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -17,10 +20,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 
 private const val TAG = "RikkaAccService"
 private const val GESTURE_TIMEOUT_MS = 5_000L
+private const val INTERACTIVE_IDLE_RELEASE_MS = 5_000L
 private const val LOG_RING_SIZE = 50
 
 data class ActionLogEntry(
@@ -55,14 +60,29 @@ class RikkaAccessibilityService : AccessibilityService() {
     // cancelled mid-wait, which the previous ticket counter did not.
     private val gestureMutex = Mutex()
 
+    // Reference count of active screen-automation tool calls + short post-call grace window.
+    // Keeps AccessibilityManagerService's expensive system-wide window-content & interactive
+    // window tracking OFF whenever RikkaHub is idle.
+    private val interactiveRefCount = AtomicInteger(0)
+    private val serviceInfoLock = Any()
+    @Volatile
+    private var interactiveLeaseUntilUptime: Long = 0L
+    private var appliedEventTypes: Int = -1
+    private var appliedFlags: Int = -1
+    private val releaseInteractiveRunnable = Runnable {
+        reconcileServiceInfo()
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         _running.value = true
-        Log.i(TAG, "AccessibilityService connected")
+        reconcileServiceInfo()
+        Log.i(TAG, "AccessibilityService connected (dynamic idle-first mode)")
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        gestureHandler.removeCallbacks(releaseInteractiveRunnable)
         instance = null
         _running.value = false
         _lastActions.value = emptyList()
@@ -71,6 +91,7 @@ class RikkaAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        gestureHandler.removeCallbacks(releaseInteractiveRunnable)
         instance = null
         _running.value = false
         gestureHandlerThread.quitSafely()
@@ -78,11 +99,119 @@ class RikkaAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
+    /**
+     * Dynamically adjusts [AccessibilityServiceInfo] so Android's system-wide accessibility
+     * node/window tracking is ONLY active during an agent screen-automation session (plus a
+     * 5-second settle window), or narrowed to lightweight `TYPE_WINDOW_STATE_CHANGED` when an
+     * `app_launched` / `app_closed` workflow trigger is enabled. When idle, `eventTypes = 0`
+     * and `FLAG_RETRIEVE_INTERACTIVE_WINDOWS` is cleared so zero cross-process accessibility
+     * IPC occurs across the user's phone.
+     */
+    fun reconcileServiceInfo() {
+        synchronized(serviceInfoLock) {
+            val now = SystemClock.uptimeMillis()
+            val interactive = interactiveRefCount.get() > 0 || now < interactiveLeaseUntilUptime
+            val foregroundWatch =
+                me.rerere.rikkahub.workflow.trigger.AppForegroundDispatcher.hasConsumers()
+
+            val desiredEventTypes: Int
+            val desiredFlags: Int
+            val desiredTimeout: Long
+            when {
+                interactive -> {
+                    desiredEventTypes =
+                        AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                    desiredFlags =
+                        AccessibilityServiceInfo.DEFAULT or
+                            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                    desiredTimeout = 100L
+                }
+                foregroundWatch -> {
+                    desiredEventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                    desiredFlags = AccessibilityServiceInfo.DEFAULT
+                    desiredTimeout = 150L
+                }
+                else -> {
+                    desiredEventTypes = 0
+                    desiredFlags = AccessibilityServiceInfo.DEFAULT
+                    desiredTimeout = 250L
+                }
+            }
+
+            if (desiredEventTypes == appliedEventTypes && desiredFlags == appliedFlags) {
+                return
+            }
+
+            runCatching {
+                val info = serviceInfo ?: AccessibilityServiceInfo()
+                info.eventTypes = desiredEventTypes
+                info.flags = desiredFlags
+                info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+                info.notificationTimeout = desiredTimeout
+                setServiceInfo(info)
+                appliedEventTypes = desiredEventTypes
+                appliedFlags = desiredFlags
+            }.onFailure {
+                Log.w(TAG, "Failed to update AccessibilityServiceInfo", it)
+            }
+        }
+    }
+
+    /**
+     * Extends the interactive window/event lease for [INTERACTIVE_IDLE_RELEASE_MS] without
+     * requiring a structured suspend scope (used by foreground-wait helpers).
+     */
+    fun touchInteractiveLease(durationMs: Long = INTERACTIVE_IDLE_RELEASE_MS) {
+        interactiveLeaseUntilUptime = SystemClock.uptimeMillis() + durationMs
+        reconcileServiceInfo()
+        scheduleLeaseExpiryCheck(durationMs)
+    }
+
+    private fun scheduleLeaseExpiryCheck(delayMs: Long) {
+        gestureHandler.removeCallbacks(releaseInteractiveRunnable)
+        gestureHandler.postDelayed(releaseInteractiveRunnable, delayMs + 50L)
+    }
+
+    /**
+     * Enables interactive window & window-content tracking for the duration of [block] and
+     * keeps it warm for [INTERACTIVE_IDLE_RELEASE_MS] afterward so consecutive tool calls do
+     * not repeatedly toggle `setServiceInfo`.
+     */
+    suspend fun <T> withInteractiveSession(block: suspend (RikkaAccessibilityService) -> T): T {
+        interactiveRefCount.incrementAndGet()
+        gestureHandler.removeCallbacks(releaseInteractiveRunnable)
+        reconcileServiceInfo()
+        return try {
+            block(this)
+        } finally {
+            val remaining = interactiveRefCount.decrementAndGet()
+            if (remaining <= 0) {
+                interactiveRefCount.set(0)
+                interactiveLeaseUntilUptime =
+                    SystemClock.uptimeMillis() + INTERACTIVE_IDLE_RELEASE_MS
+                scheduleLeaseExpiryCheck(INTERACTIVE_IDLE_RELEASE_MS)
+            }
+        }
+    }
+
+    /**
+     * Used by DoctorChecks to verify that `FLAG_RETRIEVE_INTERACTIVE_WINDOWS` works on demand
+     * while still allowing the service to stay idle when not in use.
+     */
+    suspend fun probeInteractiveWindows(): Boolean = withInteractiveSession {
+        repeat(4) { attempt ->
+            if (runCatching { windows.isNotEmpty() }.getOrDefault(false)) {
+                return@withInteractiveSession true
+            }
+            if (attempt < 3) delay(40L)
+        }
+        runCatching { rootInActiveWindow != null }.getOrDefault(false)
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // The service config only subscribes to typeWindowStateChanged|typeWindowContentChanged,
-        // so any event delivery means the UI moved.
         if (event != null) {
-            lastWindowEventUptime = android.os.SystemClock.uptimeMillis()
+            lastWindowEventUptime = SystemClock.uptimeMillis()
         }
         // Phase 12 — feed foreground-app transitions to the workflow trigger dispatcher.
         // We only care about TYPE_WINDOW_STATE_CHANGED and only when the package name is

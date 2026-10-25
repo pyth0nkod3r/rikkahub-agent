@@ -15,6 +15,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.Conversation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -50,8 +51,13 @@ class ConversationSessionTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val id = Uuid.random()
         val completions = mutableListOf<Throwable?>()
-        val session = ConversationSession(id, Conversation.ofId(id), scope, {},
-            { _, cause -> completions.add(cause) })
+        val session = ConversationSession(
+            id,
+            Conversation.ofId(id),
+            scope,
+            {},
+            { _, cause -> completions.add(cause) }
+        )
         try {
             val save = CompletableDeferred<Unit>()
             val decisions = mutableListOf<String>()
@@ -130,7 +136,8 @@ class ConversationSessionTest {
             Conversation.ofId(id),
             scope,
             {},
-            { _, cause -> completions.add(cause) })
+            { _, cause -> completions.add(cause) }
+        )
         try {
             val releaseOld = CompletableDeferred<Unit>()
             val releaseNew = CompletableDeferred<Unit>()
@@ -169,6 +176,23 @@ class ConversationSessionTest {
             session.setJob(scope.launch(start = CoroutineStart.LAZY) {})
             assertNull(session.getJob())
             assertFalse(session.isGenerating)
+        } finally {
+            session.cleanup()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `generation start time is recorded before the job runs`() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val id = Uuid.random()
+        val session = ConversationSession(id, Conversation.ofId(id), scope, {})
+        try {
+            var seenByJob: Long? = null
+            // 立刻失败的任务报错时，开始时间必须已经记下，否则这次的错误会被当成上一轮的
+            session.setJob(scope.launch(start = CoroutineStart.LAZY) { seenByJob = session.generationStartedAt.value })
+            assertNotNull(seenByJob)
+            assertTrue(seenByJob!! <= System.currentTimeMillis())
         } finally {
             session.cleanup()
             scope.cancel()

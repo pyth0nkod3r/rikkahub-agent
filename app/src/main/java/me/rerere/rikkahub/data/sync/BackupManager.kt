@@ -168,6 +168,13 @@ class BackupManager(
             filesDir = context.filesDir,
         )
 
+        /**
+         * Fast synchronous filesystem check so normal cold starts skip entering
+         * `runBlocking(Dispatchers.IO)` when no backup restore has ever been staged.
+         */
+        fun hasPendingRestore(context: Context): Boolean =
+            File(context.noBackupFilesDir, "backup-restore").exists()
+
         // 启动次数不在 Settings 里，备份文件里仍放在 settings.json 的这个字段，和旧备份保持一致
         private const val LAUNCH_COUNT_KEY = "launchCount"
 

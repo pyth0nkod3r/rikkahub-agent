@@ -8,15 +8,15 @@ import android.nfc.Tag
 import android.nfc.tech.Ndef
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import org.koin.android.ext.android.inject
 
-class ToolHostActivity : AppCompatActivity() {
+class ToolHostActivity : FragmentActivity() {
 
     private val cameraBuffer: CameraResultBuffer by inject()
     private val biometricBuffer: BiometricResultBuffer by inject()

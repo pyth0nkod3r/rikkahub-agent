@@ -24,6 +24,7 @@ import me.rerere.rikkahub.data.ai.UsageRecorder
 import me.rerere.rikkahub.data.ai.account.ProviderAccountManager
 import me.rerere.rikkahub.data.ai.ConversationMetaGenerator
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
+import me.rerere.rikkahub.data.remote.ModelsDevUpdater
 import me.rerere.rikkahub.data.remote.RemoteFileStore
 import me.rerere.rikkahub.service.memoryDreamKeepAlive
 import me.rerere.rikkahub.data.api.HuggingFaceAPI
@@ -368,6 +369,10 @@ val dataSourceModule = module {
             client = get(named("codex")),
             repository = get(),
         )
+    }
+
+    single {
+        ModelsDevUpdater(context = get(), client = get())
     }
 
     single {

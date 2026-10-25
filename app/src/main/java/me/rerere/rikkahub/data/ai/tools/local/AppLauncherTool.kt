@@ -27,6 +27,7 @@ private suspend fun waitForForegroundPackage(
 ): String? {
     val deadline = System.currentTimeMillis() + timeoutMs
     var current: String? = null
+    RikkaAccessibilityService.instance?.touchInteractiveLease()
     while (System.currentTimeMillis() < deadline) {
         val svc = RikkaAccessibilityService.instance ?: return null
         current = svc.rootInActiveWindow?.packageName?.toString()
@@ -146,6 +147,7 @@ fun launchAppTool(
                                 }
                             }
                             RikkaAccessibilityService.instance?.let { svc ->
+                                svc.touchInteractiveLease()
                                 put("after", screenStateJson(svc, screenChanged = null))
                             }
                         }.toString()
@@ -626,6 +628,7 @@ fun launchActivityTool(
                             }
                         }
                         RikkaAccessibilityService.instance?.let { svc ->
+                            svc.touchInteractiveLease()
                             put("after", screenStateJson(svc, screenChanged = null))
                         }
                     }.toString()

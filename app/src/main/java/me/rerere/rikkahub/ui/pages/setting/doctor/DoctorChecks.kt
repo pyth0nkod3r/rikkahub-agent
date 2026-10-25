@@ -566,7 +566,7 @@ class DoctorChecks(
             // service bound with a pre-update config (missing flagRetrieveInteractiveWindows)
             // reports bound=true but windows stays empty.
             val windowsOk = bound && me.rerere.rikkahub.service.RikkaAccessibilityService.instance
-                ?.let { runCatching { it.windows.isNotEmpty() }.getOrDefault(false) } == true
+                ?.let { runCatching { it.probeInteractiveWindows() }.getOrDefault(false) } == true
             add(
                 DoctorCheck(
                     id = "service.accessibility_bound",

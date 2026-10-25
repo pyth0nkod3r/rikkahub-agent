@@ -359,37 +359,6 @@ private fun ChatPageContent(
                     onCancelClick = {
                         vm.stopGeneration()
                     },
-                    enableSearch = enableWebSearch,
-                    onUpdateSearchMode = { mode ->
-                        val current = setting.getCurrentAssistant()
-                        val model = setting.getCurrentChatModel()
-                        vm.updateSettings(
-                            setting.copy(
-                                assistants = setting.assistants.map { assistant ->
-                                    if (assistant.id == current.id) {
-                                        assistant.copy(enableWebSearch = mode == SearchMode.LOCAL)
-                                    } else {
-                                        assistant
-                                    }
-                                },
-                                providers = if (model == null) {
-                                    setting.providers
-                                } else {
-                                    setting.providers.map { provider ->
-                                        provider.editModel(
-                                            model.copy(
-                                                tools = if (mode == SearchMode.BUILT_IN) {
-                                                    model.tools + BuiltInTools.Search
-                                                } else {
-                                                    model.tools - BuiltInTools.Search
-                                                }
-                                            )
-                                        )
-                                    }
-                                },
-                            )
-                        )
-                    },
                     onSendClick = {
                         if (currentChatModel == null) {
                             toaster.show(
@@ -508,29 +477,8 @@ private fun ChatPageContent(
                         }
                         inputState.clearInput()
                     },
-                    onUpdateChatModel = {
-                        vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it)
-                    },
-                    onUpdateAssistant = {
-                        vm.updateSettings(
-                            setting.copy(
-                                assistants = setting.assistants.map { assistant ->
-                                    if (assistant.id == it.id) {
-                                        it
-                                    } else {
-                                        assistant
-                                    }
-                                }
-                            )
-                        )
-                    },
-                    onUpdateSearchService = { index ->
-                        vm.updateSettings(
-                            setting.copy(
-                                searchServiceSelected = index
-                            )
-                        )
-                    },
+                    onUpdateChatModel = vm::setChatModel,
+                    onUpdateAssistant = vm::updateAssistant,
                     onMoreClick = {
                         showFilesSheet = true
                     },
@@ -624,6 +572,7 @@ private fun ChatPageContent(
                 setting = setting,
                 conversation = conversation,
                 assistant = assistant,
+                chatModel = currentChatModel,
                 vm = vm,
                 attachmentPickerActions = attachmentPickerActions,
                 onStartVoiceMode = onStartVoiceMode,
@@ -639,6 +588,7 @@ private fun ChatFilesPickerSheet(
     setting: Settings,
     conversation: Conversation,
     assistant: Assistant,
+    chatModel: Model?,
     vm: ChatVM,
     attachmentPickerActions: ChatAttachmentPickerActions,
     onStartVoiceMode: () -> Unit,
@@ -647,11 +597,9 @@ private fun ChatFilesPickerSheet(
     val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
 
     fun dismissAll() {
-        showInjectionSheet = false
         showCompressDialog = false
         onDismiss()
     }
@@ -666,31 +614,26 @@ private fun ChatFilesPickerSheet(
     ) {
         FilesPicker(
             conversation = conversation,
-            state = inputState,
             assistant = assistant,
+            chatModel = chatModel,
+            state = inputState,
             mcpManager = vm.mcpManager,
-            onCompressContext = { additionalPrompt, targetTokens, keepRecentMessages ->
-                vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
-            },
-            onUpdateAssistant = {
-                vm.updateSettings(
-                    setting.copy(
-                        assistants = setting.assistants.map { assistant ->
-                            if (assistant.id == it.id) {
-                                it
-                            } else {
-                                assistant
-                            }
-                        }
-                    )
-                )
-            },
+            onCompressContext = vm::handleCompressContext,
+            onUpdateAssistant = vm::updateAssistant,
             onUpdateConversation = {
                 vm.updateConversation(it)
                 vm.saveConversationAsync()
             },
-            showInjectionSheet = showInjectionSheet,
-            onShowInjectionSheetChange = { showInjectionSheet = it },
+            onUpdateWorkspaceCwd = vm::updateWorkspaceCwd,
+            onUpdateSearchMode = { mode ->
+                vm.updateSearch(
+                    enableWebSearch = mode == SearchMode.LOCAL,
+                    builtInSearch = mode == SearchMode.BUILT_IN,
+                )
+            },
+            onUpdateSearchService = { index ->
+                vm.updateSettings { it.copy(searchServiceSelected = index) }
+            },
             showCompressDialog = showCompressDialog,
             onShowCompressDialogChange = { showCompressDialog = it },
             onDismiss = { dismissAll() },

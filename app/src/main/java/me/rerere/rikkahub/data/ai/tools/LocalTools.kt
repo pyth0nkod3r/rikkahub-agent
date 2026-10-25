@@ -415,6 +415,7 @@ class LocalTools(
                     val logs = arrayListOf<String>()
                     var context: QuickJSContext? = null
                     try {
+                        me.rerere.common.js.ensureQuickJSInitialized()
                         context = QuickJSContext.create()
                         // Sane bounds so a runaway script can't OOM or blow the native stack
                         // before the wall-clock timeout fires. 64 MiB heap / 512 KiB stack.

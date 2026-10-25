@@ -5,12 +5,14 @@ import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import android.util.LruCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.notifications.NotificationEntry
@@ -68,10 +70,33 @@ class RikkaNotificationListenerService : NotificationListenerService() {
     @Volatile private var lastForwardedGlobalSig: Int = 0
     @Volatile private var lastForwardedGlobalAtMs: Long = 0L
 
+    // Cached snapshots updated reactively so onNotificationPosted never launches a coroutine
+    // or reads DataStore for non-whitelisted notifications.
+    @Volatile private var whitelistedPackages: Set<String> = emptySet()
+    @Volatile private var telegramForwardEnabled: Boolean = false
+    @Volatile private var preferenceObserverStarted: Boolean = false
+
     override fun onListenerConnected() {
         super.onListenerConnected()
         instance = this
         _bound.value = true
+        if (!preferenceObserverStarted) {
+            preferenceObserverStarted = true
+            scope.launch {
+                runCatching {
+                    whitelistPrefs.flow.collect { cfg ->
+                        whitelistedPackages = cfg.whitelist
+                    }
+                }
+            }
+            scope.launch {
+                runCatching {
+                    telegramPrefs.flow.collect { tg ->
+                        telegramForwardEnabled = tg.enabled && tg.defaultChatId != null
+                    }
+                }
+            }
+        }
         Log.i(TAG, "listener connected")
     }
 
@@ -92,6 +117,9 @@ class RikkaNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
+        // Fast-drop own & SystemUI notifications BEFORE calling PackageManager IPC in toEntry.
+        val pkg = sbn.packageName
+        if (pkg == BuildConfig.APPLICATION_ID || pkg == "com.android.systemui") return
         val entry = sbn.toEntry(packageManager) ?: return
         if (shouldDrop(entry)) return
 
@@ -101,8 +129,11 @@ class RikkaNotificationListenerService : NotificationListenerService() {
         // Append / replace by key (dedup updates of the same notification).
         appendToRing(entry)
 
-        // Auto-route to Telegram if package is whitelisted and a default chat is set.
-        scope.launch { tryForwardToTelegram(entry) }
+        // Only launch an IO coroutine when Telegram forwarding is enabled AND this package is
+        // whitelisted, avoiding coroutine/DataStore churn on every phone notification.
+        if (telegramForwardEnabled && entry.packageName in whitelistedPackages) {
+            scope.launch { tryForwardToTelegram(entry) }
+        }
 
         // Phase 12 — fan out to the workflow notification trigger dispatcher. The dispatcher
         // checks the matching workflows itself; with zero matching, this is a no-op.
@@ -116,6 +147,7 @@ class RikkaNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        sbn?.key?.let { lastForwarded.remove(it) }
         // Active-list cache no longer reflects reality — force re-fetch on the next read.
         // (Ring buffer is intentionally retained — it's "history" and removed
         // notifications stay visible to the LLM's history lookup.)
@@ -177,6 +209,9 @@ class RikkaNotificationListenerService : NotificationListenerService() {
             // Record dedup state ONLY AFTER successful send. Previously these were set
             // before sendMessage, so a transient network error meant the user never saw
             // that notification re-forwarded — the dedup map said "already done" forever.
+            if (lastForwarded.size >= 1_000) {
+                lastForwarded.clear()
+            }
             lastForwarded[entry.key] = signature
             lastForwardedGlobalSig = globalSig
             lastForwardedGlobalAtMs = now
@@ -312,6 +347,8 @@ internal fun matchesNotificationActionTitle(actual: String?, requested: String?)
     !requested.isNullOrBlank() &&
         actual?.trim()?.equals(requested.trim(), ignoreCase = true) == true
 
+private val appLabelCache = LruCache<String, String>(256)
+
 private fun StatusBarNotification.toEntry(pm: PackageManager): NotificationEntry? {
     val n = notification ?: return null
     val extras = n.extras ?: return null
@@ -331,8 +368,10 @@ private fun StatusBarNotification.toEntry(pm: PackageManager): NotificationEntry
     val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
     val text = extraText()
     val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty()
-    val label = try {
-        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+    val label = synchronized(appLabelCache) { appLabelCache.get(packageName) } ?: try {
+        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString().also { resolved ->
+            synchronized(appLabelCache) { appLabelCache.put(packageName, resolved) }
+        }
     } catch (t: Throwable) {
         // Uninstalled / restricted package — fall back to the raw package name.
         Log.d(TAG, "getApplicationLabel failed for $packageName", t)

@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -154,6 +155,16 @@ class ChatVM(
         }
     }
 
+    fun updateSettings(transform: (Settings) -> Settings): Job {
+        return viewModelScope.launch {
+            settingsStore.update { oldSettings ->
+                val newSettings = transform(oldSettings)
+                checkUserAvatarDelete(oldSettings, newSettings)
+                newSettings
+            }
+        }
+    }
+
     // 检查用户头像删除
     private fun checkUserAvatarDelete(oldSettings: Settings, newSettings: Settings) {
         val oldAvatar = oldSettings.displaySetting.userAvatar
@@ -165,6 +176,10 @@ class ChatVM(
     }
 
     // 设置聊天模型
+    fun setChatModel(model: Model) {
+        setChatModel(settings.value.getCurrentAssistant(), model)
+    }
+
     fun setChatModel(assistant: Assistant, model: Model) {
         viewModelScope.launch {
             settingsStore.update { settings ->
@@ -178,6 +193,62 @@ class ChatVM(
                             it
                         }
                     })
+            }
+        }
+    }
+
+    fun updateAssistant(assistant: Assistant) {
+        val previousWorkspaceId = settings.value.assistants
+            .firstOrNull { it.id == assistant.id }
+            ?.workspaceId
+        if (previousWorkspaceId != assistant.workspaceId && conversation.value.workspaceCwd != null) {
+            updateWorkspaceCwd(null)
+        }
+        viewModelScope.launch {
+            settingsStore.update { current ->
+                current.copy(
+                    assistants = current.assistants.map { item ->
+                        if (item.id == assistant.id) assistant else item
+                    }
+                )
+            }
+        }
+    }
+
+    fun updateWorkspaceCwd(cwd: String?) {
+        updateConversation(conversation.value.copy(workspaceCwd = cwd))
+        saveConversationAsync()
+    }
+
+    fun updateSearch(enableWebSearch: Boolean, builtInSearch: Boolean) {
+        viewModelScope.launch {
+            settingsStore.update { current ->
+                val currentAssistant = current.getCurrentAssistant()
+                val model = current.getCurrentChatModel()
+                current.copy(
+                    assistants = current.assistants.map { item ->
+                        if (item.id == currentAssistant.id) {
+                            item.copy(enableWebSearch = enableWebSearch)
+                        } else {
+                            item
+                        }
+                    },
+                    providers = if (model == null) {
+                        current.providers
+                    } else {
+                        current.providers.map { provider ->
+                            provider.editModel(
+                                model.copy(
+                                    tools = if (builtInSearch) {
+                                        model.tools + BuiltInTools.Search
+                                    } else {
+                                        model.tools - BuiltInTools.Search
+                                    }
+                                )
+                            )
+                        }
+                    },
+                )
             }
         }
     }

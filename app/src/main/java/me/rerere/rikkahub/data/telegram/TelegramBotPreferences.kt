@@ -9,8 +9,13 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 private val Context.telegramDataStore by preferencesDataStore(name = "telegram_bot")
 
@@ -61,9 +66,27 @@ class TelegramBotPreferences(private val context: Context) {
     // because it's runtime state, not user-facing configuration.
     private val K_LAST_OFFSET = longPreferencesKey("last_offset")
 
-    val flow = store.data.map { p -> readConfig(p) }
+    val flow = store.data.map { p -> readConfig(p).also { cachedConfig = it } }
 
-    suspend fun current(): TelegramBotConfig = flow.first()
+    @Volatile
+    private var cachedConfig: TelegramBotConfig? = null
+
+    init {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching {
+                flow.collect {}
+            }
+        }
+    }
+
+    suspend fun current(): TelegramBotConfig = cachedConfig ?: flow.first()
+
+    /**
+     * Non-suspending fast read for OkHttp/Telegram client providers. Uses the reactive
+     * in-memory snapshot once warm so Telegram HTTP calls never block threads via `runBlocking`.
+     */
+    fun currentCachedBlocking(): TelegramBotConfig =
+        cachedConfig ?: kotlinx.coroutines.runBlocking { flow.first() }
 
     suspend fun update(fn: (TelegramBotConfig) -> TelegramBotConfig) {
         store.edit { p ->
@@ -81,6 +104,7 @@ class TelegramBotPreferences(private val context: Context) {
             } else p.remove(K_CUSTOM_COMMANDS)
             p[K_STREAM_SCREENSHOTS] = next.streamScreenshots
             writeTelegramProxyConfig(p, next)
+            cachedConfig = next
         }
     }
 

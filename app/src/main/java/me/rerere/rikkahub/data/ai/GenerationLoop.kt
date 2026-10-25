@@ -600,13 +600,34 @@ class GenerationLoop(
             if (pendingTools.isEmpty()) {
                 try {
                     onBeforeModelRequest()
+                    // Historical messages prior to the last message are immutable across the
+                    // entire stream; pre-compute their visual output transforms once per step
+                    // instead of running Regex / ThinkTag / Base64 scans over the full chat
+                    // history on every single streamed token.
+                    val unchangedPrefixCount = (messages.size - 1).coerceAtLeast(0)
+                    val unchangedPrefix = messages.subList(0, unchangedPrefixCount).toList()
+                    val visualPrefix = unchangedPrefix.visualTransforms(
+                        transformers = outputTransformers,
+                        context = context,
+                        model = model,
+                        assistant = assistant,
+                        settings = settings,
+                    )
                     generateInternal(
                         assistant = assistant,
                         settings = settings,
                         systemAddendum = systemAddendum,
                         messages = messages,
                         onUpdateMessages = {
-                            messages = it.transforms(
+                            val tail = it.drop(unchangedPrefixCount).transforms(
+                                transformers = outputTransformers,
+                                context = context,
+                                model = model,
+                                assistant = assistant,
+                                settings = settings
+                            )
+                            messages = if (unchangedPrefixCount == 0) tail else unchangedPrefix + tail
+                            val visualTail = tail.visualTransforms(
                                 transformers = outputTransformers,
                                 context = context,
                                 model = model,
@@ -615,13 +636,7 @@ class GenerationLoop(
                             )
                             emit(
                                 GenerationChunk.Messages(
-                                    messages.visualTransforms(
-                                        transformers = outputTransformers,
-                                        context = context,
-                                        model = model,
-                                        assistant = assistant,
-                                        settings = settings
-                                    )
+                                    if (unchangedPrefixCount == 0) visualTail else visualPrefix + visualTail
                                 )
                             )
                         },

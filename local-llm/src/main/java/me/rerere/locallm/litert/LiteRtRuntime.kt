@@ -269,7 +269,16 @@ class LiteRtRuntime(private val context: Context) {
     // CPU). Configurable per-runtime via [setIdleTeardownDelayMs]; pass 0 to disable.
 
     @Volatile
-    private var idleTeardownDelayMs: Long = TimeUnit.MINUTES.toMillis(15)
+    private var idleTeardownDelayMs: Long = TimeUnit.MINUTES.toMillis(3)
+
+    /**
+     * Updated by `RikkaHubApp`'s process lifecycle observer. When the app is in the
+     * background, `streamTurns` skips `THREAD_PRIORITY_URGENT_DISPLAY` and
+     * `PerformanceHintManager` so background inference cannot starve Android Launcher or
+     * SystemUI.
+     */
+    @Volatile
+    var isAppForeground: Boolean = true
 
     @Volatile
     private var idleTeardownJob: kotlinx.coroutines.Job? = null
@@ -878,14 +887,17 @@ class LiteRtRuntime(private val context: Context) {
         val originalPriority = runCatching {
             Process.getThreadPriority(callerTid)
         }.getOrDefault(Process.THREAD_PRIORITY_DEFAULT)
-        val hintSession = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val boostForeground = isAppForeground
+        val hintSession = if (boostForeground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             runCatching {
                 val phm = context.getSystemService(PerformanceHintManager::class.java)
                 phm?.createHintSession(intArrayOf(callerTid), 50_000_000L)  // 50 ms target
             }.getOrNull()
         } else null
-        runCatching {
-            Process.setThreadPriority(callerTid, Process.THREAD_PRIORITY_URGENT_DISPLAY)
+        if (boostForeground) {
+            runCatching {
+                Process.setThreadPriority(callerTid, Process.THREAD_PRIORITY_URGENT_DISPLAY)
+            }
         }
 
         try { mutex.withLock {
@@ -1050,6 +1062,27 @@ class LiteRtRuntime(private val context: Context) {
             try { loaded?.engine?.close() } catch (_: Throwable) {}
             loaded = null
             lastTelemetry = null
+        }
+    }
+
+    /**
+     * Immediately releases the cached engine + conversation if [mutex] is free (no active
+     * load or generation). Safe to call from `Application.onTrimMemory` / `onLowMemory`.
+     */
+    fun unloadIfIdle(): Boolean {
+        if (!mutex.tryLock()) return false
+        return try {
+            idleTeardownJob?.cancel()
+            idleTeardownJob = null
+            val current = loaded ?: return false
+            android.util.Log.i("LiteRtRuntime", "unloadIfIdle: releasing idle engine on memory trim")
+            try { current.conversation.close() } catch (_: Throwable) {}
+            try { current.engine.close() } catch (_: Throwable) {}
+            loaded = null
+            lastTelemetry = null
+            true
+        } finally {
+            mutex.unlock()
         }
     }
 

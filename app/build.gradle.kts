@@ -19,8 +19,8 @@ android {
         applicationId = "excp.rikkahub.agent"
         minSdk = 26
         targetSdk = 37
-        versionCode = 193
-        versionName = "3.1.0-agent"
+        versionCode = 194
+        versionName = "3.1.1-agent"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -79,12 +79,9 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "src/main/keepRules/rikkahub.keep"
-            )
+            optimization {
+                enable = true
+            }
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
             buildConfigField("String", "UPDATE_API_URL", "\"\"")
@@ -114,6 +111,8 @@ android {
     }
     androidResources {
         generateLocaleConfig = true
+        // 只保留 app 自己翻译过的语言，依赖库（AndroidX、GMS 等）带的其他语言资源不打包
+        localeFilters += listOf("en", "ar", "de", "ja", "ko", "ko-rKR", "ru", "zh", "zh-rTW")
     }
     packaging {
         jniLibs {
@@ -122,15 +121,6 @@ android {
         }
     }
     lint {
-        // FullBackupContent insists every <exclude> path lives under a previously
-        // <include>'d root. Our backup_rules.xml + data_extraction_rules.xml use
-        // include="upload/" + explicit excludes for databases / sharedpref /
-        // datastore/ / known_hosts / browser-profile/ / local-models/ as
-        // belt-and-suspenders defence: if anyone later adds a broader <include>
-        // (e.g. domain="root"), the excludes still keep credentials and
-        // multi-GB local LLM weights off the cloud-backup path. Lint reads that
-        // pattern as redundant; the runtime accepts it. Keep the rules; mute
-        // the check.
         disable.add("FullBackupContent")
     }
     tasks.withType<KotlinCompile>().configureEach {
@@ -144,8 +134,6 @@ android {
         compilerOptions.optIn.add("kotlin.uuid.ExperimentalUuidApi")
         compilerOptions.optIn.add("kotlin.time.ExperimentalTime")
         compilerOptions.optIn.add("kotlinx.coroutines.ExperimentalCoroutinesApi")
-        // ExperimentalNavigation3Api was renamed/removed in newer navigation3 — opt-in is
-        // no longer required and the marker class no longer exists in the runtime artifact.
     }
 }
 
@@ -168,6 +156,12 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }
+}
+
+// kotlin-reflect 只由 ktor-server-core 传递引入，用到它的只有按配置加载模块、开发模式热重载等用不到的路径。
+// 它在 classpath 上时 stdlib 的 Reflection 会 Class.forName 加载 ReflectionFactoryImpl，R8 因此保留整个实现（约 0.7MB dex）
+configurations.matching { it.name.endsWith("RuntimeClasspath") }.configureEach {
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-reflect")
 }
 
 dependencies {
@@ -196,9 +190,11 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.androidx.material3.adaptive.navigation3)
 
-
     // DataStore
     implementation(libs.androidx.datastore.preferences)
+
+    // EXIF orientation for picked images
+    implementation(libs.androidx.exifinterface)
 
     // Image metadata extractor
     // https://github.com/drewnoakes/metadata-extractor
@@ -232,9 +228,6 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
 
-    // ucrop
-    implementation(libs.ucrop)
-
     // pebble (template engine)
     implementation(libs.pebble)
 
@@ -254,13 +247,11 @@ dependencies {
     // YAML front matter
     implementation(libs.snakeyaml)
 
-    // zxing
+    // zxing + CameraX (qrcode scanner)
     implementation(libs.zxing.core)
-
-    // quickie (qrcode scanner)
-    implementation(libs.quickie.bundled)
-    implementation(libs.barcode.scanning)
-    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.compose)
 
     // Room
     implementation(libs.androidx.room.runtime)
@@ -339,7 +330,6 @@ dependencies {
     implementation(project(":workspace"))
     implementation(project(":oauth"))
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
-    implementation(kotlin("reflect"))
 
     // SSH client (Mwiede fork — maintained, Android-friendly)
     implementation(libs.jsch)
@@ -347,14 +337,13 @@ dependencies {
     // Cron utilities (expression parsing & validation)
     implementation(libs.cron.utils)
 
-    // Shizuku client — lets shizuku_exec run a shell command with the shell UID's
-    // privileges without root. :api is the client SDK; :provider ships ShizukuProvider,
-    // the ContentProvider that receives the binder from the Shizuku app.
+    // Shizuku client
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
 
     // tests
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

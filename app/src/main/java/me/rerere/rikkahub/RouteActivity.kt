@@ -1,6 +1,7 @@
 package me.rerere.rikkahub
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -134,6 +135,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingSearchDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingsSearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingTTSPage
+import me.rerere.rikkahub.ui.pages.setting.SettingMediaProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSpeechPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSubAgentsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingTelegramPage
@@ -154,6 +156,15 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "RouteActivity"
 private const val ACTION_TRANSLATE = "me.rerere.rikkahub.action.TRANSLATE"
+private const val ACTION_MEDIA_CREATION = "me.rerere.rikkahub.action.MEDIA_CREATION"
+private const val EXTRA_CONVERSATION_ID = "conversationId"
+
+/** 打开指定会话的聊天页 */
+fun conversationIntent(context: Context, conversationId: String): Intent =
+    Intent(context, RouteActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        putExtra(EXTRA_CONVERSATION_ID, conversationId)
+    }
 
 class RouteActivity : ComponentActivity() {
     companion object {
@@ -261,7 +272,8 @@ class RouteActivity : ComponentActivity() {
             Intent.ACTION_PROCESS_TEXT -> Screen.ShareHandler(
                 text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty(),
             )
-            else -> mediaCreationDestination(intent) ?: intent.getStringExtra("conversationId")?.let { Screen.Chat(it) }
+            else -> mediaCreationDestination(intent)
+                ?: intent.getStringExtra(EXTRA_CONVERSATION_ID)?.let { Screen.Chat(it) }
         }
         if (destination != null && backStack.lastOrNull() != destination) {
             backStack.add(destination)
@@ -340,7 +352,8 @@ class RouteActivity : ComponentActivity() {
                             rememberViewModelStoreNavEntryDecorator(),
                         ),
                         modifier = Modifier.fillMaxSize(),
-                        onBack = { backStack.removeLastOrNull() },
+                        // 同一帧内连续两次返回时 NavDisplay 的返回状态还没更新，会多回调一次，不加判断会把栈弹空
+                        onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
                         transitionSpec = {
                             if (backStack.size == 1) fadeIn() togetherWith fadeOut()
                             else {
@@ -524,6 +537,10 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.SettingMedia> {
                                 SettingMediaPage()
+                            }
+
+                            entry<Screen.SettingMediaProviderDetail> { key ->
+                                SettingMediaProviderDetailPage(id = Uuid.parse(key.providerId))
                             }
 
                             entry<Screen.SettingMcp> {
@@ -832,6 +849,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingMedia : Screen
+
+    @Serializable
+    data class SettingMediaProviderDetail(val providerId: String) : Screen
 
     @Serializable
     data object SettingMcp : Screen

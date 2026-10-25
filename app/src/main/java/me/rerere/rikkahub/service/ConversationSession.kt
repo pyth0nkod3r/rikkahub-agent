@@ -41,6 +41,13 @@ class ConversationSession(
     // 处理状态（如 OCR 识别中）
     val processingStatus = MutableStateFlow<String?>(null)
 
+    // 最近一轮正在写的助手消息，这一轮还没有输出时为空。重新生成较早的消息时它不在会话末尾，
+    // 生成期间那个节点还可能被切到别的分支，只能按 id 找
+    val replyMessageId = MutableStateFlow<Uuid?>(null)
+
+    // 最近一次生成任务开始的时间，用来认出这一轮报的错。在任务启动前同步记下，任务里报的错不会早于它
+    val generationStartedAt = MutableStateFlow<Long?>(null)
+
     // 生成任务（内聚在 session 中）
     private val _generationJob = MutableStateFlow<Job?>(null)
     private val activeJobs = mutableSetOf<Job>()
@@ -48,10 +55,16 @@ class ConversationSession(
     val isGenerating: Boolean get() = _generationJob.value?.isActive == true
     val isInUse: Boolean
         get() = refCount.get() > 0 || _generationJob.value != null ||
-                messageQueue.state.value.messages.isNotEmpty()
+            messageQueue.state.value.messages.isNotEmpty()
 
     // 空闲检查任务
     private var idleCheckJob: Job? = null
+
+    init {
+        // Schedule an initial idle check so one-shot callers (e.g. getConversationFlow(id).value)
+        // that never acquire/release a reference still get evicted after IDLE_TIMEOUT_MS.
+        scheduleIdleCheck()
+    }
 
     fun acquire(): Int = refCount.incrementAndGet().also {
         cancelIdleCheck()
@@ -86,6 +99,7 @@ class ConversationSession(
     @Synchronized
     fun setJob(job: Job?, cancelPrevious: Boolean = true) {
         val previous = _generationJob.value
+        if (job != null) generationStartedAt.value = System.currentTimeMillis()
         _generationJob.value = job
         if (cancelPrevious) previous?.cancel()
         if (job != null) activeJobs.add(job)
@@ -116,7 +130,7 @@ class ConversationSession(
         idleCheckJob?.cancel()
         idleCheckJob = scope.launch {
             delay(IDLE_TIMEOUT_MS)
-            if (refCount.get() <= 0 && !isGenerating) {
+            if (!isInUse) {
                 onIdle(id)
             }
         }
@@ -130,6 +144,9 @@ class ConversationSession(
     @Synchronized
     fun cleanup() {
         _generationJob.value = null
+        processingStatus.value = null
+        replyMessageId.value = null
+        generationStartedAt.value = null
         cancelJobs()
         idleCheckJob?.cancel()
         idleCheckJob = null

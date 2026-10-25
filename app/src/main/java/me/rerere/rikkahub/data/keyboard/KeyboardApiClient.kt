@@ -10,6 +10,12 @@ import android.util.Log
 import dev.patrickgold.florisboard.api.EditorInfoBundle
 import dev.patrickgold.florisboard.api.IKeyboardApi
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -56,6 +62,17 @@ class KeyboardApiClient(private val context: Context) {
     private var binder: IKeyboardApi? = null
     private var token: String? = null
     private var connection: ServiceConnection? = null
+    private val idleScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var idleUnbindJob: Job? = null
+
+    private fun armIdleUnbind() {
+        idleUnbindJob?.cancel()
+        idleUnbindJob = idleScope.launch {
+            delay(IDLE_UNBIND_DELAY_MS)
+            resetBinding()
+        }
+    }
 
     @Volatile
     private var bindWaiter: CompletableDeferred<IKeyboardApi?>? = null
@@ -152,12 +169,17 @@ class KeyboardApiClient(private val context: Context) {
         val api = ensureBound() ?: return Result.Err(Failure.BIND_REFUSED)
         val sessionToken = ensureToken(api, forceHandshake)
             ?: return Result.Err(Failure.BIND_REFUSED)
-        val value = withTimeoutOrNull(CALL_TIMEOUT_MS) {
-            runCatching { block(api, sessionToken) }.getOrElse { t ->
-                Log.w(TAG, "AIDL call threw — dropping binding", t)
-                resetBinding()
-                null
+        idleUnbindJob?.cancel()
+        val value = try {
+            withTimeoutOrNull(CALL_TIMEOUT_MS) {
+                runCatching { block(api, sessionToken) }.getOrElse { t ->
+                    Log.w(TAG, "AIDL call threw — dropping binding", t)
+                    resetBinding()
+                    null
+                }
             }
+        } finally {
+            armIdleUnbind()
         }
         return if (value != null) Result.Ok(value) else Result.Err(Failure.OPERATION_FAILED)
     }
@@ -186,7 +208,13 @@ class KeyboardApiClient(private val context: Context) {
             deferred = bindWaiter!!
         }
         if (needBind) startBind(deferred)
-        return withTimeoutOrNull(BIND_TIMEOUT_MS) { deferred.await() }
+        val bound = withTimeoutOrNull(BIND_TIMEOUT_MS) { deferred.await() }
+        if (bound == null) {
+            // Unbind and clear bindWaiter on timeout so neither the ServiceConnection nor a
+            // dead CompletableDeferred stays leaked/wedged across future calls.
+            resetBinding()
+        }
+        return bound
     }
 
     private suspend fun startBind(deferred: CompletableDeferred<IKeyboardApi?>) {
@@ -246,6 +274,7 @@ class KeyboardApiClient(private val context: Context) {
         const val BIND_ACTION = "dev.patrickgold.florisboard.api.action.BIND"
         private const val BIND_TIMEOUT_MS = 5_000L
         private const val CALL_TIMEOUT_MS = 5_000L
+        private const val IDLE_UNBIND_DELAY_MS = 2 * 60_000L
 
         /** True if agent-keyboard is enabled in the system IME list (not necessarily selected). */
         fun isEnabledAsIme(context: Context): Boolean = runCatching {
@@ -253,6 +282,6 @@ class KeyboardApiClient(private val context: Context) {
                 as android.view.inputmethod.InputMethodManager
             imm.enabledInputMethodList.any { it.packageName == KEYBOARD_PACKAGE }
         }.getOrDefault(false)
-        private const val SENTINEL_NULL = " __keyboard_api_null__"
+        private const val SENTINEL_NULL = "\u0000__keyboard_api_null__"
     }
 }

@@ -28,7 +28,7 @@ object CustomJsSearchService : SearchService<SearchServiceOptions.CustomJsOption
             properties = buildJsonObject {
                 put("query", buildJsonObject {
                     put("type", "string")
-                    put("description", "search keyword")
+                    put("description", SEARCH_QUERY_DESCRIPTION)
                 })
             },
             required = listOf("query")
@@ -87,6 +87,7 @@ object CustomJsSearchService : SearchService<SearchServiceOptions.CustomJsOption
     }
 
     private fun executeScript(userScript: String, invocation: String): String {
+        me.rerere.common.js.ensureQuickJSInitialized()
         val context = QuickJSContext.create()
         try {
             context.injectFetch(httpClient)

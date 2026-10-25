@@ -2,8 +2,12 @@ package me.rerere.llamacpp
 
 import android.app.ActivityManager
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.emitAll
@@ -12,6 +16,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.ImageGenerationParams
 import me.rerere.ai.provider.Model
@@ -106,6 +112,25 @@ class LlamaCppProvider(
      *  which holds its own mutex for the whole inference so concurrent callers queue up rather
      *  than racing the loaded model. */
     private val loadMutex = Mutex()
+    private val idleScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var idleUnloadJob: Job? = null
+    @Volatile
+    private var lastActivityMs: Long = 0L
+
+    private fun armIdleUnload() {
+        lastActivityMs = System.currentTimeMillis()
+        idleUnloadJob?.cancel()
+        idleUnloadJob = idleScope.launch {
+            delay(IDLE_UNLOAD_DELAY_MS)
+            loadMutex.withLock {
+                if (System.currentTimeMillis() - lastActivityMs >= IDLE_UNLOAD_DELAY_MS && runtime.isLoaded()) {
+                    runtime.unload()
+                    loadedPath.set(null)
+                }
+            }
+        }
+    }
 
     override suspend fun listModels(providerSetting: ProviderSetting.LlamaCppLocal): List<Model> =
         providerSetting.models
@@ -115,8 +140,13 @@ class LlamaCppProvider(
         messages: List<UIMessage>,
         params: TextGenerationParams,
     ): TextGenerationResult = loadMutex.withLock {
-        ensureModelReady(messages, params)
-        generateFromLoadedModel(runtime, messages, params)
+        idleUnloadJob?.cancel()
+        try {
+            ensureModelReady(messages, params)
+            generateFromLoadedModel(runtime, messages, params)
+        } finally {
+            armIdleUnload()
+        }
     }
 
     override suspend fun streamText(
@@ -127,8 +157,13 @@ class LlamaCppProvider(
         // loadMutex is held across the whole load-then-generate sequence, not just the load -
         // see the mutex's doc comment for why the generation itself must stay inside the lock.
         loadMutex.withLock {
-            ensureModelReady(messages, params)
-            emitAll(streamFromLoadedModel(runtime, messages, params))
+            idleUnloadJob?.cancel()
+            try {
+                ensureModelReady(messages, params)
+                emitAll(streamFromLoadedModel(runtime, messages, params))
+            } finally {
+                armIdleUnload()
+            }
         }
     }
 
@@ -183,6 +218,23 @@ class LlamaCppProvider(
 
     companion object {
         private const val DEFAULT_MAX_TOKENS = 2048
+        private const val IDLE_UNLOAD_DELAY_MS = 3 * 60 * 1_000L
+
+        /**
+         * `nativeParseChat` only reads `"format"`, `"generation_prompt"`, and `"parser"` from
+         * the applied-template JSON, never `"prompt"` (`llama_jni.cpp`). Stripping `"prompt"`
+         * once per turn avoids copying and parsing a 30-150 KB prompt blob across JNI on
+         * every generated token while leaving `"prompt"` intact for [LlamaCppRuntime.generate].
+         */
+        internal fun stripPromptFromAppliedTemplate(appliedTemplateJson: String): String {
+            if (!appliedTemplateJson.contains("\"prompt\"")) return appliedTemplateJson
+            return runCatching {
+                val obj = Json.parseToJsonElement(appliedTemplateJson) as? JsonObject
+                    ?: return appliedTemplateJson
+                if ("prompt" !in obj) return appliedTemplateJson
+                JsonObject(obj.filterKeys { it != "prompt" }).toString()
+            }.getOrDefault(appliedTemplateJson)
+        }
 
         /**
          * Resolves [modelId] - a bare file name, never a path - against [installed], the
@@ -233,7 +285,7 @@ class LlamaCppProvider(
             systemPromptBytes: Int,
             availableRamBytes: Long,
         ) {
-            if (loadedPath.get() == path) {
+            if (loadedPath.get() == path && runtime.isLoaded()) {
                 runtime.replan(tools, systemPromptBytes)
                 return
             }
@@ -291,6 +343,7 @@ class LlamaCppProvider(
             val appliedTemplateJson = runtime.applyTemplate(
                 ChatRequestMapper.toRequestJson(trimmedMessages, params.tools)
             )
+            val parseSyntaxJson = stripPromptFromAppliedTemplate(appliedTemplateJson)
             val tracker = ChatDeltaTracker()
             val accumulated = StringBuilder()
             val finished = AtomicBoolean(false)
@@ -340,13 +393,13 @@ class LlamaCppProvider(
                 try {
                     runtime.generate(appliedTemplateJson, params.maxTokens ?: DEFAULT_MAX_TOKENS) { piece ->
                         accumulated.append(piece)
-                        val parsed = runtime.parse(accumulated.toString(), true, appliedTemplateJson)
+                        val parsed = runtime.parse(accumulated.toString(), true, parseSyntaxJson)
                         sendDelta(tracker.consume(parsed, isPartial = true), false)
                     }
 
                     // The final parse is authoritative: it flushes any tool call whose arguments
                     // were still settling when generation stopped (see ChatDeltaTracker.consume).
-                    val finalParsed = runtime.parse(accumulated.toString(), false, appliedTemplateJson)
+                    val finalParsed = runtime.parse(accumulated.toString(), false, parseSyntaxJson)
                     sendDelta(tracker.consume(finalParsed, isPartial = false), true)
                     trySend(StreamChunk.Finish())
                 } finally {

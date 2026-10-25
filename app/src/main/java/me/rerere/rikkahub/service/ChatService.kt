@@ -160,7 +160,8 @@ private const val MIN_AUTOMATIC_TAIL_BUDGET_TOKENS = 512
  * the user changes screens or the process is killed. Keep the durable snapshot reasonably fresh
  * without turning Room into the stream's bottleneck.
  */
-private const val STREAMING_PERSIST_INTERVAL_MS = 500L
+private const val STREAMING_PERSIST_INTERVAL_MS = 2_500L
+private const val LIVE_UPDATE_NOTIFICATION_INTERVAL_MS = 1_000L
 
 private fun Throwable.isContextLimitError(): Boolean {
     val markers = listOf(
@@ -455,6 +456,7 @@ class ChatService(
     private val streamingPersistenceSequence = AtomicLong(0L)
     private val pendingStreamingPersistence = ConcurrentHashMap<Uuid, Long>()
     private val lastStreamingPersistAt = ConcurrentHashMap<Uuid, Long>()
+    private val lastLiveUpdateNotificationAt = ConcurrentHashMap<Uuid, Long>()
 
     // This starts before the chat coroutine is dispatched, so a user can background the app
     // immediately after pressing Send without racing the foreground-service promotion.
@@ -548,11 +550,33 @@ class ChatService(
     }
 
     init {
-        ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycleObserver)
+        val registerObserver = Runnable {
+            runCatching {
+                val lifecycle = ProcessLifecycleOwner.get().lifecycle
+                _isForeground.value = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                lifecycle.addObserver(lifecycleObserver)
+            }.onFailure {
+                Log.w(TAG, "Failed to register ProcessLifecycleOwner observer", it)
+            }
+        }
+        val mainLooper = runCatching { android.os.Looper.getMainLooper() }.getOrNull()
+        if (mainLooper == null || android.os.Looper.myLooper() == mainLooper) {
+            registerObserver.run()
+        } else {
+            android.os.Handler(mainLooper).post(registerObserver)
+        }
     }
 
     fun cleanup() = runCatching {
-        ProcessLifecycleOwner.get().lifecycle.removeObserver(lifecycleObserver)
+        val unregister = Runnable {
+            runCatching { ProcessLifecycleOwner.get().lifecycle.removeObserver(lifecycleObserver) }
+        }
+        val mainLooper = runCatching { android.os.Looper.getMainLooper() }.getOrNull()
+        if (mainLooper == null || android.os.Looper.myLooper() == mainLooper) {
+            unregister.run()
+        } else {
+            android.os.Handler(mainLooper).post(unregister)
+        }
         sessions.values.forEach { it.cleanup() }
         sessions.clear()
         sessionMutexes.clear()
@@ -560,6 +584,8 @@ class ChatService(
         persistenceMutexes.clear()
         pendingStreamingPersistence.clear()
         lastStreamingPersistAt.clear()
+        lastLiveUpdateNotificationAt.clear()
+        conversationNotificationSequence.clear()
     }.onFailure {
         // Don't let a teardown hiccup escape, but don't swallow it silently either —
         // a failure here can leave the lifecycle observer registered (slow leak).
@@ -581,7 +607,7 @@ class ChatService(
                 onIdle = { removeSession(it) },
                 onGenerationFinished = { id, cause ->
                     val session = sessions[id]
-                    if (cause != null) session?.messageQueue?.pause()
+                    if (cause != null && cause !is CancellationException) session?.messageQueue?.pause()
                     if (session?.state?.value?.currentMessages?.any { message ->
                             message.parts.any { it is UIMessagePart.Tool && it.isPending }
                         } == true) {
@@ -615,6 +641,7 @@ class ChatService(
                 persistenceMutexes.remove(conversationId)
                 lastStreamingPersistAt.remove(conversationId)
             }
+            lastLiveUpdateNotificationAt.remove(conversationId)
             _sessionsVersion.value++
             Log.i(TAG, "removeSession: $conversationId (remaining: ${sessions.size})")
         }
@@ -634,6 +661,8 @@ class ChatService(
         compactionMutexes.remove(conversationId)
         pendingStreamingPersistence.remove(conversationId)
         lastStreamingPersistAt.remove(conversationId)
+        lastLiveUpdateNotificationAt.remove(conversationId)
+        conversationNotificationSequence.remove(conversationId)
         persistenceMutexes.remove(conversationId)
         _sessionsVersion.value++
         Log.i(TAG, "dropSession: $conversationId (remaining: ${sessions.size})")
@@ -685,14 +714,17 @@ class ChatService(
         return getOrCreateSession(conversationId).state
     }
 
-    fun getGenerationJobStateFlow(conversationId: Uuid): Flow<Job?> {
-        val session = sessions[conversationId] ?: return flowOf(null)
-        return session.generationJob
-    }
+    fun getGenerationJobStateFlow(conversationId: Uuid): StateFlow<Job?> =
+        getOrCreateSession(conversationId).generationJob
 
-    fun getProcessingStatusFlow(conversationId: Uuid): StateFlow<String?> {
-        return getOrCreateSession(conversationId).processingStatus
-    }
+    fun getProcessingStatusFlow(conversationId: Uuid): StateFlow<String?> =
+        getOrCreateSession(conversationId).processingStatus
+
+    fun getReplyMessageIdFlow(conversationId: Uuid): StateFlow<Uuid?> =
+        getOrCreateSession(conversationId).replyMessageId
+
+    fun getGenerationStartedAtFlow(conversationId: Uuid): StateFlow<Long?> =
+        getOrCreateSession(conversationId).generationStartedAt
 
     fun getConversationJobs(): Flow<Map<Uuid, Job?>> {
         return _sessionsVersion.flatMapLatest {
@@ -960,6 +992,8 @@ class ChatService(
         val conversationId = session.id
         val content = queued.parts
         val answer = queued.answer
+        // 新消息开始初始化前就清掉旧回复，初始化失败或任务启动前取消也不能留下旧预览。
+        session.replyMessageId.value = null
         val job = launchGenerationJob(
             conversationId = conversationId,
             keepAliveInBackground = answer,
@@ -1178,6 +1212,7 @@ class ChatService(
             try {
                 awaitForegroundWorkReady()
                 previousJob?.join()
+                session.replyMessageId.value = null
                 val conversation = session.state.value
 
                 // Locate the message's node up front. indexOf returns -1 when the node is no
@@ -1595,6 +1630,7 @@ class ChatService(
         messageRange: ClosedRange<Int>? = null,
         allowContextRetry: Boolean = true,
     ) {
+        getOrCreateSession(conversationId).replyMessageId.value = null
         val settings = settingsStore.settingsFlow.first()
         // Resolve the assistant from this conversation's own assistantId — the global
         // current-assistant pointer can have moved if the user switched assistants while
@@ -1994,7 +2030,9 @@ class ChatService(
                         } else {
                             currentConversation.updateCurrentMessages(chunk.messages)
                         }
-                        updateConversation(conversationId, updatedConversation)
+                        updateStreamingConversation(conversationId, updatedConversation)
+                        sessions[conversationId]?.replyMessageId?.value =
+                            chunk.messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
                         markStreamingPersistence(conversationId)
                         persistStreamingStateIfDue(conversationId)
 
@@ -3026,6 +3064,11 @@ class ChatService(
         messages: List<UIMessage>,
         senderName: String
     ) {
+        val now = SystemClock.elapsedRealtime()
+        val last = lastLiveUpdateNotificationAt[conversationId]
+        if (last != null && now - last < LIVE_UPDATE_NOTIFICATION_INTERVAL_MS) return
+        lastLiveUpdateNotificationAt[conversationId] = now
+
         val lastMessage = messages.lastOrNull() ?: return
         val parts = lastMessage.parts
 
@@ -3099,6 +3142,7 @@ class ChatService(
     }
 
     private fun cancelLiveUpdateNotification(conversationId: Uuid) {
+        lastLiveUpdateNotificationAt.remove(conversationId)
         context.cancelNotification(getLiveUpdateNotificationId(conversationId))
     }
 
@@ -3129,6 +3173,16 @@ class ChatService(
         val session = getOrCreateSession(conversationId)
         checkFilesDelete(conversation, session.state.value)
         session.state.value = conversation
+    }
+
+    /**
+     * Streaming hot-path state update: skips O(History) [checkFilesDelete] scanning on every
+     * streamed token. Explicit [saveConversation] at turn completion runs [updateConversation]
+     * so file cleanup still happens reliably once per turn.
+     */
+    private fun updateStreamingConversation(conversationId: Uuid, conversation: Conversation) {
+        if (conversation.id != conversationId) return
+        getOrCreateSession(conversationId).state.value = conversation
     }
 
     fun updateConversationState(conversationId: Uuid, update: (Conversation) -> Conversation) {
@@ -3262,11 +3316,16 @@ class ChatService(
         val observedMarker = pendingStreamingPersistence[conversationId] ?: return
         val persisted = runCatching {
             persistenceMutexFor(conversationId).withLock {
-                persistConversationSnapshot(
-                    conversationId = conversationId,
-                    conversation = getConversationFlow(conversationId).value,
-                    updateSearchIndex = updateSearchIndex,
-                )
+                val snapshot = getConversationFlow(conversationId).value
+                if (!updateSearchIndex) {
+                    persistStreamingTailSnapshot(conversationId, snapshot)
+                } else {
+                    persistConversationSnapshot(
+                        conversationId = conversationId,
+                        conversation = snapshot,
+                        updateSearchIndex = true,
+                    )
+                }
             }
         }.onFailure {
             Log.w(TAG, "persistStreamingStateNow failed for $conversationId", it)
@@ -3277,6 +3336,33 @@ class ChatService(
             // Keep a marker that arrived while the transaction was running.
             pendingStreamingPersistence.remove(conversationId, observedMarker)
         }
+    }
+
+    /**
+     * Fast mid-stream checkpoint: inserts once if the conversation row does not exist yet, or
+     * upserts only the tail `message_node` rows (last 2 nodes) without `DELETE FROM message_node`,
+     * FTS re-indexing, or queue dispatch.
+     */
+    private suspend fun persistStreamingTailSnapshot(
+        conversationId: Uuid,
+        conversation: Conversation,
+    ): Boolean {
+        val exists = conversationRepo.existsConversationById(conversation.id)
+        if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
+            return false
+        }
+        if (exists && conversation.messageNodes.isEmpty()) {
+            return false
+        }
+        if (!exists) {
+            conversationRepo.insertConversation(
+                conversation = conversation,
+                updateSearchIndex = false,
+            )
+        } else {
+            conversationRepo.upsertStreamingConversation(conversation)
+        }
+        return true
     }
 
     private suspend fun flushStreamingPersistence() {
@@ -3451,10 +3537,7 @@ class ChatService(
         messageId: Uuid
     ): Conversation {
         val currentConversation = getConversationFlow(conversationId).value
-        val existingTitles = conversationRepo
-            .getConversationsOfAssistant(currentConversation.assistantId)
-            .first()
-            .mapTo(mutableSetOf()) { it.title }
+        val existingTitles = conversationRepo.getTitlesOfAssistant(currentConversation.assistantId)
         val fork = currentConversation.fork(messageId, existingTitles, copyFile = ::copyChatFile)
             ?: throw NotFoundException("Message not found")
         saveConversation(fork.id, fork)

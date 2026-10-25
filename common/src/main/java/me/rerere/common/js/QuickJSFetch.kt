@@ -1,7 +1,9 @@
 package me.rerere.common.js
 
+import com.whl.quickjs.android.QuickJSLoader
 import com.whl.quickjs.wrapper.JSCallFunction
 import com.whl.quickjs.wrapper.QuickJSContext
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -16,6 +18,20 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 
 private val json = Json { ignoreUnknownKeys = true }
+private val quickJsLoaded = AtomicBoolean(false)
+
+/**
+ * Lazily loads the QuickJS native library on first JavaScript execution instead of blocking
+ * cold Application startup when no JS tools or custom JS search providers are used.
+ */
+fun ensureQuickJSInitialized() {
+    if (quickJsLoaded.get()) return
+    synchronized(quickJsLoaded) {
+        if (quickJsLoaded.compareAndSet(false, true)) {
+            QuickJSLoader.init()
+        }
+    }
+}
 
 // A custom search/scrape script's fetch() can hit any endpoint the user configures (including
 // a self-hosted one), so this bounds only the failure modes that are never a legitimate

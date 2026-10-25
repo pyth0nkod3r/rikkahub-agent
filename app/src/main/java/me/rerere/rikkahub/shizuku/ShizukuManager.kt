@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
@@ -187,6 +188,20 @@ object ShizukuManager {
     private val bindLock = Mutex()
     private var service: IShizukuUserService? = null
     private var connection: ServiceConnection? = null
+    private val idleScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + Dispatchers.IO
+    )
+    @Volatile
+    private var idleUnbindJob: kotlinx.coroutines.Job? = null
+    private const val IDLE_UNBIND_DELAY_MS = 2 * 60_000L
+
+    private fun armIdleUnbind() {
+        idleUnbindJob?.cancel()
+        idleUnbindJob = idleScope.launch {
+            kotlinx.coroutines.delay(IDLE_UNBIND_DELAY_MS)
+            resetBinding()
+        }
+    }
 
     @Volatile
     private var bindWaiter: CompletableDeferred<BindResult>? = null
@@ -228,12 +243,17 @@ object ShizukuManager {
             is BindResult.Connected -> bindResult.service
             is BindResult.Failure -> return bindFailedResponse(bindResult)
         }
-        val raw = withTimeoutOrNull(timeoutMs + CALL_TIMEOUT_SLACK_MS) {
-            runInterruptible(Dispatchers.IO) {
-                runCatching { api.exec(command, timeoutMs) }
-                    .onFailure { Log.e(TAG, "user service exec() threw", it) }
-                    .getOrNull()
+        idleUnbindJob?.cancel()
+        val raw = try {
+            withTimeoutOrNull(timeoutMs + CALL_TIMEOUT_SLACK_MS) {
+                runInterruptible(Dispatchers.IO) {
+                    runCatching { api.exec(command, timeoutMs) }
+                        .onFailure { Log.e(TAG, "user service exec() threw", it) }
+                        .getOrNull()
+                }
             }
+        } finally {
+            armIdleUnbind()
         }
         if (raw == null) {
             resetBinding()

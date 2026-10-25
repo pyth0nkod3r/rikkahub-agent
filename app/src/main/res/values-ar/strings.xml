@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='UTF-8'?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="about_page_github">Github</string>
   <string name="about_page_license">الترخيص</string>
@@ -822,180 +822,180 @@
   <string name="setting_page_message_display_settings">عرض الرسائل</string>
   <string name="setting_page_model_and_services">النماذج والخدمات</string>
   <string name="setting_page_no_share_app">لم يُعثر على تطبيق مشاركة</string>
-  <string name="setting_page_providers">المزوّدون</string>
-  <string name="setting_page_providers_desc">تكوين مزوّدي الذكاء الاصطناعي</string>
-  <string name="setting_page_request_logs">سجلات الطلبات</string>
-  <string name="setting_page_request_logs_desc">عرض سجلات طلبات HTTP</string>
-  <string name="setting_page_search_add_provider">إضافة مزوّد</string>
-  <string name="setting_page_search_common_options">الخيارات الشائعة</string>
-  <string name="setting_page_search_delete_provider">حذف المزوّد</string>
-  <string name="setting_page_search_result_size">حجم النتائج</string>
-  <string name="setting_page_search_service">خدمة البحث</string>
-  <string name="setting_page_search_service_desc">إعداد خدمة البحث</string>
-  <string name="setting_page_search_title">خدمة البحث</string>
-  <string name="setting_page_share">مشاركة</string>
-  <string name="setting_page_share_desc">شارك هذا التطبيق مع الأصدقاء</string>
-  <string name="setting_page_share_text">RikkaHub - مساعد ذكاء اصطناعي مفتوح المصدر لـ Android\n\nالموقع: https://rikka-ai.com/</string>
-  <string name="setting_page_sponsor_alert_confirm">تبرّع</string>
-  <string name="setting_page_sponsor_alert_desc">لقد شغّلت التطبيق أكثر من 100 مرة! إذا كنت تستمتع باستخدامه، من فضلك فكّر في دعم المطوّر.</string>
-  <string name="setting_page_sponsor_alert_dismiss">ليس الآن</string>
-  <string name="setting_page_sponsor_alert_title">ادعم المطوّر</string>
-  <string name="setting_page_theme_setting">إعدادات السمة</string>
-  <string name="setting_page_tts_service">خدمة تحويل النص إلى كلام</string>
-  <string name="setting_page_tts_service_desc">تكوين مزوّدي خدمة تحويل النص إلى كلام</string>
-  <string name="setting_page_tts_settings">إعدادات تحويل النص إلى كلام</string>
-  <string name="setting_page_web_server">خادم الويب</string>
-  <string name="setting_page_web_server_address_note">ملاحظات العنوان</string>
-  <string name="setting_page_web_server_address_note_desc">عنوان الشبكة المحلية: يستخدم IP الـ WiFi للجهاز، يمكن الوصول إليه من الأجهزة الأخرى على نفس الشبكة. غير متاح على بيانات الجوال.\nالعنوان المحلي: يستخدم localhost، يمكن الوصول إليه من هذا الجهاز فقط.\nعنوان mDNS: يستخدم اسم مضيف ‎.local، يمكن الوصول إليه بالاسم من الأجهزة الأخرى على نفس الشبكة دون معرفة الـ IP.</string>
-  <string name="setting_page_web_server_desc">السماح لك بالوصول إلى RikkaHub عبر الويب</string>
-  <string name="setting_page_web_server_error">خطأ</string>
-  <string name="setting_page_web_server_jwt_enable">تمكين المصادقة</string>
-  <string name="setting_page_web_server_jwt_enable_desc">طلب التحقق بكلمة مرور عند الوصول إلى واجهة الويب</string>
-  <string name="setting_page_web_server_lan_address">عنوان الشبكة المحلية</string>
-  <string name="setting_page_web_server_local_address">العنوان المحلي</string>
-  <string name="setting_page_web_server_localhost_only">localhost فقط</string>
-  <string name="setting_page_web_server_localhost_only_desc">الاستماع فقط على localhost (127.0.0.1)، تعطيل الوصول عبر الشبكة المحلية وmDNS</string>
-  <string name="setting_page_web_server_mdns_address">عنوان mDNS</string>
-  <string name="setting_page_web_server_password">كلمة مرور الوصول</string>
-  <string name="setting_page_web_server_password_desc">كلمة المرور المطلوبة للوصول إلى واجهة الويب</string>
-  <string name="setting_page_web_server_port">المنفذ</string>
-  <string name="setting_page_web_server_port_desc">منفذ استماع خادم الويب (1024-65535)</string>
-  <string name="setting_page_web_server_start">بدء</string>
-  <string name="setting_page_web_server_stop">إيقاف</string>
-  <string name="setting_provider_page_abilities">القدرات</string>
-  <string name="setting_provider_page_add">إضافة</string>
-  <string name="setting_provider_page_add_model">إضافة نموذج</string>
-  <string name="setting_provider_page_add_models_hint">انقر الزر أدناه لإضافة نماذج</string>
-  <string name="setting_provider_page_add_new_model">إضافة نموذج جديد</string>
-  <string name="setting_provider_page_add_provider">إضافة مزوّد</string>
-  <string name="setting_provider_page_add_provider_override">إضافة تجاوز مزوّد</string>
-  <string name="setting_provider_page_advanced_settings">الإعدادات المتقدمة</string>
-  <string name="setting_provider_page_api_base_url">رابط API الأساسي</string>
-  <string name="setting_provider_page_api_key">مفتاح API</string>
-  <string name="setting_provider_page_api_path">مسار API</string>
-  <string name="setting_provider_page_avaliable_models">النماذج المتاحة</string>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <string name="setting_provider_page_balance_api_path">مسار API للرصيد</string>
-  <string name="setting_provider_page_balance_info">"الحصول على رصيد الحساب "</string>
-  <string name="setting_provider_page_balance_json_key">مفتاح Json للنتيجة</string>
-  <string name="setting_provider_page_basic_settings">الإعدادات الأساسية</string>
-  <string name="setting_provider_page_chat_model">دردشة</string>
-  <string name="setting_provider_page_claude_prompt_caching">التخزين المؤقت للتوجيهات (cache_control)</string>
-  <string name="setting_provider_page_configuration">التكوين</string>
-  <string name="setting_provider_page_configure_provider_override">تكوين تجاوز المزوّد</string>
-  <string name="setting_provider_page_delete_dialog_text">هل أنت متأكد من حذف هذا المزوّد؟ لا يمكن التراجع عن هذا الإجراء.</string>
-  <string name="setting_provider_page_deselect_models">إلغاء تحديد الكل</string>
-  <string name="setting_provider_page_disabled">مُعطَّل</string>
-  <string name="setting_provider_page_edit_model">تعديل النموذج</string>
-  <string name="setting_provider_page_embedding_model">تضمين</string>
-  <string name="setting_provider_page_enable">تمكين</string>
-  <string name="setting_provider_page_enabled">مُمكَّن</string>
-  <string name="setting_provider_page_filter_example">مثل: GPT-3.5</string>
-  <string name="setting_provider_page_filter_placeholder">أدخل اسم النموذج للتصفية</string>
-  <string name="setting_provider_page_image">صورة</string>
-  <string name="setting_provider_page_image_model">صورة</string>
-  <string name="setting_provider_page_image_qr_decode_failed">فشل تحليل رمز QR من الصورة: %s</string>
-  <string name="setting_provider_page_import_dialog_message">من فضلك اختر طريقة الاستيراد:</string>
-  <string name="setting_provider_page_import_dialog_title">استيراد تكوين المزوّد</string>
-  <string name="setting_provider_page_import_success">نجح الاستيراد</string>
-  <string name="setting_provider_page_input_modality">نمط الإدخال</string>
-  <string name="setting_provider_page_location">الموقع (مثل us-central1)</string>
-  <string name="setting_provider_page_model_count">%d نماذج</string>
-  <string name="setting_provider_page_model_display_name">الاسم المعروض للنموذج</string>
-  <string name="setting_provider_page_model_display_name_placeholder">مثل: GPT-3.5، لعرض الواجهة</string>
-  <string name="setting_provider_page_model_id">معرّف النموذج</string>
-  <string name="setting_provider_page_model_id_placeholder">مثل: gpt-3.5-turbo</string>
-  <string name="setting_provider_page_model_name">اسم النموذج</string>
-  <string name="setting_provider_page_model_type">نوع النموذج</string>
-  <string name="setting_provider_page_models">النماذج</string>
-  <string name="setting_provider_page_name">الاسم</string>
-  <string name="setting_provider_page_no_models">لا توجد نماذج</string>
-  <string name="setting_provider_page_no_permission">لا يوجد إذن</string>
-  <string name="setting_provider_page_no_qr_found">لم يُعثر على رمز QR صالح</string>
-  <string name="setting_provider_page_output_modality">نمط الإخراج</string>
-  <string name="setting_provider_page_private_key">المفتاح الخاص</string>
-  <string name="setting_provider_page_project_id">معرّف المشروع</string>
-  <string name="setting_provider_page_provider_override">تجاوز المزوّد</string>
-  <string name="setting_provider_page_provider_override_desc">تكوين إعدادات مزوّد مخصصة لهذا النموذج بالتحديد. سيرث الخصائص المشتركة من المزوّد الأصلي.</string>
-  <string name="setting_provider_page_qr_decode_failed">فشل تحليل رمز QR: %s</string>
-  <string name="setting_provider_page_reasoning">الاستدلال</string>
-  <string name="setting_provider_page_response_api">واجهة Response API</string>
-  <string name="setting_provider_page_response_api_warning">واجهة Response API هي واجهة OpenAI من الجيل التالي. معظم المزوّدين لا يدعمونها. إذا كنت لا تعرف ما هذا، فلا تُمكِّنه.</string>
-  <string name="setting_provider_page_save">حفظ</string>
-  <string name="setting_provider_page_save_success">نجح الحفظ</string>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <string name="setting_provider_page_scan_error">خطأ: %s</string>
-  <string name="setting_provider_page_scan_qr_code">مسح رمز QR</string>
-  <string name="setting_provider_page_search_providers">البحث في المزوّدين</string>
-  <string name="setting_provider_page_select_all">تحديد الكل (%1$d)</string>
-  <string name="setting_provider_page_select_from_gallery">الاختيار من المعرض</string>
-  <string name="setting_provider_page_service_account_email">البريد الإلكتروني لحساب الخدمة</string>
-  <string name="setting_provider_page_test">اختبار</string>
-  <string name="setting_provider_page_test_connection">اختبار الاتصال</string>
-  <string name="setting_provider_page_text">نص</string>
-  <string name="setting_provider_page_title">المزوّدون</string>
-  <string name="setting_provider_page_tool">أداة</string>
-  <string name="setting_provider_page_vertex_ai">Vertex AI</string>
-  <string name="setting_provider_page_use_service_account">استخدام حساب خدمة</string>
-  <string name="setting_tts_page_add">إضافة</string>
-  <string name="setting_tts_page_add_provider">إضافة مزوّد تحويل نص إلى كلام</string>
-  <string name="setting_tts_page_add_provider_content_description">إضافة مزوّد تحويل نص إلى كلام</string>
-  <string name="setting_tts_page_api_key">مفتاح API</string>
-  <string name="setting_tts_page_api_key_description">مفتاح API الخاص بمزوّدك</string>
-  <string name="setting_tts_page_api_key_placeholder_gemini">AIza...</string>
-  <string name="setting_tts_page_api_key_placeholder_openai">sk-...</string>
-  <string name="setting_tts_page_base_url">الرابط الأساسي</string>
-  <string name="setting_tts_page_base_url_description">نقطة نهاية الرابط الأساسي لـ API</string>
-  <string name="setting_tts_page_base_url_placeholder">https://api.openai.com/v1</string>
-  <string name="setting_tts_page_default_name">تحويل نص إلى كلام بالنظام</string>
-  <string name="setting_tts_page_edit_provider">تعديل المزوّد</string>
-  <string name="setting_tts_page_emotion">العاطفة</string>
-  <string name="setting_tts_page_emotion_description">نمط العاطفة لتركيب الكلام</string>
-  <string name="setting_tts_page_model">النموذج</string>
-  <string name="setting_tts_page_model_description">نموذج تحويل النص إلى كلام المُستخدم</string>
-  <string name="setting_tts_page_model_placeholder_gemini">gemini-2.5-flash-preview-tts</string>
-  <string name="setting_tts_page_model_placeholder_openai">gpt-4o-mini-tts</string>
-  <string name="setting_tts_page_more_options_content_description">المزيد من الخيارات</string>
-  <string name="setting_tts_page_name">الاسم</string>
-  <string name="setting_tts_page_name_description">اسم مخصص لمزوّد تحويل النص إلى كلام هذا</string>
-  <string name="setting_tts_page_name_placeholder">أدخل اسم المزوّد</string>
-  <string name="setting_tts_page_pitch">طبقة الصوت</string>
-  <string name="setting_tts_page_pitch_description">التحكم في طبقة الكلام (0.1 - 2.0، 1.0 طبيعي)</string>
-  <string name="setting_tts_page_provider_gemini">Gemini</string>
-  <string name="setting_tts_page_provider_openai">OpenAI</string>
-  <string name="setting_tts_page_provider_system">تحويل نص إلى كلام بالنظام</string>
-  <string name="setting_tts_page_provider_type">نوع المزوّد</string>
-  <string name="setting_tts_page_provider_type_description">اختيار نوع مزوّد تحويل النص إلى كلام</string>
-  <string name="setting_tts_page_selected">محدد</string>
-  <string name="setting_tts_page_speech_rate">معدل الكلام</string>
-  <string name="setting_tts_page_speech_rate_description">التحكم في سرعة الكلام (0.1 - 3.0، 1.0 طبيعي)</string>
-  <string name="setting_tts_page_speed">السرعة</string>
-  <string name="setting_tts_page_speed_description">سرعة الكلام (0.25 - 4.0)</string>
-  <string name="setting_tts_page_test_text">مرحبًا، هذا اختبار لتحويل النص إلى كلام.</string>
-  <string name="setting_tts_page_title">تحويل النص إلى كلام</string>
-  <string name="setting_tts_page_voice">الصوت</string>
-  <string name="setting_tts_page_voice_description">الصوت المُستخدم لتركيب الكلام</string>
-  <string name="setting_tts_page_voice_id">معرّف الصوت</string>
-  <string name="setting_tts_page_voice_id_description">معرّف الصوت لتركيب الكلام</string>
-  <string name="setting_tts_page_voice_name">اسم الصوت</string>
-  <string name="setting_tts_page_voice_name_description">اسم الصوت</string>
-  <string name="setting_tts_page_voice_name_placeholder">Kore</string>
-  <string name="settings">الإعدادات</string>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <string name="settings_search_no_results">لا توجد نتائج</string>
   <string name="settings_search_page_title">البحث في الإعدادات</string>
   <string name="settings_search_placeholder">ابحث في الإعدادات…</string>
-  <string name="share">مشاركة</string>
-  <string name="share_handler_page_title">اختيار مساعد</string>
-  <string name="shortcut_take_picture">التقاط صورة والسؤال</string>
-  <string name="silicon_flow_description">**مزوّد عالمي رائد لقدرات الذكاء الاصطناعي، يسرّع AGI لمنفعة البشرية.**</string>
-  <string name="silicon_flow_website">الموقع: [https://cloud.siliconflow.cn/](https://cloud.siliconflow.cn/i/u1Ia4Ycf)</string>
-  <string name="skill_detail_page_content">المحتوى</string>
-  <string name="skill_detail_page_create">إنشاء</string>
-  <string name="skill_detail_page_delete_confirm">هل أنت متأكد من حذف الملف «%s»؟</string>
-  <string name="skill_detail_page_delete_failed">فشل الحذف</string>
-  <string name="skill_detail_page_delete_file">حذف ملف</string>
-  <string name="skill_detail_page_file_name">اسم الملف</string>
-  <string name="skill_detail_page_file_name_invalid">اسم ملف غير صالح</string>
-  <string name="skill_detail_page_new_file">ملف جديد</string>
-  <string name="skill_detail_page_save">حفظ</string>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <string name="skill_catalog_install">تثبيت</string>
   <string name="skill_catalog_installing">جارٍ التثبيت…</string>
   <string name="skill_catalog_install_failed">فشل التثبيت: %s</string>
@@ -1015,85 +1015,85 @@
   <string name="skill_tester_done_no_text">(لا يوجد رد نصي — انظر أجزاء الصور أعلاه.)</string>
   <string name="skill_tester_timeout_error">انتهت المهلة بعد دقيقتين. لا تزال المهارة تعمل في الخلفية.</string>
   <string name="skill_tester_title">اختبار %s</string>
-  <string name="skills_page_add_title">إضافة مهارة</string>
-  <string name="skills_page_delete_message">هل أنت متأكد من حذف «%s»؟ لا يمكن التراجع عن هذا الإجراء.</string>
-  <string name="skills_page_delete_title">حذف المهارة</string>
-  <string name="skills_page_downloading">جارٍ التنزيل...</string>
-  <string name="skills_page_empty_hint">انقر زر + في أسفل اليمين لإضافة مهارة</string>
-  <string name="skills_page_empty_title">لا توجد مهارات</string>
-  <string name="skills_page_import_confirm">استيراد</string>
-  <string name="skills_page_import_description">أدخل رابط مستودع GitHub، وسيُنزَّل ملف SKILL.md في الدليل الجذر تلقائيًا.</string>
-  <string name="skills_page_import_failed">فشل الاستيراد: %s</string>
-  <string name="skills_page_import_from_github">استيراد من GitHub</string>
-  <string name="skills_page_import_success">تم استيراد المهارة: %s</string>
-  <string name="skills_page_more_actions">المزيد من الإجراءات</string>
-  <string name="skills_page_name_error">تعذّر العثور على حقل الاسم، من فضلك تحقق من تنسيق frontmatter</string>
-  <string name="skills_page_paste_hint">الصق محتوى ملف SKILL.md كاملًا</string>
-  <string name="skills_page_repo_url_hint">يدعم مسارات ‎/tree/branch أو الأدلة الفرعية</string>
-  <string name="skills_page_repo_url_label">رابط المستودع</string>
-  <string name="skills_page_save">حفظ</string>
-  <string name="skills_page_save_failed">فشل الحفظ، من فضلك تحقق من تنسيق المهارة</string>
-  <string name="skills_page_skill_content_label">محتوى SKILL.md</string>
-  <string name="skills_page_skill_name">اسم المهارة: %s</string>
-  <string name="skills_page_title">مهارات الوكيل</string>
-  <string name="stats_page_cached_tokens">الرموز المُخزَّنة مؤقتًا</string>
-  <string name="stats_page_dow_fri">الجمعة</string>
-  <string name="stats_page_dow_mon">الاثنين</string>
-  <string name="stats_page_dow_wed">الأربعاء</string>
-  <string name="stats_page_heatmap_less">أقل</string>
-  <string name="stats_page_heatmap_more">أكثر</string>
-  <string name="stats_page_heatmap_title">خريطة حرارية للدردشة</string>
-  <string name="stats_page_input_tokens">رموز الإدخال</string>
-  <string name="stats_page_launch_count">عدد مرات تشغيل التطبيق</string>
-  <string name="stats_page_output_tokens">رموز الإخراج</string>
-  <string name="stats_page_title">الإحصائيات</string>
-  <string name="stats_page_total_conversations">إجمالي المحادثات</string>
-  <string name="stats_page_total_messages">إجمالي الرسائل</string>
-  <string name="stop">إيقاف</string>
-  <string name="tag_input_dialog_create_new">إنشاء وسم جديد</string>
-  <string name="tag_input_dialog_existing_tags">الوسوم الموجودة</string>
-  <string name="tag_input_dialog_label">اسم الوسم</string>
-  <string name="tag_input_dialog_placeholder">أدخل اسم الوسم...</string>
-  <string name="tag_input_dialog_tag_exists">يوجد وسم بهذا الاسم بالفعل</string>
-  <string name="tag_input_dialog_title">إضافة وسم</string>
-  <string name="take_picture">التقاط صورة</string>
-  <string name="test_tts">اختبار تحويل النص إلى كلام</string>
-  <string name="text_area_fullscreen_edit">تعديل بملء الشاشة</string>
-  <string name="text_area_import_failed">فشل استيراد الملف</string>
-  <string name="text_area_import_from_file">استيراد من ملف</string>
-  <string name="text_area_import_success">تم استيراد الملف بنجاح</string>
-  <string name="text_area_save">حفظ</string>
-  <string name="theme_name_autumn">أصفر الخريف</string>
-  <string name="theme_name_black">أسود محايد</string>
-  <string name="theme_name_ocean">أزرق المحيط</string>
-  <string name="theme_name_sakura">وردي الساكورا</string>
-  <string name="theme_name_spring">أخضر المرج</string>
-  <string name="title_activity_safe_mode">الوضع الآمن</string>
-  <string name="tools_warning">النموذج الحالي ليس لديه استدعاء الأدوات مُمكَّنًا. من فضلك مكّن قدرات الأدوات للنموذج في الإعدادات لاستخدام ميزات مثل البحث/MCP.</string>
-  <string name="translate">ترجمة</string>
-  <string name="translating">جارٍ الترجمة...</string>
-  <string name="translation_clear">مسح الترجمة</string>
-  <string name="translation_language_selection_title">اختيار لغة الترجمة</string>
-  <string name="translation_text">الترجمة</string>
-  <string name="translator_page_cancel">إلغاء</string>
-  <string name="translator_page_input_placeholder">أدخل نصًا للترجمة...</string>
-  <string name="translator_page_result_placeholder">ستظهر نتيجة الترجمة هنا</string>
-  <string name="translator_page_title">المترجم</string>
-  <string name="translator_page_translate">ترجمة</string>
-  <string name="tts">تحويل النص إلى كلام</string>
-  <string name="unpin_chat">إلغاء تثبيت الدردشة</string>
-  <string name="update_card_check_failed">فشل التحقق من التحديث</string>
-  <string name="update_card_close">إغلاق</string>
-  <string name="update_card_downloading">جارٍ التنزيل، من فضلك تحقق من شريط الحالة لمعرفة التقدم</string>
-  <string name="update_card_new_version_found">عُثر على إصدار جديد %s</string>
-  <string name="update_card_unknown_error">خطأ غير معروف</string>
-  <string name="upload_file">رفع ملف</string>
-  <string name="use_web_search">البحث في الويب</string>
-  <string name="user_default_name">المستخدم</string>
-  <string name="video">فيديو</string>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <string name="web_search_disabled">البحث في الويب مُعطَّل</string>
   <string name="web_search_enabled">البحث في الويب مُمكَّن</string>
-  <string name="setting_provider_page_import_service_account_json">استيراد JSON لحساب الخدمة</string>
+  
   <string name="reasoning_xhigh">عالٍ جدًا</string>
   <string name="reasoning_max">الأقصى</string>
   <string name="reasoning_picker_title">ضبط عمق تفكير النموذج</string>
@@ -1438,15 +1438,15 @@
   <string name="assistant_page_temperature_warning">عادةً 1. لا يُنصح بتغييرها لنماذج الاستدلال.</string>
   <string name="permission_microphone">الميكروفون</string>
   <string name="permission_microphone_desc">إذن الميكروفون مطلوب للتعرف على الكلام</string>
-  <string name="speech_page_title">الكلام</string>
-  <string name="speech_tab_tts">تحويل النص إلى كلام</string>
-  <string name="speech_tab_asr">التعرف على الكلام</string>
+  
+  
+  
   <string name="setting_asr_page_edit_provider">تعديل مزوّد التعرف على الكلام</string>
   <string name="setting_asr_page_add_provider">إضافة مزوّد التعرف على الكلام</string>
   <string name="setting_asr_page_default_name">التعرف على الكلام</string>
-  <string name="setting_provider_page_claude_prompt_cache_ttl">مدة بقاء التخزين المؤقت للتوجيه</string>
-  <string name="setting_provider_page_claude_prompt_cache_ttl_5m">5 دقائق</string>
-  <string name="setting_provider_page_claude_prompt_cache_ttl_1h">ساعة واحدة</string>
+  
+  
+  
   <string name="setting_asr_configure_provider_type">نوع المزوّد</string>
   <string name="setting_asr_configure_provider_type_desc">مزوّد التعرف على الكلام في الوقت الفعلي</string>
   <string name="setting_asr_configure_name">الاسم</string>
@@ -1596,54 +1596,54 @@
   <string name="setting_model_page_enable_suggestion">تمكين مقترحات الردود</string>
   <string name="setting_page_preferences">التفضيلات</string>
   <string name="setting_page_preferences_desc">المظهر، الإشعارات، واجهة المستخدم والإعدادات العامة</string>
-  <string name="setting_page_preferences_theme">المظهر والسمة</string>
-  <string name="setting_page_preferences_theme_desc">اللون الديناميكي، السمة، ووضع AMOLED الداكن</string>
-  <string name="setting_page_preferences_notification">الإشعارات</string>
-  <string name="setting_page_preferences_notification_desc">تنبيهات التحديثات وإشعارات توليد الرسائل</string>
+  
+  
+  
+  
   <string name="setting_page_preferences_general">عام</string>
   <string name="setting_page_preferences_general_desc">سلوك التفاعل، التمرير، وإعدادات الإدخال</string>
-  <string name="setting_page_preferences_ui">واجهة المستخدم</string>
-  <string name="setting_page_preferences_ui_desc">عرض الرسائل، الخطوط، ومكعبات البرمجة</string>
-  <string name="setting_page_search_config">التكوين</string>
-  <string name="setting_page_search_test">اختبار البحث</string>
-  <string name="setting_page_search_test_query_hint">أدخل نص الاستعلام للاختبار…</string>
-  <string name="setting_page_search_test_run">تشغيل الاختبار</string>
+  
+  
+  
+  
+  
+  
   <string name="setting_page_search_web_fetch_tools_title">جلب الويب واستخلاص المحتوى</string>
   <string name="setting_page_search_web_fetch_tools_desc">السماح للمساعد بجلب وقراءة محتوى صفحات الويب مباشرةً. مفعّل افتراضياً؛ قم بإيقافه للاندماج فقط مع مزوّد البحث الخاص بك.</string>
-  <string name="setting_page_theme_setting_desc">تخصيص نظام ألوان التطبيق</string>
-  <string name="setting_theme_page_preset_themes">السمات الجاهزة</string>
-  <string name="setting_theme_page_custom_themes">السمات المخصصة</string>
-  <string name="setting_theme_page_add_theme">جديد</string>
-  <string name="setting_theme_page_no_custom_themes">لا توجد سمات مخصصة بعد</string>
-  <string name="setting_theme_page_create_theme">إنشاء سمة</string>
-  <string name="setting_theme_page_edit_theme">تعديل السمة</string>
-  <string name="setting_theme_page_theme_name">اسم السمة</string>
-  <string name="setting_theme_page_primary_color">اللون الرئيسي</string>
-  <string name="setting_theme_page_secondary_color">اللون الثانوي</string>
-  <string name="setting_theme_page_tertiary_color">اللون الثالث</string>
-  <string name="setting_theme_page_preview">معاينة</string>
-  <string name="setting_theme_page_save">حفظ</string>
-  <string name="setting_theme_page_import_theme">استيراد</string>
-  <string name="setting_theme_page_export_success">تم نسخ JSON السمة إلى الحافظة</string>
-  <string name="setting_theme_page_import_success">تم استيراد السمة بنجاح</string>
-  <string name="setting_theme_page_dynamic_color_hint">اللون الديناميكي مفعّل. قم بتعطيله في التفضيلات &gt; السمة لاستخدام السمات المخصصة.</string>
-  <string name="setting_provider_page_recommend">المزوّدون الموصى بهم</string>
-  <string name="setting_tts_page_default_playback_speed">سرعة التشغيل الافتراضية</string>
-  <string name="setting_tts_page_default_playback_speed_description">تُطبق محلياً على كل مزوّد TTS دون تغيير إعدادات التوليد الصوتية.</string>
-  <string name="setting_tts_page_similarity_boost">تعزيز التشابه</string>
-  <string name="setting_tts_page_similarity_boost_description">التحكم في مدى تطابق الصوت مع الأصلي (0.0 - 1.0)</string>
-  <string name="setting_tts_page_stability">الاستقرار</string>
-  <string name="setting_tts_page_stability_description">التحكم في استقرار الصوت (0.0 - 1.0، القيم الأقل تعطي تعبيراً أكثر)</string>
-  <string name="setting_tts_page_temperature">درجة الحرارة (Temperature)</string>
-  <string name="setting_tts_page_temperature_description">التحكم في عشوائية الصوت (0.0 - 1.0، القيم الأعلى تعطي تعبيراً أكثر)</string>
-  <string name="setting_tts_page_fish_audio_speed_description">سرعة الكلام (0.5 - 2.0، القيمة الافتراضية 1.0)</string>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <string name="stats_page_cache_hit_rate">معدل إصابة الذاكرة المؤقتة</string>
-  <string name="theme_name_claude">كلود (Claude)</string>
-  <string name="theme_name_minimal">أبيض بسيط</string>
-  <string name="setting_theme_page_delete_theme_title">حذف السمة</string>
-  <string name="setting_theme_page_delete_theme_message">هل أنت متأكد أنك تريد حذف هذه السمة؟</string>
-  <string name="skills_page_import_from_file">استيراد من ملف</string>
-  <string name="skills_page_add_manually">إضافة يدوية</string>
+  
+  
+  
+  
+  
+  
   <string name="setting_model_page_tab_model">النموذج</string>
   <string name="setting_model_page_tab_prompt">التوجيهات</string>
   <string name="setting_model_page_prompt_translation">الترجمة</string>
@@ -1652,7 +1652,7 @@
   <string name="setting_model_page_prompt_ocr">التعرف البصري (OCR)</string>
   <string name="setting_model_page_prompt_compress">ضغط السياق</string>
   <string name="setting_display_page_bubble_opacity_title">شفافية فقاعة الرسائل</string>
-  <string name="setting_provider_page_include_history_reasoning">تضمين تفكير السجل</string>
+  
   <string name="setting_page_telegram_proxy_enabled">الوكيل (Proxy)</string>
   <string name="setting_page_telegram_proxy_enabled_desc">توجيه اتصالات شبكة البوت عبر خادم وكيل (Proxy). يجب إيقاف البوت للتعديل.</string>
   <string name="setting_page_telegram_proxy_type">نوع الوكيل</string>
@@ -1821,8 +1821,8 @@
   <string name="workspace_detail_tool_background_kill">إيقاف المهام بالخلفية</string>
   <string name="workspace_detail_install_rootfs_desc">تنزيل وتثبيت بيئة Alpine Linux Rootfs لمساحة العمل %s لتمكين تشغيل الأوامر المعزولة</string>
   <string name="workspace_detail_download_url">رابط التنزيل</string>
-  <string name="workspace_detail_area_files">دليل الملفات</string>
-  <string name="workspace_detail_area_rootfs">بيئة Rootfs</string>
+  
+  
   <string name="workspace_detail_empty_directory">الدليل فارغ</string>
   <string name="workspace_detail_folder_export_success">تم تصدير %1$s</string>
   <string name="workspace_detail_folder_export_partial">تم تصدير %1$s مع %2$d حالة فشل</string>
@@ -1846,13 +1846,13 @@
   <string name="workspace_select">اختر مساحة العمل</string>
   <string name="workspace_no_binding">غير مربوط بمساحة عمل</string>
   <string name="workspace_manage">إدارة مساحات العمل</string>
-  <string name="workspace_detail">تفاصيل مساحة العمل</string>
+  
   <string name="workspace_terminal">المحطة الطرفية</string>
-  <string name="workspace_cwd_select_directory">اختر دليل العمل</string>
-  <string name="workspace_cwd_select_desc">اختر دليلاً فرعياً داخل مساحة العمل</string>
-  <string name="workspace_cwd_no_subdirectories">لا توجد دليل فرعية مجهزة</string>
-  <string name="workspace_cwd_reset">إعادة تعيين إلى الجذر</string>
-  <string name="workspace_cwd_set">تعيين دليل العمل</string>
+  
+  
+  
+  
+  
   <string name="common_confirm">موافق</string>
   <string name="common_install">تثبيت</string>
   <string name="common_cancel">إلغاء</string>
@@ -1861,29 +1861,29 @@
   <string name="common_rename">إعادة تسمية</string>
   <string name="common_export">تصدير</string>
   <string name="common_share">مشاركة</string>
-  <string name="tool_ui_edit_file">تعديل ملف: %s</string>
-  <string name="tool_ui_edit_file_default">تعديل ملف</string>
-  <string name="tool_ui_read_file">قراءة ملف: %s</string>
-  <string name="tool_ui_read_file_default">قراءة ملف</string>
-  <string name="tool_ui_write_file">كتابة ملف: %s</string>
-  <string name="tool_ui_write_file_default">كتابة ملف</string>
-  <string name="tool_ui_list_files">عرض ملفات: %s</string>
-  <string name="tool_ui_list_files_default">قراءة ملفات</string>
-  <string name="tool_ui_list_files_empty">الدليل فارغ</string>
-  <string name="tool_ui_list_files_items">%1$d عناصر: %2$s</string>
-  <string name="tool_ui_delete_file">حذف ملف: %s</string>
-  <string name="tool_ui_delete_file_default">حذف ملف</string>
-  <string name="tool_ui_deleted">تم حذف %s</string>
-  <string name="tool_ui_delete_failed">فشل الحذف: %s</string>
-  <string name="tool_ui_move_file">نقل ملف</string>
-  <string name="tool_ui_shell">أمر سطر الأوامر: %s</string>
-  <string name="tool_ui_shell_default">تشغيل أمر سطر الأوامر</string>
-  <string name="tool_ui_shell_timeout">انتهت مهلة تشغيل الأمر</string>
-  <string name="tool_ui_shell_exit">رمز الخروج: %s</string>
-  <string name="tool_ui_speaking">جارٍ القراءة الصوتية: %s</string>
-  <string name="tool_ui_replay">إعادة التشغيل</string>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <string name="tool_ui_delete_memory">حذف من الذاكرة</string>
-  <string name="tool_ui_file">ملف</string>
+  
   <string name="workspace_page_name_duplicate">يوجد مساحة عمل بهذا الاسم بالفعل</string>
   <string name="setting_mcp_page_name_invalid">اسم خادم MCP غير صالح</string>
   <string name="log_page_record_requests">تسجيل طلبات النماذج والأدوات في السجل</string>
@@ -1977,7 +1977,7 @@
   <string name="assistant_page_local_tools_screen_time_desc">السماح للذكاء الاصطناعي بقراءة وقت استخدام الشاشة للتطبيقات</string>
   <string name="assistant_page_local_tools_screen_time_permission_required">يرجى منح إذن الوصول إلى الاستخدام في الإعدادات لاستخدام وقت الشاشة</string>
   <string name="chat_message_tool_screen_time">قراءة وقت الشاشة</string>
-  <string name="tool_ui_screen_time_total">إجمالي وقت الشاشة</string>
+  
   <string name="assistant_page_local_tools_calendar_title">التقويم</string>
   <string name="assistant_page_local_tools_calendar_desc">السماح للذكاء الاصطناعي بالاستعلام عن أحداث التقويم وإنشائها</string>
   <string name="chat_message_tool_calendar_query">الاستعلام عن أحداث التقويم</string>
@@ -2105,12 +2105,12 @@
   <string name="search_picker_model_description">البحث السحابي المدمج في مزود النموذج</string>
   <string name="search_picker_select_provider">تحديد مزود البحث</string>
   <string name="search_picker_turn_off">إيقاف البحث</string>
-  <string name="setting_update_reminder_enabled">تذكيرات التحديث مُمكّنة</string>
-  <string name="setting_update_reminder_pause_title">إيقاف تذكيرات التحديث مؤقتًا</string>
-  <string name="setting_update_reminder_pause_description">اختر مدة إيقاف تذكيرات التحديث مؤقتًا. ستُستأنف تلقائيًا.</string>
-  <string name="setting_update_reminder_pause_days">%1$d أيام</string>
-  <string name="setting_update_reminder_paused_until">متوقف مؤقتًا حتى %1$s</string>
-  <string name="setting_update_reminder_resume_now">استئناف الآن</string>
+  
+  
+  
+  
+  
+  
   <string name="table">جدول</string>
 
   <!-- Upstream 3.0.0 additions -->
@@ -2191,11 +2191,344 @@
   <string name="setting_page_preferences_network_proxy_invalid">أدخل عنوان URL صالحًا للوكيل يتضمن مضيفًا ومنفذًا.</string>
   <string name="setting_page_preferences_network_user_agent">User-Agent</string>
   <string name="setting_page_preferences_network_user_agent_desc">اتركه فارغًا لاستخدام %1$s</string>
+  <string name="setting_page_preferences_notification">الإشعارات</string>
+  <string name="setting_page_preferences_notification_desc">تنبيهات التحديث، إشعارات توليد الرسائل، النافذة العائمة في الخلفية</string>
+  <string name="setting_page_preferences_theme">المظهر</string>
+  <string name="setting_page_preferences_theme_desc">الألوان الديناميكية، السمة، وضع AMOLED الداكن</string>
+  <string name="setting_page_preferences_ui">تفضيلات واجهة المستخدم</string>
+  <string name="setting_page_preferences_ui_desc">عرض الرسائل، الخطوط، كتل التعليمات البرمجية</string>
+  <string name="setting_page_providers">المزوّدون</string>
+  <string name="setting_page_providers_desc">تكوين مزوّدي الذكاء الاصطناعي</string>
+  <string name="setting_page_request_logs">سجلات الطلبات</string>
+  <string name="setting_page_request_logs_desc">عرض سجلات طلبات HTTP</string>
+  <string name="setting_page_search_add_provider">إضافة مزوّد</string>
+  <string name="setting_page_search_common_options">خيارات شائعة</string>
+  <string name="setting_page_search_config">التكوين</string>
+  <string name="setting_page_search_delete_provider">حذف مزوّد</string>
+  <string name="setting_page_search_result_size">حجم النتائج</string>
+  <string name="setting_page_search_service">خدمة البحث</string>
+  <string name="setting_page_search_service_desc">إعداد خدمة البحث</string>
+  <string name="setting_page_search_test">اختبار البحث</string>
+  <string name="setting_page_search_test_query_hint">أدخل استعلام الاختبار…</string>
+  <string name="setting_page_search_test_run">تشغيل الاختبار</string>
+  <string name="setting_page_search_title">خدمة البحث</string>
+  <string name="setting_page_share">مشاركة</string>
+  <string name="setting_page_share_desc">شارك هذا التطبيق مع أصدقائك</string>
+  <string name="setting_page_share_text">RikkaHub - مساعد ذكاء اصطناعي مفتوح المصدر لأندرويد\n\nالموقع الإلكتروني: https://rikka-ai.com/</string>
+  <string name="setting_page_sponsor_alert_confirm">تبرّع</string>
+  <string name="setting_page_sponsor_alert_desc">لقد قمت بتشغيل التطبيق أكثر من 100 مرة! إذا كنت تستمتع باستخدامه، فيرجى التفكير في دعم المطوّر.</string>
+  <string name="setting_page_sponsor_alert_dismiss">ليس الآن</string>
+  <string name="setting_page_sponsor_alert_title">دعم المطوّر</string>
+  <string name="setting_page_theme_setting">السمة</string>
+  <string name="setting_page_theme_setting_desc">تخصيص نظام ألوان التطبيق</string>
+  <string name="setting_page_tts_service">خدمات الكلام</string>
+  <string name="setting_page_tts_service_desc">تكوين مزوّدي تحويل النص إلى كلام والتعرّف على الكلام</string>
+  <string name="setting_page_tts_settings">إعدادات TTS</string>
+  <string name="setting_page_web_server">خادم الويب</string>
+  <string name="setting_page_web_server_address_note">ملاحظات العنوان</string>
+  <string name="setting_page_web_server_address_note_desc">عنوان LAN: يستخدم عنوان IP الخاص بشبكة WiFi للجهاز، ويمكن الوصول إليه من الأجهزة الأخرى على نفس الشبكة. غير متاح على بيانات الجوال.\nالعنوان المحلي: يستخدم localhost، ويمكن الوصول إليه على هذا الجهاز فقط.\nعنوان mDNS: يستخدم اسم مضيف .local، ويمكن الوصول إليه بالاسم من الأجهزة الأخرى على نفس الشبكة دون معرفة عنوان IP.</string>
+  <string name="setting_page_web_server_desc">يتيح لك الوصول إلى RikkaHub عبر الويب</string>
+  <string name="setting_page_web_server_error">خطأ</string>
+  <string name="setting_page_web_server_jwt_enable">تفعيل المصادقة</string>
+  <string name="setting_page_web_server_jwt_enable_desc">يتطلب التحقق بكلمة المرور عند الوصول إلى واجهة الويب</string>
+  <string name="setting_page_web_server_lan_address">عنوان LAN</string>
+  <string name="setting_page_web_server_local_address">العنوان المحلي</string>
+  <string name="setting_page_web_server_localhost_only">localhost فقط</string>
+  <string name="setting_page_web_server_localhost_only_desc">الاستماع فقط على localhost (127.0.0.1)، وتعطيل الوصول عبر LAN وmDNS</string>
+  <string name="setting_page_web_server_mdns_address">عنوان mDNS</string>
+  <string name="setting_page_web_server_password">كلمة مرور الوصول</string>
+  <string name="setting_page_web_server_password_desc">كلمة المرور مطلوبة للوصول إلى واجهة الويب</string>
+  <string name="setting_page_web_server_port">المنفذ</string>
+  <string name="setting_page_web_server_port_desc">منفذ استماع خادم الويب (1024-65535)</string>
+  <string name="setting_page_web_server_start">تشغيل</string>
+  <string name="setting_page_web_server_stop">إيقاف</string>
+  <string name="setting_provider_page_abilities">القدرات</string>
+  <string name="setting_provider_page_add">إضافة</string>
+  <string name="setting_provider_page_add_model">إضافة نموذج</string>
+  <string name="setting_provider_page_add_models_hint">انقر على الزر أدناه لإضافة نماذج</string>
+  <string name="setting_provider_page_add_new_model">إضافة نموذج جديد</string>
+  <string name="setting_provider_page_add_provider">إضافة مزوّد</string>
+  <string name="setting_provider_page_add_provider_override">إضافة تجاوز للمزوّد</string>
+  <string name="setting_provider_page_advanced_settings">إعدادات متقدمة</string>
+  <string name="setting_provider_page_api_base_url">عنوان URL الأساسي لـ API</string>
+  <string name="setting_provider_page_api_key">مفتاح API</string>
+  <string name="setting_provider_page_api_path">مسار API</string>
+  <string name="setting_provider_page_avaliable_models">النماذج المتاحة</string>
+  <string name="setting_provider_page_balance_info">\"الحصول على رصيد الحساب \"</string>
+  <string name="setting_provider_page_balance_json_key">مفتاح JSON للنتيجة</string>
+  <string name="setting_provider_page_basic_settings">الإعدادات الأساسية</string>
+  <string name="setting_provider_page_chat_model">محادثة</string>
+  <string name="setting_provider_page_claude_prompt_cache_ttl">مدة صلاحية ذاكرة المطالبات المؤقتة</string>
+  <string name="setting_provider_page_claude_prompt_cache_ttl_1h">ساعة واحدة</string>
+  <string name="setting_provider_page_claude_prompt_cache_ttl_5m">5 دقائق</string>
+  <string name="setting_provider_page_claude_prompt_caching">التخزين المؤقت للمطالبات (cache_control)</string>
+  <string name="setting_provider_page_configuration">التكوين</string>
+  <string name="setting_provider_page_configure_provider_override">تكوين تجاوز للمزوّد</string>
+  <string name="setting_provider_page_delete_dialog_text">هل أنت متأكد من أنك تريد حذف هذا المزوّد؟ لا يمكن التراجع عن هذا الإجراء.</string>
+  <string name="setting_provider_page_deselect_models">إلغاء تحديد الكل</string>
+  <string name="setting_provider_page_disabled">معطّل</string>
+  <string name="setting_provider_page_edit_model">تعديل النموذج</string>
+  <string name="setting_provider_page_embedding_model">التضمين</string>
+  <string name="setting_provider_page_enable">تفعيل</string>
+  <string name="setting_provider_page_enabled">مفعّل</string>
+  <string name="setting_provider_page_filter_example">مثال: GPT-3.5</string>
+  <string name="setting_provider_page_filter_placeholder">أدخل اسم النموذج للتصفية</string>
+  <string name="setting_provider_page_image">صورة</string>
+  <string name="setting_provider_page_image_model">صورة</string>
+  <string name="setting_provider_page_image_qr_decode_failed">فشل تحليل رمز QR من الصورة: %s</string>
+  <string name="setting_provider_page_import_dialog_message">يرجى اختيار طريقة الاستيراد:</string>
+  <string name="setting_provider_page_import_dialog_title">استيراد تكوين المزوّد</string>
+  <string name="setting_provider_page_import_service_account_json">استيراد JSON لحساب الخدمة</string>
+  <string name="setting_provider_page_import_success">تم الاستيراد بنجاح</string>
+  <string name="setting_provider_page_include_history_reasoning">تضمين استدلال السجل</string>
+  <string name="setting_provider_page_input_modality">وسائط الإدخال</string>
+  <string name="setting_provider_page_location">الموقع (مثال: us-central1)</string>
+  <string name="setting_provider_page_model_count">%d نماذج</string>
+  <string name="setting_provider_page_model_display_name">الاسم المعروض للنموذج</string>
+  <string name="setting_provider_page_model_display_name_placeholder">مثال: GPT-3.5، للعرض في واجهة المستخدم</string>
+  <string name="setting_provider_page_model_id">معرّف النموذج</string>
+  <string name="setting_provider_page_model_id_placeholder">مثال: gpt-3.5-turbo</string>
+  <string name="setting_provider_page_model_name">اسم النموذج</string>
+  <string name="setting_provider_page_model_type">نوع النموذج</string>
+  <string name="setting_provider_page_models">النماذج</string>
+  <string name="setting_provider_page_name">الاسم</string>
+  <string name="setting_provider_page_no_models">لا توجد نماذج</string>
+  <string name="setting_provider_page_no_permission">لا توجد صلاحية</string>
+  <string name="setting_provider_page_no_qr_found">لم يتم العثور على رمز QR صالح</string>
+  <string name="setting_provider_page_output_modality">وسائط الإخراج</string>
+  <string name="setting_provider_page_private_key">المفتاح الخاص</string>
+  <string name="setting_provider_page_project_id">معرّف المشروع</string>
+  <string name="setting_provider_page_provider_override">تجاوز المزوّد</string>
+  <string name="setting_provider_page_provider_override_desc">تكوين إعدادات مزوّد مخصصة لهذا النموذج المحدد. سيرث الخصائص المشتركة من المزوّد الأصل.</string>
+  <string name="setting_provider_page_qr_decode_failed">فشل تحليل رمز QR: %s</string>
+  <string name="setting_provider_page_reasoning">الاستدلال</string>
+  <string name="setting_provider_page_recommend">المزوّدون الموصى بهم</string>
+  <string name="setting_provider_page_response_api">Response API</string>
+  <string name="setting_provider_page_response_api_warning">Response API هي واجهة API من الجيل التالي من OpenAI. لا يدعمها معظم المزوّدين. إذا كنت لا تعرف ما هي، فلا تفعّلها.</string>
+  <string name="setting_provider_page_save">حفظ</string>
+  <string name="setting_provider_page_save_success">تم الحفظ بنجاح</string>
+  <string name="setting_provider_page_scan_qr_code">مسح رمز QR</string>
+  <string name="setting_provider_page_search_providers">البحث عن المزوّدين</string>
+  <string name="setting_provider_page_select_all">تحديد الكل (%1$d)</string>
+  <string name="setting_provider_page_select_from_gallery">اختيار من المعرض</string>
+  <string name="setting_provider_page_service_account_email">البريد الإلكتروني لحساب الخدمة</string>
+  <string name="setting_provider_page_test">اختبار</string>
+  <string name="setting_provider_page_test_connection">اختبار الاتصال</string>
   <string name="setting_provider_page_test_non_streaming">غير متدفق</string>
   <string name="setting_provider_page_test_streaming">متدفق</string>
   <string name="setting_provider_page_test_tool_call">استدعاء الأداة</string>
   <string name="setting_provider_page_test_tool_called">تم الاستدعاء: %1$s  الوسائط: %2$s</string>
   <string name="setting_provider_page_test_tool_not_called">لم يتم استدعاء الأداة، الاستجابة: %s</string>
+  <string name="setting_provider_page_text">نص</string>
+  <string name="setting_provider_page_title">المزوّدون</string>
+  <string name="setting_provider_page_tool">أداة</string>
+  <string name="setting_provider_page_use_service_account">استخدام حساب الخدمة</string>
+  <string name="setting_provider_page_vertex_ai">Vertex AI</string>
+  <string name="setting_theme_page_add_theme">جديد</string>
+  <string name="setting_theme_page_create_theme">إنشاء سمة</string>
+  <string name="setting_theme_page_custom_themes">السمات المخصصة</string>
+  <string name="setting_theme_page_delete_theme_message">هل أنت متأكد من رغبتك في حذف هذه السمة؟</string>
+  <string name="setting_theme_page_delete_theme_title">حذف السمة</string>
+  <string name="setting_theme_page_dynamic_color_hint">اللون الديناميكي مُفعّل. قم بتعطيله في التفضيلات &gt; السمة لاستخدام سمات مخصصة.</string>
+  <string name="setting_theme_page_edit_theme">تعديل السمة</string>
+  <string name="setting_theme_page_export_success">تم نسخ JSON السمة إلى الحافظة</string>
+  <string name="setting_theme_page_import_success">تم استيراد السمة بنجاح</string>
+  <string name="setting_theme_page_import_theme">استيراد</string>
+  <string name="setting_theme_page_no_custom_themes">لا توجد سمات مخصصة بعد</string>
+  <string name="setting_theme_page_preset_themes">السمات الجاهزة</string>
+  <string name="setting_theme_page_preview">معاينة</string>
+  <string name="setting_theme_page_primary_color">اللون الأساسي</string>
+  <string name="setting_theme_page_save">حفظ</string>
+  <string name="setting_theme_page_secondary_color">اللون الثانوي</string>
+  <string name="setting_theme_page_tertiary_color">اللون الثالثي</string>
+  <string name="setting_theme_page_theme_name">اسم السمة</string>
+  <string name="setting_tts_page_add">إضافة</string>
+  <string name="setting_tts_page_add_provider">إضافة مزوّد TTS</string>
+  <string name="setting_tts_page_add_provider_content_description">إضافة مزوّد TTS</string>
+  <string name="setting_tts_page_api_key">مفتاح API</string>
+  <string name="setting_tts_page_api_key_description">مفتاح API الخاص بمزوّدك</string>
+  <string name="setting_tts_page_api_key_placeholder_gemini">AIza...</string>
+  <string name="setting_tts_page_api_key_placeholder_openai">sk-...</string>
+  <string name="setting_tts_page_base_url">عنوان URL الأساسي</string>
+  <string name="setting_tts_page_base_url_description">نقطة نهاية عنوان URL الأساسي لـ API</string>
+  <string name="setting_tts_page_base_url_placeholder">https://api.openai.com/v1</string>
+  <string name="setting_tts_page_default_name">TTS النظام</string>
+  <string name="setting_tts_page_default_playback_speed">سرعة التشغيل الافتراضية</string>
+  <string name="setting_tts_page_default_playback_speed_description">يُطبَّق محليًا على كل مزوّد TTS دون تغيير إعدادات التخليق الخاصة به.</string>
+  <string name="setting_tts_page_edit_provider">تعديل المزوّد</string>
+  <string name="setting_tts_page_emotion">المشاعر</string>
+  <string name="setting_tts_page_emotion_description">نمط المشاعر لتخليق الكلام</string>
+  <string name="setting_tts_page_fish_audio_speed_description">سرعة الكلام (0.5 - 2.0، 1.0 عادي)</string>
+  <string name="setting_tts_page_model">النموذج</string>
+  <string name="setting_tts_page_model_description">نموذج TTS المراد استخدامه</string>
+  <string name="setting_tts_page_model_placeholder_gemini">gemini-2.5-flash-preview-tts</string>
+  <string name="setting_tts_page_model_placeholder_openai">gpt-4o-mini-tts</string>
+  <string name="setting_tts_page_more_options_content_description">خيارات إضافية</string>
+  <string name="setting_tts_page_name">الاسم</string>
+  <string name="setting_tts_page_name_description">اسم مخصص لمزوّد TTS هذا</string>
+  <string name="setting_tts_page_name_placeholder">أدخل اسم المزوّد</string>
+  <string name="setting_tts_page_pitch">طبقة الصوت</string>
+  <string name="setting_tts_page_pitch_description">التحكم في طبقة الصوت للنطق (0.1 - 2.0، 1.0 هو الوضع الطبيعي)</string>
+  <string name="setting_tts_page_provider_gemini">Gemini</string>
+  <string name="setting_tts_page_provider_openai">OpenAI</string>
+  <string name="setting_tts_page_provider_system">TTS النظام</string>
+  <string name="setting_tts_page_provider_type">نوع المزوّد</string>
+  <string name="setting_tts_page_provider_type_description">اختر نوع مزوّد TTS</string>
+  <string name="setting_tts_page_selected">محدد</string>
+  <string name="setting_tts_page_similarity_boost">تعزيز التشابه</string>
+  <string name="setting_tts_page_similarity_boost_description">تحكم في مدى تطابق الصوت مع الأصل (0.0 - 1.0)</string>
+  <string name="setting_tts_page_speech_rate">سرعة الكلام</string>
+  <string name="setting_tts_page_speech_rate_description">التحكم في سرعة الكلام (0.1 - 3.0، 1.0 عادي)</string>
+  <string name="setting_tts_page_speed">السرعة</string>
+  <string name="setting_tts_page_speed_description">سرعة الكلام (0.25 - 4.0)</string>
+  <string name="setting_tts_page_stability">الاستقرار</string>
+  <string name="setting_tts_page_stability_description">تحكم في استقرار الصوت (0.0 - 1.0، القيمة الأقل أكثر تعبيرًا)</string>
+  <string name="setting_tts_page_temperature">درجة الحرارة</string>
+  <string name="setting_tts_page_temperature_description">تحكم في عشوائية الصوت (0.0 - 1.0، القيمة الأعلى أكثر تعبيرًا)</string>
+  <string name="setting_tts_page_test_text">مرحبًا، هذا اختبار تحويل النص إلى كلام.</string>
+  <string name="setting_tts_page_title">تحويل النص إلى كلام</string>
+  <string name="setting_tts_page_voice">الصوت</string>
+  <string name="setting_tts_page_voice_description">الصوت المستخدم لتركيب الكلام</string>
+  <string name="setting_tts_page_voice_id">معرّف الصوت</string>
+  <string name="setting_tts_page_voice_id_description">معرّف الصوت لتركيب الكلام</string>
+  <string name="setting_tts_page_voice_name">اسم الصوت</string>
+  <string name="setting_tts_page_voice_name_description">اسم الصوت</string>
+  <string name="setting_tts_page_voice_name_placeholder">Kore</string>
+  <string name="setting_update_reminder_enabled">تذكيرات التحديث مفعّلة</string>
+  <string name="setting_update_reminder_pause_days">%1$d أيام</string>
+  <string name="setting_update_reminder_pause_description">اختر مدة إيقاف تذكيرات التحديث مؤقتًا. ستستأنف تلقائيًا.</string>
+  <string name="setting_update_reminder_pause_title">إيقاف تذكيرات التحديث مؤقتًا</string>
+  <string name="setting_update_reminder_paused_until">متوقفة حتى %1$s</string>
+  <string name="setting_update_reminder_resume_now">استئناف الآن</string>
+  <string name="settings">الإعدادات</string>
+  <string name="share">مشاركة</string>
+  <string name="share_handler_page_title">اختر مساعدًا</string>
+  <string name="shortcut_take_picture">التقط صورة واسأل</string>
+  <string name="silicon_flow_description">**مزوّد عالمي رائد لقدرات الذكاء الاصطناعي، يسرّع AGI لخير البشرية.**</string>
+  <string name="silicon_flow_website">الموقع الإلكتروني: [https://cloud.siliconflow.cn/](https://cloud.siliconflow.cn/i/u1Ia4Ycf)</string>
+  <string name="skill_detail_page_content">المحتوى</string>
+  <string name="skill_detail_page_create">إنشاء</string>
+  <string name="skill_detail_page_delete_confirm">هل أنت متأكد من أنك تريد حذف الملف \"%s\"؟</string>
+  <string name="skill_detail_page_delete_failed">فشل الحذف</string>
+  <string name="skill_detail_page_delete_file">حذف الملف</string>
+  <string name="skill_detail_page_file_name">اسم الملف</string>
+  <string name="skill_detail_page_file_name_invalid">اسم الملف غير صالح</string>
+  <string name="skill_detail_page_new_file">ملف جديد</string>
+  <string name="skill_detail_page_save">حفظ</string>
+  <string name="skills_page_add_manually">إضافة يدويًا</string>
+  <string name="skills_page_add_title">إضافة مهارة</string>
+  <string name="skills_page_delete_message">هل أنت متأكد من أنك تريد حذف \"%s\"؟ لا يمكن التراجع عن هذا الإجراء.</string>
+  <string name="skills_page_delete_title">حذف المهارة</string>
+  <string name="skills_page_downloading">جارٍ التنزيل...</string>
+  <string name="skills_page_empty_hint">اضغط على زر + في أسفل اليمين لإضافة مهارة</string>
+  <string name="skills_page_empty_title">لا توجد مهارات</string>
+  <string name="skills_page_import_confirm">استيراد</string>
+  <string name="skills_page_import_description">أدخل عنوان URL لمستودع GitHub، وسيتم تنزيل ملف SKILL.md في الدليل الجذر تلقائيًا.</string>
+  <string name="skills_page_import_failed">فشل الاستيراد: %s</string>
+  <string name="skills_page_import_from_file">استيراد من ملف</string>
+  <string name="skills_page_import_from_github">استيراد من GitHub</string>
+  <string name="skills_page_import_success">تم استيراد المهارة: %s</string>
+  <string name="skills_page_more_actions">المزيد من الإجراءات</string>
+  <string name="skills_page_name_error">تعذر العثور على حقل الاسم، يرجى التحقق من تنسيق frontmatter</string>
+  <string name="skills_page_paste_hint">الصق محتوى ملف SKILL.md كاملاً</string>
+  <string name="skills_page_repo_url_hint">يدعم مسارات /tree/branch أو مسارات الدلائل الفرعية</string>
+  <string name="skills_page_repo_url_label">رابط المستودع</string>
+  <string name="skills_page_save">حفظ</string>
+  <string name="skills_page_save_failed">فشل الحفظ، يرجى التحقق من تنسيق المهارة</string>
+  <string name="skills_page_skill_content_label">محتوى SKILL.md</string>
+  <string name="skills_page_skill_name">اسم المهارة: %s</string>
+  <string name="skills_page_title">مهارات الوكيل</string>
+  <string name="speech_page_title">الكلام</string>
+  <string name="speech_tab_asr">التعرف على الكلام</string>
+  <string name="speech_tab_tts">تحويل النص إلى كلام</string>
+  <string name="stats_page_cached_tokens">Tokens المخزنة مؤقتًا</string>
+  <string name="stats_page_dow_fri">الجمعة</string>
+  <string name="stats_page_dow_mon">الاثنين</string>
+  <string name="stats_page_dow_wed">الأربعاء</string>
+  <string name="stats_page_heatmap_less">أقل</string>
+  <string name="stats_page_heatmap_more">أكثر</string>
+  <string name="stats_page_heatmap_title">الخريطة الحرارية للدردشة</string>
+  <string name="stats_page_input_tokens">Tokens الإدخال</string>
+  <string name="stats_page_launch_count">عدد مرات تشغيل التطبيق</string>
+  <string name="stats_page_output_tokens">Tokens الإخراج</string>
+  <string name="stats_page_title">الإحصائيات</string>
+  <string name="stats_page_total_conversations">إجمالي المحادثات</string>
+  <string name="stats_page_total_messages">إجمالي الرسائل</string>
+  <string name="stop">إيقاف</string>
+  <string name="tag_input_dialog_create_new">إنشاء وسم جديد</string>
+  <string name="tag_input_dialog_existing_tags">الوسوم الموجودة</string>
+  <string name="tag_input_dialog_label">اسم الوسم</string>
+  <string name="tag_input_dialog_placeholder">أدخل اسم الوسم...</string>
+  <string name="tag_input_dialog_tag_exists">يوجد وسم بهذا الاسم بالفعل</string>
+  <string name="tag_input_dialog_title">إضافة وسم</string>
+  <string name="take_picture">التقاط صورة</string>
+  <string name="test_tts">اختبار TTS</string>
+  <string name="text_area_fullscreen_edit">تحرير بملء الشاشة</string>
+  <string name="text_area_import_failed">فشل استيراد الملف</string>
+  <string name="text_area_import_from_file">استيراد من ملف</string>
+  <string name="text_area_import_success">تم استيراد الملف بنجاح</string>
+  <string name="text_area_save">حفظ</string>
+  <string name="theme_name_autumn">أصفر الخريف</string>
+  <string name="theme_name_black">أسود محايد</string>
+  <string name="theme_name_claude">Claude</string>
+  <string name="theme_name_minimal">أبيض بسيط</string>
+  <string name="theme_name_ocean">أزرق المحيط</string>
+  <string name="theme_name_sakura">وردي ساكورا</string>
+  <string name="theme_name_spring">أخضر المرج</string>
+  <string name="title_activity_safe_mode">الوضع الآمن</string>
+  <string name="tool_ui_delete_failed">تعذّر حذف %s</string>
+  <string name="tool_ui_delete_file">حذف: %s</string>
+  <string name="tool_ui_delete_file_default">حذف ملف</string>
+  <string name="tool_ui_deleted">تم حذف %s</string>
+  <string name="tool_ui_edit_file">تعديل: %s</string>
+  <string name="tool_ui_edit_file_default">تعديل ملف</string>
+  <string name="tool_ui_file">ملف</string>
+  <string name="tool_ui_list_files">عرض: %s</string>
+  <string name="tool_ui_list_files_default">عرض الملفات</string>
+  <string name="tool_ui_list_files_empty">فارغ</string>
+  <string name="tool_ui_list_files_items">%1$d عناصر: %2$s</string>
+  <string name="tool_ui_move_file">نقل ملف</string>
+  <string name="tool_ui_read_file">قراءة: %s</string>
+  <string name="tool_ui_read_file_default">قراءة ملف</string>
+  <string name="tool_ui_replay">إعادة التشغيل</string>
+  <string name="tool_ui_screen_time_total">إجمالي وقت الشاشة</string>
+  <string name="tool_ui_shell">Shell: %s</string>
+  <string name="tool_ui_shell_default">Shell</string>
+  <string name="tool_ui_shell_exit">خروج %s</string>
+  <string name="tool_ui_shell_timeout">مهلة</string>
+  <string name="tool_ui_speaking">جارٍ التحدث: %s</string>
+  <string name="tool_ui_write_file">كتابة: %s</string>
+  <string name="tool_ui_write_file_default">كتابة ملف</string>
+  <string name="tools_warning">النموذج الحالي لا يتضمن تفعيل استدعاء الأدوات. يرجى تمكين قدرات الأدوات للنموذج في الإعدادات لاستخدام ميزات مثل البحث/MCP.</string>
+  <string name="translate">ترجمة</string>
+  <string name="translating">جارٍ الترجمة...</string>
+  <string name="translation_clear">مسح الترجمة</string>
+  <string name="translation_language_selection_title">تحديد لغة الترجمة</string>
+  <string name="translation_text">الترجمة</string>
+  <string name="translator_page_cancel">إلغاء</string>
+  <string name="translator_page_input_placeholder">أدخل النص للترجمة...</string>
+  <string name="translator_page_result_placeholder">ستظهر نتيجة الترجمة هنا</string>
+  <string name="translator_page_title">المترجم</string>
+  <string name="translator_page_translate">ترجم</string>
+  <string name="tts">TTS</string>
+  <string name="unpin_chat">إلغاء تثبيت الدردشة</string>
+  <string name="update_card_check_failed">فشل التحقق من التحديث</string>
+  <string name="update_card_close">إغلاق</string>
+  <string name="update_card_downloading">جارٍ التنزيل، يرجى التحقق من شريط الحالة لمتابعة التقدم</string>
+  <string name="update_card_new_version_found">تم العثور على إصدار جديد %s</string>
+  <string name="update_card_unknown_error">خطأ غير معروف</string>
+  <string name="upload_file">رفع ملف</string>
+  <string name="use_web_search">البحث في الويب</string>
+  <string name="user_default_name">المستخدم</string>
+  <string name="video">فيديو</string>
+  <string name="workspace_cwd_no_subdirectories">لا توجد أدلة فرعية</string>
+  <string name="workspace_cwd_reset">إعادة تعيين</string>
+  <string name="workspace_cwd_select_desc">تعيين دليل العمل للجلسة الحالية</string>
+  <string name="workspace_cwd_select_directory">اختر دليل العمل</string>
+  <string name="workspace_cwd_set">تعيين كـ CWD</string>
+  <string name="workspace_detail">تفاصيل مساحة العمل</string>
+  <string name="workspace_detail_area_files">الملفات</string>
+  <string name="workspace_detail_area_rootfs">Rootfs</string>
   <string name="workspace_detail_compatibility_mode">وضع التوافق</string>
   <string name="workspace_detail_compatibility_mode_desc">جرّب تمكين هذا إذا فشل تشغيل الطرفية. قد يقلل من الأداء. ينطبق على علامات تبويب الطرفية الجديدة والأوامر اللاحقة.</string>
   <string name="workspace_detail_settings_save_failed">فشل حفظ الإعدادات</string>
@@ -2336,7 +2669,6 @@
   <string name="setting_page_media">الوسائط</string>
   <string name="setting_page_media_desc">مزوّدو توليد الصور والفيديو، ورفع الأصول</string>
   <string name="setting_media_page_providers">المزوّدون</string>
-  <string name="setting_media_page_edit_provider">تعديل المزوّد</string>
   <string name="setting_media_page_add_provider">إضافة مزوّد</string>
   <string name="media_creation_page_param_watermark">علامة مائية</string>
   <string name="media_creation_page_param_prompt_enhancement">تحسين المطالبة</string>
@@ -2509,4 +2841,117 @@
   <string name="setting_provider_page_grok_disclaimer">يستخدم اشتراك SuperGrok الخاص بك عبر تسجيل الدخول كما في Grok CLI. ميزة تجريبية: قد تغيّر xAI هذا أو تقيّده في أي وقت.</string>
   <string name="setting_provider_page_device_code_hint">أكّد هذا الرمز في المتصفح</string>
   <string name="setting_provider_page_device_code_reopen">اضغط لفتح الصفحة مرة أخرى</string>
+  <string name="setting_provider_page_type_subscription">اشتراك %s</string>
+  <string name="workspace_page_type_local">مساحة عمل محلية</string>
+  <string name="workspace_page_type_local_desc">يعمل في بيئة Linux معزولة على هذا الجهاز ويحتاج إلى Rootfs</string>
+  <string name="workspace_page_type_ssh">مساحة عمل SSH عن بُعد</string>
+  <string name="workspace_page_type_ssh_desc">الاتصال بخادمك الخاص عبر SSH</string>
+  <string name="workspace_detail_ssh_connection">اتصال SSH</string>
+  <string name="workspace_detail_ssh_address">العنوان</string>
+  <string name="workspace_detail_ssh_config_missing">التكوين مفقود</string>
+  <string name="workspace_detail_ssh_remote_dir">الدليل البعيد</string>
+  <string name="workspace_detail_ssh_host_key">مفتاح المضيف</string>
+  <string name="workspace_detail_ssh_host_key_unconfirmed">لم يتم التأكيد بعد. اختبر الاتصال في صفحة التعديل قبل الاتصال</string>
+  <string name="workspace_detail_ssh_edit">تعديل الاتصال</string>
+  <string name="workspace_detail_ssh_edit_desc">غيّر العنوان أو بيانات الاعتماد أو دليل العمل، ثم اختبر الاتصال مرة أخرى</string>
+  <string name="workspace_detail_area_working_dir">دليل العمل</string>
+  <string name="workspace_detail_area_root">الجذر</string>
+  <string name="workspace_ssh_editor_title_new">مساحة عمل SSH جديدة</string>
+  <string name="workspace_ssh_editor_title_edit">تعديل اتصال SSH</string>
+  <string name="workspace_ssh_editor_save">حفظ</string>
+  <string name="workspace_ssh_editor_basic">معلومات أساسية</string>
+  <string name="workspace_ssh_editor_name">الاسم</string>
+  <string name="workspace_ssh_editor_name_placeholder">خادمي</string>
+  <string name="workspace_ssh_editor_connection">اتصال</string>
+  <string name="workspace_ssh_editor_host">المضيف</string>
+  <string name="workspace_ssh_editor_host_placeholder">example.com أو 192.168.1.10</string>
+  <string name="workspace_ssh_editor_port">المنفذ</string>
+  <string name="workspace_ssh_editor_username">اسم المستخدم</string>
+  <string name="workspace_ssh_editor_auth">المصادقة</string>
+  <string name="workspace_ssh_editor_auth_method">الطريقة</string>
+  <string name="workspace_ssh_editor_password">كلمة المرور</string>
+  <string name="workspace_ssh_editor_private_key">المفتاح الخاص</string>
+  <string name="workspace_ssh_editor_saved_keep">محفوظ. اتركه فارغًا لإبقائه دون تغيير</string>
+  <string name="workspace_ssh_editor_private_key_desc">مفاتيح خاصة Ed25519 وECDSA وRSA بتنسيق OpenSSH أو PEM</string>
+  <string name="workspace_ssh_editor_import_key">استيراد من ملف</string>
+  <string name="workspace_ssh_editor_passphrase">عبارة المرور</string>
+  <string name="workspace_ssh_editor_passphrase_placeholder">اتركه فارغًا إذا لم يكن المفتاح الخاص مشفّرًا</string>
+  <string name="workspace_ssh_editor_working_dir">دليل العمل</string>
+  <string name="workspace_ssh_editor_remote_dir">المجلد البعيد</string>
+  <string name="workspace_ssh_editor_remote_dir_desc">يقرأ الذكاء الاصطناعي الملفات ويكتبها وينفّذ الأوامر هنا افتراضيًا. اتركه فارغًا لاستخدام الدليل الرئيسي للمستخدم البعيد بعد اختبار الاتصال</string>
+  <string name="workspace_ssh_editor_security">الأمان</string>
+  <string name="workspace_ssh_editor_host_key">مفتاح المضيف</string>
+  <string name="workspace_ssh_editor_host_key_unconfirmed">لم يتم التأكيد بعد. سيُطلب منك التحقق من بصمة الخادم عند اختبار الاتصال أو الحفظ</string>
+  <string name="workspace_ssh_editor_connect_failed">فشل الاتصال</string>
+  <string name="workspace_ssh_editor_error">حدث خطأ ما</string>
+  <string name="workspace_ssh_editor_save_anyway_message">%1$s\n\nهل تريد الحفظ على أي حال؟ يمكنك اختبار الاتصال مرة أخرى من تفاصيل مساحة العمل لاحقًا.</string>
+  <string name="workspace_ssh_editor_save_anyway">حفظ على أي حال</string>
+  <string name="workspace_ssh_editor_connecting">جارٍ الاتصال…</string>
+  <string name="workspace_ssh_editor_test">اختبار الاتصال</string>
+  <string name="workspace_ssh_editor_connected">متصل</string>
+  <string name="workspace_ssh_editor_shell">Shell</string>
+  <string name="workspace_ssh_editor_home_dir">%1$s (الدليل الرئيسي)</string>
+  <string name="workspace_ssh_editor_dir_missing">%1$s (غير موجود، وسيتم إنشاؤه عند أول استخدام)</string>
+  <string name="workspace_ssh_editor_host_key_changed">تم تغيير مفتاح المضيف</string>
+  <string name="workspace_ssh_editor_host_key_confirm">تأكيد مفتاح المضيف</string>
+  <string name="workspace_ssh_editor_host_key_changed_message">مفتاح المضيف الذي يقدّمه %1$s لا يطابق المفتاح الذي وثقت به سابقًا. ربما أُعيد تثبيت الخادم، أو قد ينتحل شخص ما هويته (هجوم الوسيط). لا تُتابع حتى تتحقق منه.</string>
+  <string name="workspace_ssh_editor_host_key_first_message">أول اتصال بـ %1$s. تحقق من بصمة مفتاح المضيف للخادم. يمكنك مقارنتها بتشغيل %2$s على الخادم.</string>
+  <string name="workspace_ssh_editor_trust_new_key">الوثوق بمفتاح جديد</string>
+  <string name="workspace_ssh_editor_trust_continue">الثقة والمتابعة</string>
+  <string name="workspace_ssh_editor_not_found">مساحة العمل غير موجودة أو ليست مساحة عمل SSH</string>
+  <string name="workspace_ssh_editor_missing_fields">أدخل المضيف والمنفذ واسم المستخدم</string>
+  <string name="workspace_ssh_editor_missing_remote_dir">أدخل دليل العمل البعيد</string>
+  <string name="workspace_ssh_editor_save_failed">تعذّر الحفظ</string>
+  <string name="skills_page_invalid_dirs_title">مجلدات غير معروفة</string>
+  <string name="skills_page_invalid_reason_missing_skill_md">SKILL.md مفقود</string>
+  <string name="skills_page_invalid_reason_missing_name">حقل name مفقود من SKILL.md</string>
+  <string name="skills_page_invalid_reason_missing_description">ملف SKILL.md يفتقد حقل description</string>
+  <string name="skills_page_invalid_reason_read_failed">تعذّرت قراءة SKILL.md</string>
+  <string name="skills_page_delete_dir_title">حذف المجلد</string>
+  <string name="skills_page_delete_dir_message">هل تريد حذف المجلد %1$s وكل الملفات التي يحتوي عليها؟ لا يمكن التراجع عن هذا الإجراء.</string>
+  <string name="skills_page_name_whitespace_error">يجب ألا يبدأ حقل name أو ينتهي بمسافة بيضاء</string>
+  <string name="skills_page_name_too_long_error">يجب ألا يتجاوز حقل name %1$d حرفًا</string>
+  <string name="skills_page_name_dot_error">يجب ألا يبدأ حقل name بنقطة</string>
+  <string name="skills_page_name_invalid_chars_error">يجب ألا يحتوي حقل name على شرطات مائلة أو شرطات مائلة عكسية أو محارف تحكم</string>
+  <string name="skills_page_description_error">تعذّر العثور على حقل description، يرجى التحقق من تنسيق frontmatter</string>
+  <string name="skills_page_unknown_error">خطأ غير معروف</string>
+  <string name="skills_page_import_error_read_file">تعذّر قراءة الملف</string>
+  <string name="skills_page_import_error_invalid_github_url">رابط مستودع GitHub غير صالح</string>
+  <string name="skills_page_import_error_github_list_failed">تعذّرت قراءة دليل GitHub</string>
+  <string name="skills_page_import_error_github_rate_limit">تم الوصول إلى حد معدل GitHub API، يرجى المحاولة مرة أخرى لاحقًا</string>
+  <string name="skills_page_import_error_no_skill_md">لم يتم العثور على SKILL.md في المجلد</string>
+  <string name="skills_page_import_error_zip_no_skill_md">لم يتم العثور على SKILL.md في الأرشيف</string>
+  <string name="skills_page_import_error_download_skill_md">تعذّر تنزيل SKILL.md، يُرجى التحقق من الرابط أو الشبكة</string>
+  <string name="skills_page_import_error_download_file">فشل تنزيل الملف: %1$s</string>
+  <string name="skills_page_import_error_read_entry">تعذّرت قراءة %1$s</string>
+  <string name="skills_page_import_error_invalid_format">%1$s بتنسيق غير صالح: %2$s</string>
+  <string name="skills_page_import_error_save_failed">تعذّر حفظ المهارة: %1$s</string>
+  <string name="skills_page_skill_body_placeholder">التعليمات...</string>
+  <string name="skills_page_clear_search">مسح</string>
+  <string name="skills_page_builtin_tag">مدمج</string>
+  <string name="skill_detail_page_close">إغلاق</string>
+  <string name="skill_detail_page_builtin_readonly">لا يمكن تعديل المهارات المدمجة</string>
+  <string name="skill_detail_page_name_change_error">لا يمكن تغيير اسم المهارة. يجب أن يكون حقل name %1$s</string>
+  <string name="skill_detail_page_save_failed">فشل الحفظ</string>
+  <string name="setting_page_preferences_notification_background_generation">التوليد في الخلفية</string>
+  <string name="setting_page_preferences_notification_floating_window">نافذة عائمة في الخلفية</string>
+  <string name="setting_page_preferences_notification_floating_window_desc">عند مغادرتك التطبيق بينما لا يزال الذكاء الاصطناعي يردّ، اعرض أيقونة عائمة. انقر عليها للتحقق من التقدم وتأكيد استدعاءات الأدوات والرد بسرعة</string>
+  <string name="setting_page_preferences_notification_overlay_permission">منح إذن العرض فوق التطبيقات</string>
+  <string name="setting_page_preferences_notification_overlay_permission_desc">لن تظهر النافذة العائمة دون هذا الإذن</string>
+  <string name="floating_chat_open_conversation">فتح المحادثة</string>
+  <string name="floating_chat_collapse">طيّ</string>
+  <string name="floating_chat_close">إغلاق النافذة العائمة</string>
+  <string name="floating_chat_ask_user">لدى الذكاء الاصطناعي سؤال لك</string>
+  <string name="floating_chat_tool_request">يريد استدعاء الأداة: %1$s</string>
+  <string name="floating_chat_answer">إجابة</string>
+  <string name="floating_chat_reply_placeholder">رد سريع…</string>
+  <string name="floating_chat_reply_queued_placeholder">سيُرسَل ردك عند انتهاء هذا الدور</string>
+  <string name="floating_chat_status_failed">فشل التوليد</string>
+  <string name="floating_chat_status_awaiting_answer">بانتظار إجابتك</string>
+  <string name="floating_chat_status_awaiting_approval">في انتظار تأكيد استدعاء الأداة</string>
+  <string name="floating_chat_status_done">اكتمل الرد</string>
+  <string name="floating_chat_status_idle">خامل</string>
+  <string name="setting_model_page_memory_model">نموذج توطيد الذاكرة</string>
+  <string name="setting_model_page_memory_model_desc">النموذج المستخدم لتنظيم المحادثات في الذاكرة طويلة المدى في الخلفية؛ يستخدم النموذج السريع عند عدم تعيينه</string>
+  <string name="setting_model_page_memory_model_follow_fast">نفس النموذج السريع</string>
 </resources>

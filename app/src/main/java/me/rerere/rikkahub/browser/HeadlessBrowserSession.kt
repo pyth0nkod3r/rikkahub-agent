@@ -238,16 +238,39 @@ object HeadlessBrowserSessionPool {
 
     private val sessions = mutableMapOf<String, Entry>()
     private val lock = Any()
+    private const val PERIODIC_SWEEP_INTERVAL_MS = 60_000L
+    private const val INACTIVE_TASK_IDLE_CAP_MS = 3 * 60_000L
+    private var periodicSweepScheduled = false
+
+    private val periodicSweepRunnable = object : Runnable {
+        override fun run() {
+            synchronized(lock) {
+                sweepIdleLocked(System.currentTimeMillis(), keep = null)
+                if (sessions.isNotEmpty()) {
+                    scheduleNextSweepLocked()
+                } else {
+                    periodicSweepScheduled = false
+                }
+            }
+        }
+    }
+
+    private fun scheduleNextSweepLocked() {
+        val mainLooper = runCatching { Looper.getMainLooper() }.getOrNull() ?: return
+        Handler(mainLooper).postDelayed(periodicSweepRunnable, PERIODIC_SWEEP_INTERVAL_MS)
+    }
 
     /**
-     * Idle TTL: a session untouched for longer than this is swept on the next [getOrCreate].
-     * Tracks [BrowserController.singleTaskTimeoutMs] — the per-task budget the user already
-     * configures in Settings → Browser. A session that hasn't run a tool for at least a full
-     * task window is one the LLM has almost certainly moved on from; reusing the same value
-     * keeps one knob instead of inventing a second idle constant. Read each sweep so a live
-     * settings edit takes effect without restarting the pool.
+     * Idle TTL: tracks [BrowserController.singleTaskTimeoutMs] while a task window is active,
+     * and caps to 3 minutes once no task is active so an offscreen Chromium renderer does not
+     * stay resident indefinitely after a forgotten `browser_done`.
      */
-    private val idleTtlMs: Long get() = BrowserController.singleTaskTimeoutMs
+    private val idleTtlMs: Long
+        get() = if (BrowserController.taskActive.value) {
+            BrowserController.singleTaskTimeoutMs
+        } else {
+            minOf(BrowserController.singleTaskTimeoutMs, INACTIVE_TASK_IDLE_CAP_MS)
+        }
 
     /**
      * Look up an existing session for [callerConvId] or construct a new one. Reusing on
@@ -265,6 +288,10 @@ object HeadlessBrowserSessionPool {
             sessions[callerConvId]?.let { it.lastUsedAtMs = now; return it.session }
             val s = HeadlessBrowserSession(context.applicationContext ?: context)
             sessions[callerConvId] = Entry(s, now)
+            if (!periodicSweepScheduled) {
+                periodicSweepScheduled = true
+                scheduleNextSweepLocked()
+            }
             return s
         }
     }
@@ -299,6 +326,26 @@ object HeadlessBrowserSessionPool {
     fun release(callerConvId: String) {
         val e = synchronized(lock) { sessions.remove(callerConvId) } ?: return
         e.session.stop()
+    }
+
+    /**
+     * Called by `RikkaHubApp.onTrimMemory` / `onLowMemory` to evict idle (or all, when
+     * [forceAll] is true and no browser task is actively running) offscreen WebViews.
+     */
+    fun evictOnMemoryPressure(forceAll: Boolean = false) {
+        synchronized(lock) {
+            if (sessions.isEmpty()) return
+            if (forceAll && !BrowserController.taskActive.value) {
+                val ids = sessions.keys.toList()
+                for (id in ids) {
+                    val entry = sessions.remove(id) ?: continue
+                    runCatching { entry.session.stop() }
+                    runCatching { BrowserController.clearModeIfHeadless(id) }
+                }
+            } else {
+                sweepIdleLocked(System.currentTimeMillis(), keep = null)
+            }
+        }
     }
 
     /** Test seam: clear all sessions. Not used in production. */

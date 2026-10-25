@@ -14,8 +14,6 @@ import kotlinx.coroutines.flow.map
 import me.rerere.ai.ui.UIMessage
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.data.db.AppDatabase
-import me.rerere.rikkahub.data.db.fts.MessageFtsManager
-import me.rerere.rikkahub.data.db.fts.MessageSearchSort
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.ConversationCompactionDAO
 import me.rerere.rikkahub.data.db.dao.FavoriteDAO
@@ -23,6 +21,8 @@ import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.ConversationCompactionEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
+import me.rerere.rikkahub.data.db.fts.MessageFtsManager
+import me.rerere.rikkahub.data.db.fts.MessageSearchSort
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.ConversationCompaction
@@ -69,6 +69,9 @@ class ConversationRepository(
                 }
             }
     }
+
+    suspend fun getTitlesOfAssistant(assistantId: Uuid): Set<String> =
+        conversationDAO.getTitlesOfAssistant(assistantId.toString()).toSet()
 
     fun getConversationsOfAssistantPaging(assistantId: Uuid): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
@@ -298,7 +301,9 @@ class ConversationRepository(
         return if (entity != null) {
             val nodes = loadMessageNodes(entity.id)
             conversationEntityToConversation(entity, nodes)
-        } else null
+        } else {
+            null
+        }
     }
 
     suspend fun existsConversationById(uuid: Uuid): Boolean {
@@ -380,6 +385,35 @@ class ConversationRepository(
         }
     }
 
+    /**
+     * Streaming fast-path: updates the `conversation` row and upserts ONLY the last 2
+     * `message_node` rows (current user turn + active assistant reply) via `REPLACE`, avoiding
+     * `DELETE FROM message_node` and re-serializing all historical turns on every checkpoint.
+     * Full node synchronization and FTS indexing run at turn completion.
+     */
+    suspend fun upsertStreamingConversation(conversation: Conversation) {
+        database.withTransaction {
+            conversationDAO.update(
+                conversationToConversationEntity(conversation)
+            )
+            val nodes = conversation.messageNodes
+            if (nodes.isNotEmpty()) {
+                val startIndex = (nodes.size - 2).coerceAtLeast(0)
+                val conversationIdStr = conversation.id.toString()
+                val tailEntities = nodes.subList(startIndex, nodes.size).mapIndexed { offset, node ->
+                    MessageNodeEntity(
+                        id = node.id.toString(),
+                        conversationId = conversationIdStr,
+                        nodeIndex = startIndex + offset,
+                        messages = JsonInstant.encodeToString(node.messages),
+                        selectIndex = node.selectIndex,
+                    )
+                }
+                messageNodeDAO.insertAll(tailEntities)
+            }
+        }
+    }
+
     suspend fun deleteConversation(conversation: Conversation) {
         // 获取完整的 Conversation（包含 messageNodes）以正确清理文件
         val fullConversation = if (conversation.messageNodes.isEmpty()) {
@@ -455,7 +489,7 @@ class ConversationRepository(
         return ConversationEntity(
             id = conversation.id.toString(),
             title = conversation.title,
-            nodes = "[]",  // nodes 现在存储在单独的表中
+            nodes = "[]", // nodes 现在存储在单独的表中
             createAt = conversation.createAt.toEpochMilli(),
             updateAt = conversation.updateAt.toEpochMilli(),
             assistantId = conversation.assistantId.toString(),
@@ -551,7 +585,6 @@ class ConversationRepository(
 
     suspend fun updateTitle(conversationId: Uuid, title: String) {
         conversationDAO.updateTitle(conversationId.toString(), title)
-        messageFtsManager.updateTitle(conversationId.toString(), title)
     }
 
     suspend fun updateCustomSystemPrompt(conversationId: Uuid, customSystemPrompt: String?) {
@@ -567,7 +600,6 @@ class ConversationRepository(
 
     suspend fun renameConversation(conversationId: Uuid, title: String) {
         conversationDAO.updateTitle(conversationId.toString(), title)
-        messageFtsManager.updateConversationTitle(conversationId.toString(), title)
     }
 
     private fun conversationSummaryToConversation(entity: LightConversationEntity): Conversation {
