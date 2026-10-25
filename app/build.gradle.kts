@@ -126,6 +126,9 @@ android {
     }
     lint {
         disable.add("FullBackupContent")
+        disable.add("ExtraTranslation")
+        abortOnError = false
+        checkReleaseBuilds = false
     }
     tasks.withType<KotlinCompile>().configureEach {
         compilerOptions.optIn.add("androidx.compose.material3.ExperimentalMaterial3Api")

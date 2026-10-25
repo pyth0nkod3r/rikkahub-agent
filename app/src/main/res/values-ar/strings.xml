@@ -922,7 +922,6 @@
   
   
   
-  <string name="setting_provider_page_scan_error">خطأ: %s</string>
   
   
   
@@ -1091,8 +1090,6 @@
   
   
   
-  <string name="web_search_disabled">البحث في الويب مُعطَّل</string>
-  <string name="web_search_enabled">البحث في الويب مُمكَّن</string>
   
   <string name="reasoning_xhigh">عالٍ جدًا</string>
   <string name="reasoning_max">الأقصى</string>
