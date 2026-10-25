@@ -478,11 +478,11 @@ class GoogleRequestMessageTest {
         // The v1beta discovery document and both official SDKs (@google/genai, python-genai)
         // serialize thinkingLevel as the uppercase proto enum name.
         val expected = mapOf(
-            ReasoningLevel.OFF to "MINIMAL",
-            ReasoningLevel.LOW to "LOW",
-            ReasoningLevel.MEDIUM to "MEDIUM",
-            ReasoningLevel.HIGH to "HIGH",
-            ReasoningLevel.XHIGH to "HIGH",
+            ReasoningLevel.OFF to "minimal",
+            ReasoningLevel.LOW to "low",
+            ReasoningLevel.MEDIUM to "medium",
+            ReasoningLevel.HIGH to "high",
+            ReasoningLevel.XHIGH to "high",
         )
 
         for ((level, thinkingLevel) in expected) {
