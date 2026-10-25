@@ -51,6 +51,7 @@ import me.rerere.hugeicons.stroke.Translate
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.AutoCompactionThresholdMode
+import me.rerere.rikkahub.data.datastore.DEFAULT_AUTO_MODEL_ID
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.ai.ModelField
 import me.rerere.rikkahub.ui.components.ai.ModelListSheet
@@ -291,7 +292,7 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
                     state = compressModel,
                     iconContainerColor = containerColor,
                     iconContentColor = contentColor,
-                    onClear = { vm.updateSettings { latest -> latest.copy(compressModelId = null) } },
+                    onClear = { vm.updateSettings { latest -> latest.copy(compressModelId = DEFAULT_AUTO_MODEL_ID) } },
                 )
             }
         }
