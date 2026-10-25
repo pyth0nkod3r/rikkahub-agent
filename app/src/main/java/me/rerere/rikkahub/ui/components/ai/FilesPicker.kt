@@ -75,6 +75,8 @@ import me.rerere.rikkahub.data.datastore.getCompactionContextLength
 import me.rerere.rikkahub.data.datastore.getContextCompactionTargetTokens
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.workspace.WorkspaceManager
+import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.lastContextTokens
@@ -271,7 +273,7 @@ internal fun FilesPicker(
                                 },
                             ) {
                                 Text(
-                                    text = conversation.workspaceCwd ?: boundWorkspace?.workspaceDir().orEmpty(),
+                                    text = conversation.workspaceCwd ?: WorkspaceManager.ROOTFS_WORKSPACE_DIR,
                                     // 路径的末尾更有辨识度，放不下时省略开头
                                     maxLines = 1,
                                     overflow = TextOverflow.StartEllipsis,
@@ -377,7 +379,6 @@ internal fun FilesPicker(
     if (showCwdSheet && boundWorkspace != null) {
         WorkspaceCwdPickerSheet(
             workspaceId = boundWorkspace.id,
-            workspaceDir = boundWorkspace.workspaceDir(),
             currentCwd = conversation.workspaceCwd,
             onSelectCwd = { newCwd ->
                 onUpdateWorkspaceCwd(newCwd)
@@ -443,7 +444,7 @@ private fun WorkspacePickerListItem(
                             contentDescription = stringResource(R.string.workspace_detail),
                         )
                     }
-                    if (boundWorkspace.supportsTerminal()) {
+                    if (boundWorkspace.shellStatus != WorkspaceShellStatus.DISABLED.name) {
                         IconButton(onClick = { onNavigateToTerminal(boundWorkspace.id) }) {
                             Icon(
                                 imageVector = HugeIcons.ComputerTerminal01,

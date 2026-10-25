@@ -266,7 +266,7 @@ object HeadlessBrowserSessionPool {
      * stay resident indefinitely after a forgotten `browser_done`.
      */
     private val idleTtlMs: Long
-        get() = if (BrowserController.taskActive.value) {
+        get() = if (BrowserController.taskActiveFlow().value) {
             BrowserController.singleTaskTimeoutMs
         } else {
             minOf(BrowserController.singleTaskTimeoutMs, INACTIVE_TASK_IDLE_CAP_MS)
@@ -335,7 +335,7 @@ object HeadlessBrowserSessionPool {
     fun evictOnMemoryPressure(forceAll: Boolean = false) {
         synchronized(lock) {
             if (sessions.isEmpty()) return
-            if (forceAll && !BrowserController.taskActive.value) {
+            if (forceAll && !BrowserController.taskActiveFlow().value) {
                 val ids = sessions.keys.toList()
                 for (id in ids) {
                     val entry = sessions.remove(id) ?: continue
