@@ -69,6 +69,29 @@ jobs:
             echo "keyPassword=ci_store_pass_9f3k" >> local.properties
           fi
 
+      - name: Sync database reconciler with compiled Room schema
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:kspDebugKotlin
+          python3 -c "
+          import json, glob, os, re
+          files = glob.glob('app/schemas/me.rerere.rikkahub.data.db.AppDatabase/*.json')
+          if files:
+              latest = max(files, key=lambda f: int(os.path.splitext(os.path.basename(f))[0]))
+              with open(latest) as f:
+                  d = json.load(f)['database']
+              ver = d['version']
+              h = d['identityHash']
+              print(f'Syncing ImportedDatabaseReconciler: version {ver}, hash {h}')
+              p = 'app/src/main/java/me/rerere/rikkahub/data/db/ImportedDatabaseReconciler.kt'
+              with open(p, 'r') as f:
+                  c = f.read()
+              c = re.sub(r'EXPECTED_VERSION = \d+', f'EXPECTED_VERSION = {ver}', c)
+              c = re.sub(r'EXPECTED_IDENTITY_HASH = \"[a-f0-9]+\"', f'EXPECTED_IDENTITY_HASH = \"{h}\"', c)
+              with open(p, 'w') as f:
+                  f.write(c)
+          "
+
       - name: Run Unit Tests & Build Release APKs
         run: |
           chmod +x gradlew

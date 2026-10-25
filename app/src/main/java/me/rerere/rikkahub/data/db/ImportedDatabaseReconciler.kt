@@ -61,7 +61,7 @@ object ImportedDatabaseReconciler {
      * newer *shared* conversation columns were added) or this reconciliation will silently stop
      * matching. `internal` so a JVM test can assert these stay in sync with the schema export.
      */
-    internal const val EXPECTED_VERSION = 31
+    internal const val EXPECTED_VERSION = 33
     internal const val EXPECTED_IDENTITY_HASH = "61a9c9769b0c9f68743007339a58e420"
 
     /**

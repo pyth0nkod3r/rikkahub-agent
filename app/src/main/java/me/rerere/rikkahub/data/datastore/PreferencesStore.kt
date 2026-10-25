@@ -34,12 +34,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV2Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV3Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV4Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV5Migration
+import me.rerere.rikkahub.data.gemini.DENIED_MODEL_IDS
 import me.rerere.rikkahub.data.model.Assistant
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
@@ -91,6 +93,9 @@ private fun createSettingsDataStore(context: Context): DataStore<Preferences> {
  * 磁盘只在启动时读一次，加载完成后内存里的 [settingsFlow] 就是唯一的事实来源，所有修改都先改内存再落盘。
  * 不把写完的值从盘上读回内存：读回来的是旧值，会盖掉这期间的新修改。
  */
+internal fun dropDeniedGeminiOAuthModels(models: List<Model>): List<Model> =
+    models.distinctBy { model -> model.id }.filterNot { model -> model.modelId in DENIED_MODEL_IDS }
+
 class SettingsStore internal constructor(
     private val dataStore: DataStore<Preferences>,
     scope: CoroutineScope,

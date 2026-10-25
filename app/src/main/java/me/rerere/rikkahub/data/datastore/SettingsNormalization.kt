@@ -54,7 +54,11 @@ internal fun Settings.withoutInvalidReferences(): Settings {
     val asrProviders = settings.asrProviders.distinctBy { it.id }
     return settings.copy(
         providers = settings.providers.distinctBy { it.id }.map { provider ->
-            provider.copyProvider(models = provider.models.distinctBy { model -> model.id })
+            if (provider is ProviderSetting.GeminiOAuth) {
+                provider.copyProvider(models = dropDeniedGeminiOAuthModels(provider.models))
+            } else {
+                provider.copyProvider(models = provider.models.distinctBy { model -> model.id })
+            }
         },
         assistants = settings.assistants.distinctBy { it.id }.map { assistant ->
             assistant.copy(

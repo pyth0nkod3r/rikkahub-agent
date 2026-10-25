@@ -337,9 +337,11 @@ private fun Int.exact(): String = NumberFormat.getIntegerInstance().format(this)
 
 @VisibleForTesting
 internal fun formatCost(cost: Double): String {
-    return if (cost < 0.01) {
-        "$" + String.format(Locale.US, "%.4f", cost)
-    } else {
-        "$" + String.format(Locale.US, "%.2f", cost)
+    val rounded = java.math.BigDecimal.valueOf(cost)
+        .setScale(6, java.math.RoundingMode.HALF_UP)
+    if (cost > 0.0 && rounded.signum() == 0) {
+        return "<$0.000001"
     }
+    val s = rounded.stripTrailingZeros().toPlainString()
+    return "$" + s
 }
