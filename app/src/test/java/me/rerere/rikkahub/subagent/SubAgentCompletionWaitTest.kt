@@ -11,6 +11,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -76,7 +77,7 @@ class SubAgentCompletionWaitTest {
 
     @Test fun `reply deferred timeout returns null when uncompleted`() = runBlocking {
         val reply = CompletableDeferred<String?>()
-        val outcome = withTimeoutOrNull(50L) {
+        val outcome = withTimeoutOrNull<String?>(50L) {
             runCatching { reply.await() }.getOrNull()
         }
         assertNull("timeout must return null", outcome)
