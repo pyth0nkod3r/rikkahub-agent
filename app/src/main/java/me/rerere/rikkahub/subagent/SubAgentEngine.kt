@@ -2,6 +2,7 @@ package me.rerere.rikkahub.subagent
 
 import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -55,6 +56,27 @@ internal suspend fun finishSubAgentWait(completed: Boolean, stop: suspend () -> 
     return false
 }
 
+private val ProviderSetting.providerTypeName: String
+    get() = when (this) {
+        is ProviderSetting.OpenAI -> "openai"
+        is ProviderSetting.Google -> "google"
+        is ProviderSetting.Claude -> "claude"
+        is ProviderSetting.ChatGPT -> "chatgpt"
+        is ProviderSetting.Grok -> "grok"
+        is ProviderSetting.AICore -> "aicore"
+        is ProviderSetting.LiteRtLocal -> "local_litert"
+        is ProviderSetting.LlamaCppLocal -> "local_llamacpp"
+        is ProviderSetting.Codex -> "codex"
+        is ProviderSetting.GeminiOAuth -> "gemini_oauth"
+    }
+
+private val ProviderSetting.endpointUrl: String
+    get() = when (this) {
+        is ProviderSetting.ApiKey -> baseUrl
+        is ProviderSetting.Account -> credential?.accountId ?: "oauth"
+        else -> "local"
+    }
+
 /**
  * Resolves subagent_dispatch's `model_id` (uuid, provider model id, or display name) against
  * the CHAT-type models of ENABLED providers. #28: `model_id` was parsed, stored and
@@ -99,8 +121,8 @@ internal object SubAgentModelResolver {
                         modelSlug = model.modelId,
                         displayName = model.displayName,
                         providerName = provider.name,
-                        providerType = provider.type.name,
-                        endpoint = provider.endpoint,
+                        providerType = provider.providerTypeName,
+                        endpoint = provider.endpointUrl,
                     )
                 }
         }
@@ -113,8 +135,8 @@ internal object SubAgentModelResolver {
                 modelSlug = model.modelId,
                 displayName = model.displayName,
                 providerName = provider.name,
-                providerType = provider.type.name,
-                endpoint = provider.endpoint,
+                providerType = provider.providerTypeName,
+                endpoint = provider.endpointUrl,
             )
         }
         if (byModelId.size > 1) return Result.Failed(ambiguousMessage(modelIdInput, byModelId))
@@ -127,8 +149,8 @@ internal object SubAgentModelResolver {
                 modelSlug = model.modelId,
                 displayName = model.displayName,
                 providerName = provider.name,
-                providerType = provider.type.name,
-                endpoint = provider.endpoint,
+                providerType = provider.providerTypeName,
+                endpoint = provider.endpointUrl,
             )
         }
         if (byDisplayName.size > 1) return Result.Failed(ambiguousMessage(modelIdInput, byDisplayName))
@@ -150,8 +172,8 @@ internal object SubAgentModelResolver {
                     modelSlug = model.modelId,
                     displayName = model.displayName,
                     providerName = provider.name,
-                    providerType = provider.type.name,
-                    endpoint = provider.endpoint,
+                    providerType = provider.providerTypeName,
+                    endpoint = provider.endpointUrl,
                 )
             }
         }
@@ -164,8 +186,8 @@ internal object SubAgentModelResolver {
                     modelSlug = model.modelId,
                     displayName = model.displayName,
                     providerName = provider.name,
-                    providerType = provider.type.name,
-                    endpoint = provider.endpoint,
+                    providerType = provider.providerTypeName,
+                    endpoint = provider.endpointUrl,
                 )
             }
         }
@@ -545,7 +567,7 @@ class SubAgentEngine(
         }
         val subAgentSystemPrompt = "$identityBanner\n\n$combinedPrompt"
 
-        val parentConv = parentChatId?.let { runCatching { Uuid.parse(it) }.getOrNull() }?.let { conversationRepo.getById(it) }
+        val parentConv = parentChatId?.let { runCatching { Uuid.parse(it) }.getOrNull() }?.let { conversationRepo.getConversationById(it) }
         val conv = Conversation.ofId(
             id = convId,
             assistantId = parentAsstUuid,
@@ -876,6 +898,7 @@ private fun me.rerere.rikkahub.data.agentrun.AgentRun.toSubAgentRun(): SubAgentR
         label = meta?.get("label")?.jsonPrimitive?.contentOrNull ?: "Sub-agent",
         task = meta?.get("task")?.jsonPrimitive?.contentOrNull.orEmpty(),
         modelId = meta?.get("model_id")?.jsonPrimitive?.contentOrNull,
+        tools = null,
         resolvedModelSlug = meta?.get("resolved_model")?.jsonPrimitive?.contentOrNull,
         providerName = meta?.get("provider")?.jsonPrimitive?.contentOrNull,
         endpoint = meta?.get("endpoint")?.jsonPrimitive?.contentOrNull,
