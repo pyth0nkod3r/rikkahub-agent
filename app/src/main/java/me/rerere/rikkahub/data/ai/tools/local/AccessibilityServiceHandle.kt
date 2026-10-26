@@ -56,7 +56,8 @@ object AccessibilityServiceHandle {
         val context = ctx ?: getAppContext()
         val enabledInSettings = context?.let { isEnabledInSettings(it) } ?: false
         if (enabledInSettings) {
-            put("error", "accessibility_service_killed")
+            put("error", "AccessibilityService not active: service was killed by system memory management")
+            put("code", "accessibility_service_killed")
             put(
                 "recovery",
                 "The Accessibility Service was terminated by Android/MIUI memory management while still enabled in system settings. " +
@@ -64,7 +65,8 @@ object AccessibilityServiceHandle {
                     "or set battery management to 'No restrictions' and enable 'Autostart' for RikkaHub."
             )
         } else {
-            put("error", "accessibility_service_not_enabled")
+            put("error", "AccessibilityService not active: service is not enabled")
+            put("code", "accessibility_service_not_enabled")
             put("recovery", "Enable RikkaHub in Android Settings → Accessibility → Installed Apps.")
         }
     }
