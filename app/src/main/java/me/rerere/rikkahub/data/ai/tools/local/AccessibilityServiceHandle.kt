@@ -16,6 +16,10 @@ import me.rerere.rikkahub.service.RikkaAccessibilityService
  */
 object AccessibilityServiceHandle {
 
+    private fun getAppContext(): Context? = runCatching {
+        org.koin.core.context.GlobalContext.getOrNull()?.get<Context>()
+    }.getOrNull()
+
     /** True iff our component is listed in Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES. */
     fun isEnabledInSettings(ctx: Context): Boolean {
         val expected = ComponentName(ctx, RikkaAccessibilityService::class.java).flattenToString()
@@ -38,12 +42,30 @@ object AccessibilityServiceHandle {
         block: suspend (RikkaAccessibilityService) -> JsonObject
     ): JsonObject {
         val svc = RikkaAccessibilityService.instance
-            ?: return notActiveEnvelope()
+            ?: return notActiveEnvelope(getAppContext())
         return svc.withInteractiveSession { block(it) }
     }
 
-    fun notActiveEnvelope(): JsonObject = buildJsonObject {
-        put("error", "AccessibilityService not active")
-        put("recovery", "Enable RikkaHub in Settings → Accessibility → Installed Apps")
+    /**
+     * Distinguishes between "service was killed by Android/MIUI memory management" (still
+     * enabled in Settings but the singleton is null) and "service is not enabled at all".
+     * MIUI/HyperOS aggressively kills accessibility services in the background; the recovery
+     * hint guides the user to toggle or whitelist accordingly.
+     */
+    fun notActiveEnvelope(ctx: Context? = null): JsonObject = buildJsonObject {
+        val context = ctx ?: getAppContext()
+        val enabledInSettings = context?.let { isEnabledInSettings(it) } ?: false
+        if (enabledInSettings) {
+            put("error", "accessibility_service_killed")
+            put(
+                "recovery",
+                "The Accessibility Service was terminated by Android/MIUI memory management while still enabled in system settings. " +
+                    "Toggle the switch off and on in Settings → Accessibility → Installed Apps, " +
+                    "or set battery management to 'No restrictions' and enable 'Autostart' for RikkaHub."
+            )
+        } else {
+            put("error", "accessibility_service_not_enabled")
+            put("recovery", "Enable RikkaHub in Android Settings → Accessibility → Installed Apps.")
+        }
     }
 }

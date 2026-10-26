@@ -35,6 +35,13 @@ data class SubAgentRun(
     val tripCount: Int = 0,
     val conversationId: String? = null,
     val capabilities: List<String> = emptyList(),
+    val resolvedModelId: String? = null,
+    val resolvedModelSlug: String? = null,
+    val providerName: String? = null,
+    val providerType: String? = null,
+    val endpoint: String? = null,
+    val httpStatus: Int? = null,
+    val resumedAfterMs: Long? = null,
 )
 
 @Serializable
@@ -48,7 +55,7 @@ enum class SubAgentStatus {
 }
 
 object SubAgentDefaults {
-    const val DEFAULT_TIMEOUT_SECONDS = 300
+    const val DEFAULT_TIMEOUT_SECONDS = 1800
     const val MAX_TIMEOUT_SECONDS = 1800
     const val DEFAULT_MAX_TRIPS = 12
     const val MAX_MAX_TRIPS = 30
@@ -157,6 +164,7 @@ data class SubAgentProfile(
     val description: String = "",
     val systemPrompt: String = "",
     val modelId: Uuid? = null,
+    val modelSlug: String? = null,
     val enabled: Boolean = true,
     /** Role tool names this profile always grants (added to the dispatch `tools` list). */
     val tools: List<String> = emptyList(),

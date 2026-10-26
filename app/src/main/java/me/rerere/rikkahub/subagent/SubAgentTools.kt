@@ -30,6 +30,13 @@ internal fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject 
     put("status", run.status.name)
     put("label", run.label)
     if (run.modelId != null) put("model_id", run.modelId)
+    if (run.resolvedModelSlug != null) put("resolved_model", run.resolvedModelSlug)
+    if (run.resolvedModelId != null) put("resolved_model_uuid", run.resolvedModelId)
+    if (run.providerName != null) put("provider", run.providerName)
+    if (run.providerType != null) put("provider_type", run.providerType)
+    if (run.endpoint != null) put("endpoint", run.endpoint)
+    if (run.httpStatus != null) put("http_status", run.httpStatus)
+    if (run.resumedAfterMs != null) put("resumed_after_ms", run.resumedAfterMs)
     put("run_in_background", run.runInBackground)
     put("timeout_seconds", run.timeoutSeconds)
     put("max_trips", run.maxTrips)
@@ -316,7 +323,7 @@ fun subagentReinjectTool(
                 })
                 put("timeout_seconds", buildJsonObject {
                     put("type", "integer")
-                    put("description", "Timeout in seconds for this continuation. Defaults to 300.")
+                    put("description", "Timeout in seconds for this continuation. Defaults to 1800.")
                 })
                 put("capabilities", buildJsonObject {
                     put("type", "array")

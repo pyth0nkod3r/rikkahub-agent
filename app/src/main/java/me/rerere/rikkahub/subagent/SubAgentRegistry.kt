@@ -51,6 +51,15 @@ class SubAgentRegistry {
 
     fun get(id: String): SubAgentRun? = _runs.value[id]
 
+    fun all(): Map<String, SubAgentRun> = _runs.value
+
+    fun rehydrate(runs: List<SubAgentRun>) {
+        _runs.update { current ->
+            val mapped = runs.associateBy { it.id }
+            mapped + current
+        }
+    }
+
     fun list(activeOnly: Boolean): List<SubAgentRun> {
         val all = _runs.value.values
         return if (activeOnly) all.filter { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }

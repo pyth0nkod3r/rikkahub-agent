@@ -16,7 +16,16 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
+import coil3.ImageLoader
+import coil3.PlatformContext
 import coil3.SingletonImageLoader
+import coil3.gif.AnimatedImageDecoder
+import coil3.gif.GifDecoder
+import coil3.memory.MemoryCache
+import coil3.network.cachecontrol.CacheControlCacheStrategy
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.request.crossfade
+import coil3.svg.SvgDecoder
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -69,7 +78,37 @@ const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 const val MEDIA_CREATION_NOTIFICATION_CHANNEL_ID = "media_creation"
 const val MEMORY_DREAM_NOTIFICATION_CHANNEL_ID = "memory_dream"
 
-class RikkaHubApp : Application() {
+class RikkaHubApp : Application(), SingletonImageLoader.Factory {
+    /**
+     * Coil 3 singleton initialization. Implementing [SingletonImageLoader.Factory] on the
+     * Application class guarantees the loader is created exactly once, before any Compose
+     * view, FloatingWindow, or onTrimMemory callback can race with
+     * setSingletonImageLoaderFactory (which crashed with IllegalStateException when
+     * ChatFloatingWindows or activity recreation accessed Coil first).
+     */
+    override fun newImageLoader(context: PlatformContext): ImageLoader {
+        return ImageLoader.Builder(context)
+            .crossfade(true)
+            .memoryCache {
+                MemoryCache.Builder()
+                    .maxSizePercent(context, 0.10)
+                    .build()
+            }
+            .components {
+                add(OkHttpNetworkFetcherFactory(
+                    callFactory = { get<okhttp3.OkHttpClient>() },
+                    cacheStrategy = { CacheControlCacheStrategy() },
+                ))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    add(AnimatedImageDecoder.Factory())
+                } else {
+                    add(GifDecoder.Factory())
+                }
+                add(SvgDecoder.Factory(scaleToDensity = true))
+            }
+            .build()
+    }
+
     override fun onCreate() {
         super.onCreate()
         // Restore files and settings before eager Koin singletons or workers can access them.

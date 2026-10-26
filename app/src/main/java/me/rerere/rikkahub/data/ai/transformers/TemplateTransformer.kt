@@ -22,6 +22,12 @@ class TemplateTransformer(
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
+        // Sub-agent conversations must not inherit the parent assistant's message
+        // template (which may contain identity blocks like character names, e.g. "D4RKN3T").
+        // The sub-agent has its own system prompt and self-identity.
+        if (ctx.conversationId != null && me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(ctx.conversationId)) {
+            return messages
+        }
         val template = engine.getTemplate(ctx.assistant.id.toString())
         val timeZone = TimeZone.currentSystemDefault()
         return messages.map { message ->

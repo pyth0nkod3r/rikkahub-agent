@@ -35,7 +35,7 @@ private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 /** Arbitrary request code: this app only ever makes one kind of Shizuku permission request. */
 private const val PERMISSION_REQUEST_CODE = 8730
 
-private const val BIND_TIMEOUT_MS = 10_000L
+private const val BIND_TIMEOUT_MS = 25_000L
 
 /** Extra slack on top of the caller's requested command timeout for the AIDL round-trip
  *  itself, so a remote process that somehow ignored its own timeout can't hang [exec]
@@ -101,7 +101,7 @@ internal fun bindFailedResponse(failure: BindResult.Failure): JsonObject = build
         if (failure is BindResult.Failure.Timeout) {
             // The server accepted the bind (an unauthorised caller fails at bind_threw), so
             // permission is not the problem; a running server older than the Shizuku app is (#45).
-            "The Shizuku server accepted the request but the user service never started. Open the Shizuku app: if the running server version is older than the app, or it offers to restart to upgrade, restart the Shizuku service, then retry."
+            "The Shizuku server accepted the request but the user service never started within 25s. Possible causes: (1) running server version is older than the Shizuku app — open Shizuku and restart if it offers an upgrade; (2) device under heavy load — retry after a moment; (3) pending permission grant — check the Shizuku notification. Restart the Shizuku service and retry."
         } else {
             "Could not bind the Shizuku user service. Retry; if it keeps failing, restart the Shizuku service and re-grant permission from Settings -> Shizuku."
         },
@@ -282,14 +282,11 @@ object ShizukuManager {
         if (needBind) startBind(context, deferred)
         val result = withTimeoutOrNull(BIND_TIMEOUT_MS) { deferred.await() }
         if (result != null) return result
-        // No connection callback arrived in time. Clear the waiter so the next call starts a
-        // fresh bind instead of awaiting this same dead deferred forever (a bind that never
-        // calls back would otherwise wedge every future call until process restart). Only
-        // clear it if it is still ours. The stale connection is left alone: if its callback
-        // arrives late it installs a live service, and completing the orphaned deferred is harmless.
-        bindLock.withLock {
-            if (bindWaiter === deferred) bindWaiter = null
-        }
+        // No connection callback arrived in time. Reset the full binding (unbinds the leaked
+        // connection, clears the waiter) so the next call starts fresh instead of awaiting
+        // this same dead deferred forever. The timeout was raised from 10s to 25s to
+        // accommodate slow app_process forks; reaching it now genuinely signals a dead service.
+        resetBinding()
         return BindResult.Failure.Timeout
     }
 
@@ -299,29 +296,29 @@ object ShizukuManager {
                 val api = if (binder != null && binder.pingBinder()) {
                     IShizukuUserService.Stub.asInterface(binder)
                 } else null
-                runCatching {
-                    runBlocking {
-                        bindLock.withLock {
-                            service = api
-                            bindWaiter = null
-                        }
+                // Dispatch to background scope — NEVER block the Android Main Looper with
+                // runBlocking, which caused ANRs and deadlocks when app_process was slow.
+                idleScope.launch {
+                    bindLock.withLock {
+                        service = api
+                        bindWaiter = null
                     }
-                }
-                if (!deferred.isCompleted) {
-                    deferred.complete(
-                        if (api != null) BindResult.Connected(api) else BindResult.Failure.BindingDied
-                    )
+                    if (!deferred.isCompleted) {
+                        deferred.complete(
+                            if (api != null) BindResult.Connected(api) else BindResult.Failure.BindingDied
+                        )
+                    }
                 }
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
                 Log.w(TAG, "shizuku user service disconnected")
-                runCatching { runBlocking { resetBinding() } }
+                idleScope.launch { resetBinding() }
             }
 
             override fun onBindingDied(name: ComponentName?) {
                 Log.w(TAG, "shizuku user service binding died")
-                runCatching { runBlocking { resetBinding() } }
+                idleScope.launch { resetBinding() }
                 if (!deferred.isCompleted) deferred.complete(BindResult.Failure.BindingDied)
             }
         }

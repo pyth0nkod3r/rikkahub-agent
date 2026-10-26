@@ -60,4 +60,24 @@ class SubAgentToolsEncodeRunTest {
         assertEquals("conv-123", json["conversation_id"]?.toString()?.trim('"'))
         assertTrue(json.containsKey("capabilities"))
     }
+
+    @Test fun `diagnostic model and provider fields encoded when present`() {
+        val run = makeRun().copy(
+            resolvedModelSlug = "gemini-3.8-flash-high",
+            resolvedModelId = "uuid-123",
+            providerName = "Google AI",
+            providerType = "GEMINI",
+            endpoint = "https://generativelanguage.googleapis.com",
+            httpStatus = 200,
+            resumedAfterMs = 45000L,
+        )
+        val json = encodeRun(run)
+        assertEquals("gemini-3.8-flash-high", json["resolved_model"]?.toString()?.trim('"'))
+        assertEquals("uuid-123", json["resolved_model_uuid"]?.toString()?.trim('"'))
+        assertEquals("Google AI", json["provider"]?.toString()?.trim('"'))
+        assertEquals("GEMINI", json["provider_type"]?.toString()?.trim('"'))
+        assertEquals("https://generativelanguage.googleapis.com", json["endpoint"]?.toString()?.trim('"'))
+        assertEquals("200", json["http_status"]?.toString())
+        assertEquals("45000", json["resumed_after_ms"]?.toString())
+    }
 }

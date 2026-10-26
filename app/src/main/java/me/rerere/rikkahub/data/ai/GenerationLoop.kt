@@ -748,6 +748,15 @@ class GenerationLoop(
                 )
                 emit(GenerationChunk.Messages(messages))
 
+                // Intercept DeepSeek DSML tool delimiters leaked into text parts (ISSUE-6)
+                val lastMsg = messages.last()
+                val (sanitizedParts, extractedTools) = sanitizeAndExtractDsmlTools(lastMsg.parts)
+                if (extractedTools.isNotEmpty() || sanitizedParts != lastMsg.parts) {
+                    val updatedMsg = lastMsg.copy(parts = sanitizedParts + extractedTools)
+                    messages = messages.dropLast(1) + updatedMsg
+                    emit(GenerationChunk.Messages(messages))
+                }
+
                 val toolCalls = messages.last().getTools().filter { !it.isExecuted }
                 if (toolCalls.isEmpty()) {
                     // no tool calls, break
@@ -1490,4 +1499,42 @@ class GenerationLoop(
         ) + nonTextParts
     }
 
+    private val dsmlToolPattern = Regex(
+        """<｜tool calls begin｜>[\s\S]*?<｜tool call begin｜>(\w+)<｜tool sep｜>([\s\S]*?)<｜tool call end｜>[\s\S]*?<｜tool calls end｜>"""
+    )
+    private val dsmlSingleToolPattern = Regex(
+        """<｜tool call begin｜>(\w+)<｜tool sep｜>([\s\S]*?)<｜tool call end｜>"""
+    )
+    private val dsmlDelimiterStrip = Regex("""<｜tool [^>]+｜>|｜DSML｜""")
+
+    private fun sanitizeAndExtractDsmlTools(
+        parts: List<UIMessagePart>
+    ): Pair<List<UIMessagePart>, List<UIMessagePart.Tool>> {
+        val extracted = mutableListOf<UIMessagePart.Tool>()
+        val sanitizedParts = parts.map { part ->
+            if (part is UIMessagePart.Text) {
+                var text = part.text
+                for (match in dsmlSingleToolPattern.findAll(text)) {
+                    val toolName = match.groupValues[1]
+                    val argsRaw = match.groupValues[2].trim().removeSurrounding("```json", "```").trim()
+                    extracted.add(
+                        UIMessagePart.Tool(
+                            toolCallId = "call_${Uuid.random()}",
+                            toolName = toolName,
+                            input = argsRaw,
+                            approvalState = ToolApprovalState.Auto,
+                        )
+                    )
+                }
+                text = text.replace(dsmlToolPattern, "")
+                    .replace(dsmlSingleToolPattern, "")
+                    .replace(dsmlDelimiterStrip, "")
+                    .trim()
+                part.copy(text = text)
+            } else {
+                part
+            }
+        }
+        return sanitizedParts to extracted
+    }
 }

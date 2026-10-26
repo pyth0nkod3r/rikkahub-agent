@@ -324,12 +324,37 @@ class RikkaAccessibilityService : AccessibilityService() {
 
     /**
      * Walks up the parent chain looking for a clickable node. Returns the original if it's
-     * already clickable, or the nearest clickable ancestor, or null if none exists.
+     * already clickable, or the nearest clickable ancestor whose bounding box reasonably
+     * contains the target, or null if none exists.
+     *
+     * The bounding-box check prevents bottom-sheet dialog containers and header/cancel
+     * buttons from being resolved as the click target when the actual item is a non-
+     * clickable child. An ancestor whose area exceeds 3× the target's area is rejected
+     * (it's likely a container, not a list-item wrapper).
      */
     fun resolveClickable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        var cur: AccessibilityNodeInfo? = node
+        if (node.isClickable) return node
+
+        val targetBounds = android.graphics.Rect()
+        node.getBoundsInScreen(targetBounds)
+        val targetArea = targetBounds.width().toLong() * targetBounds.height().toLong()
+
+        var cur = node.parent
         while (cur != null) {
-            if (cur.isClickable) return cur
+            if (cur.isClickable) {
+                val ancestorBounds = android.graphics.Rect()
+                cur.getBoundsInScreen(ancestorBounds)
+                val ancestorArea = ancestorBounds.width().toLong() * ancestorBounds.height().toLong()
+                // Accept the ancestor only if:
+                // 1. Its area is at most 3× the target's area (not a container)
+                // 2. It contains the centre of the target (same visual region)
+                if (targetArea > 0 &&
+                    ancestorArea <= targetArea * 3 &&
+                    ancestorBounds.contains(targetBounds.centerX(), targetBounds.centerY())
+                ) {
+                    return cur
+                }
+            }
             cur = cur.parent
         }
         return null
