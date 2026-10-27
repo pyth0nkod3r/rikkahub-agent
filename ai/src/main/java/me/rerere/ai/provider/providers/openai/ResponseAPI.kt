@@ -537,20 +537,7 @@ class ResponseAPI(
     private fun JsonArrayBuilder.addServerToolItem(tool: UIMessagePart.ServerTool) {
         val metadata = tool.metadataAs<ServerToolMetadata>()
         val protocol = metadata?.protocol
-        if (protocol != null && protocol != ServerToolProtocol.OPENAI_RESPONSES) {
-            val summary = buildString {
-                append("[Server tool: ${tool.toolName}]")
-                tool.output?.takeIf { it.toString().isNotBlank() }?.let {
-                    append(" -> $it")
-                }
-            }
-            add(buildJsonObject {
-                put("type", "message")
-                put("role", "assistant")
-                put("content", summary)
-            })
-            return
-        }
+        if (protocol != null && protocol != ServerToolProtocol.OPENAI_RESPONSES) return
 
         val rawCall = metadata?.call.takeIf { protocol == ServerToolProtocol.OPENAI_RESPONSES }
         if (rawCall != null) {
@@ -586,12 +573,16 @@ class ResponseAPI(
         if (parts.isEmpty()) return
 
         add(buildJsonObject {
-            put("type", "message")
             put("role", JsonPrimitive(role.name.lowercase()))
 
             if (parts.isOnlyTextPart()) {
                 val text = (parts.first() as UIMessagePart.Text).text
                 put("content", if (text.isBlank()) " " else text)
+            } else if (role == MessageRole.ASSISTANT) {
+                // OpenAI Responses API restricts assistant content array length to 1.
+                // When an assistant message has multiple text parts, join them into a single string content.
+                val combinedText = parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+                put("content", if (combinedText.isBlank()) " " else combinedText)
             } else {
                 putJsonArray("content") {
                     parts.forEach { part ->
