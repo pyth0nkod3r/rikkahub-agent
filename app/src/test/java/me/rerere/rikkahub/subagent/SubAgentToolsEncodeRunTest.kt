@@ -94,4 +94,16 @@ class SubAgentToolsEncodeRunTest {
         assertEquals("glm-4-flash", json["resolved_model"]?.toString()?.trim('"'))
         assertEquals("provider rate limited", json["fallback_reason"]?.toString()?.trim('"'))
     }
+
+    @Test fun `tokens and trip count encoded when present`() {
+        val run = makeRun().copy(
+            tokensIn = 1500L,
+            tokensOut = 450L,
+            tripCount = 3,
+        )
+        val json = encodeRun(run)
+        assertEquals("1500", json["tokens_in"]?.toString())
+        assertEquals("450", json["tokens_out"]?.toString())
+        assertEquals("3", json["trip_count"]?.toString())
+    }
 }

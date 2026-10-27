@@ -1647,18 +1647,40 @@ class ChatService(
         val initialConversation = getConversationFlow(conversationId).value
         val assistant = settings.getAssistantById(initialConversation.assistantId)
             ?: settings.getCurrentAssistant()
-        val model = settings.findModelById(
+
+        val isSubAgent = me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId) ||
+            me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId)
+
+        // For sub-agents / headless runs, prioritize the conversation's own chatModelId directly
+        // and fall back to the global default model before inspecting assistant.chatModelId.
+        // This ensures a broken/disabled/missing parent assistant model does not crash sub-agents.
+        val modelTargetId = if (isSubAgent) {
+            initialConversation.chatModelId
+                ?: settings.getCurrentChatModel()?.id
+                ?: assistant.chatModelId
+                ?: settings.chatModelId
+        } else {
             initialConversation.chatModelId ?: assistant.chatModelId ?: settings.chatModelId
-        )
-            ?: throw IllegalStateException(
+        }
+        var model = settings.findModelById(modelTargetId)
+        var resolvedProvider = model?.findProvider(settings.providers)
+        if (isSubAgent && (model == null || resolvedProvider == null || !resolvedProvider.enabled)) {
+            val fallbackModel = settings.getCurrentChatModel()
+            if (fallbackModel != null) {
+                model = fallbackModel
+                resolvedProvider = fallbackModel.findProvider(settings.providers)
+            }
+        }
+        if (model == null) {
+            throw IllegalStateException(
                 "No chat model selected. Pick one in Settings → Default models, or send /model in Telegram."
             )
+        }
         // Defence against an upstream-Settings bug where disabling all providers can leave
         // the assistant's chatModelId pointing at a model whose provider has enabled=false:
         // the model lookup walks every provider regardless of state, so without this gate
         // inference fires (and bills) against the "disabled" provider's API key. Surface
         // the disabled state clearly instead of silently spending tokens.
-        val resolvedProvider = model.findProvider(settings.providers)
         if (resolvedProvider == null) {
             throw IllegalStateException(
                 "Selected model '${model.displayName.ifBlank { model.modelId }}' has no matching provider. " +
@@ -1671,9 +1693,6 @@ class ChatService(
                     "Re-enable it in Settings → Providers, or pick a different model with /model."
             )
         }
-
-        val isSubAgent = me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId) ||
-            me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId)
         val senderName = if (isSubAgent) {
             "Sub-agent"
         } else if (assistant.useAssistantAvatar) {
@@ -2494,7 +2513,16 @@ class ChatService(
         // Automatic compaction is deliberately driven by provider-reported usage after a
         // tool result, or by an actual context-limit error. Do not estimate the history here
         // and compact before the model has had a chance to execute its tools.
-        if (!force) return view
+        // HOWEVER, when switching models or when current messages severely exceed the model's
+        // context length (e.g. 112K tokens on a 32K model), we must compact before dispatching
+        // to avoid HTTP 400 / 502 payload-too-large errors.
+        val triggerTokens = automaticCompactionTriggerTokens(settings, model)
+        val shouldForceForContextLength = if (!force && triggerTokens != null) {
+            val estimatedTokens = ContextBudgetPlanner.estimateContextTokens(view.messages)
+            estimatedTokens >= triggerTokens
+        } else false
+
+        if (!force && !shouldForceForContextLength) return view
 
         Log.i(
             TAG,

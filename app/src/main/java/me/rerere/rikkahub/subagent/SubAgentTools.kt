@@ -330,6 +330,10 @@ fun subagentReinjectTool(
                     put("type", "string")
                     put("description", "The new prompt or continuation instruction for the sub-agent.")
                 })
+                put("conversation_id", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Optional target conversation id. If omitted or running in a forked conversation, binds to the target conversation context.")
+                })
                 put("run_in_background", buildJsonObject {
                     put("type", "boolean")
                     put("description", "Whether to run asynchronously in the background. Defaults to previous setting.")
@@ -358,6 +362,8 @@ fun subagentReinjectTool(
         val timeoutSeconds = params["timeout_seconds"]?.jsonPrimitive?.intOrNull
         val capabilities = params["capabilities"]?.let { runCatching { it.jsonArray }.getOrNull() }
             ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+        val targetConversationId = params["conversation_id"]?.jsonPrimitive?.contentOrNull
+        val callerParentChatId = callerContext.callerConversationId
 
         when (val res = engine.reinject(
             runId = id,
@@ -365,6 +371,8 @@ fun subagentReinjectTool(
             additionalCapabilities = capabilities,
             runInBackground = runInBackground,
             timeoutSeconds = timeoutSeconds,
+            targetConversationId = targetConversationId,
+            callerParentChatId = callerParentChatId,
         )) {
             is SubAgentEngine.DispatchResult.Reject ->
                 errEnv(res.error, res.detail)

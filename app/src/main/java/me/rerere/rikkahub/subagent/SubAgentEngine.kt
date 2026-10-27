@@ -333,6 +333,7 @@ class SubAgentEngine(
      * (and `subagent_get`, via the ledger) can see what actually happened.
      */
     private val agentRunRepo: AgentRunRepository,
+    private val usageRecordDao: me.rerere.rikkahub.data.db.dao.UsageRecordDAO? = null,
 ) {
 
     private val chatService: ChatService by lazy {
@@ -582,19 +583,23 @@ class SubAgentEngine(
         val resolvedChatModelId: Uuid? = when (modelResolution) {
             is SubAgentModelResolver.Result.Inherit -> {
                 val defaultModel = settings.getCurrentChatModel()
-                val defaultProvider = defaultModel?.findProvider(settings.providers)
+                if (defaultModel == null) {
+                    markTerminal(runId, SubAgentStatus.FAILED, "no chat model configured or available")
+                    return
+                }
+                val defaultProvider = defaultModel.findProvider(settings.providers)
                 registry.update(runId) {
                     it.copy(
                         attemptedModel = attemptedModelStr,
-                        resolvedModelId = defaultModel?.id?.toString(),
-                        resolvedModelSlug = defaultModel?.modelId,
+                        resolvedModelId = defaultModel.id.toString(),
+                        resolvedModelSlug = defaultModel.modelId,
                         providerName = defaultProvider?.name,
                         providerType = defaultProvider?.providerTypeName,
                         endpoint = defaultProvider?.endpointUrl,
-                        fallbackReason = "inherited from parent assistant",
+                        fallbackReason = "inherited from default chat model",
                     )
                 }
-                null
+                defaultModel.id
             }
             is SubAgentModelResolver.Result.Resolved -> {
                 registry.update(runId) {
@@ -714,32 +719,23 @@ class SubAgentEngine(
                     .onFailure { Log.w(TAG, "sub-agent timeout: stopGeneration failed for $runId", it) }
             }
             if (timedOut) {
-                markTerminal(runId, SubAgentStatus.TIMED_OUT, "exceeded ${request.timeoutSeconds}-second cap")
+                harvestMetricsAndFinish(runId, conv.id, SubAgentStatus.TIMED_OUT, error = "exceeded ${request.timeoutSeconds}-second cap")
                 notifyParentIfBackground(parentChatId, registry.get(runId))
                 return
             }
             val finalText = waitResult?.takeIf { it.isNotBlank() } ?: harvestFinalText(conv.id)
             val validationError = validateCompletion(conv.id, finalText)
             if (validationError != null) {
-                markTerminal(runId, SubAgentStatus.FAILED, validationError)
+                harvestMetricsAndFinish(runId, conv.id, SubAgentStatus.FAILED, error = validationError)
                 notifyParentIfBackground(parentChatId, registry.get(runId))
                 return
             }
-            registry.update(runId) {
-                it.copy(
-                    status = SubAgentStatus.SUCCEEDED,
-                    result = finalText,
-                    finishedAtMs = System.currentTimeMillis(),
-                )
-            }
-            ledgerIds.remove(runId)?.let {
-                agentRunRepo.markTerminal(it, AgentRunStatus.succeeded)
-            }
+            harvestMetricsAndFinish(runId, conv.id, SubAgentStatus.SUCCEEDED, result = finalText)
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } catch (t: Throwable) {
             Log.w(TAG, "sub-agent run failed", t)
             val terminal = if (t is kotlinx.coroutines.CancellationException) SubAgentStatus.CANCELLED else SubAgentStatus.FAILED
-            markTerminal(runId, terminal, "${t::class.simpleName}: ${t.message.orEmpty()}")
+            harvestMetricsAndFinish(runId, conv.id, terminal, error = "${t::class.simpleName}: ${t.message.orEmpty()}")
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } finally {
             SubAgentToolPolicies.unregister(conv.id)
@@ -758,6 +754,8 @@ class SubAgentEngine(
         additionalCapabilities: List<String>? = null,
         runInBackground: Boolean? = null,
         timeoutSeconds: Int? = null,
+        targetConversationId: String? = null,
+        callerParentChatId: String? = null,
     ): DispatchResult = withContext(Dispatchers.Default) {
         val existingRun = registry.get(runId)
             ?: return@withContext DispatchResult.Reject(
@@ -765,23 +763,25 @@ class SubAgentEngine(
                 "no sub-agent run with id $runId found in active registry"
             )
 
-        val convIdStr = existingRun.conversationId
+        val effectiveConvIdStr = targetConversationId ?: existingRun.conversationId
             ?: return@withContext DispatchResult.Reject(
                 "no_conversation",
                 "run $runId has no associated conversation to continue"
             )
 
-        val convUuid = runCatching { Uuid.parse(convIdStr) }.getOrNull()
+        val convUuid = runCatching { Uuid.parse(effectiveConvIdStr) }.getOrNull()
             ?: return@withContext DispatchResult.Reject(
                 "invalid_conversation_id",
-                "conversation id $convIdStr is invalid"
+                "conversation id $effectiveConvIdStr is invalid"
             )
 
         val conv = conversationRepo.getConversationById(convUuid)
             ?: return@withContext DispatchResult.Reject(
                 "conversation_not_found",
-                "conversation $convIdStr was not found in storage"
+                "conversation $effectiveConvIdStr was not found in storage"
             )
+
+        val effectiveParentChatId = callerParentChatId ?: existingRun.parentChatId
 
         val settings = settingsStore.settingsFlow.first()
         var reinjectModelId = existingRun.resolvedModelId
@@ -839,6 +839,8 @@ class SubAgentEngine(
         registry.update(runId) {
             it.copy(
                 status = SubAgentStatus.RUNNING,
+                conversationId = effectiveConvIdStr,
+                parentChatId = effectiveParentChatId,
                 error = null,
                 result = null,
                 finishedAtMs = null,
@@ -854,10 +856,16 @@ class SubAgentEngine(
                 endpoint = reinjectEndpoint,
             )
         }
-        ledgerIds[runId]?.let { agentRunRepo.setStatus(it, AgentRunStatus.running) }
+        ledgerIds[runId]?.let { ledgerId ->
+            agentRunRepo.setStatus(ledgerId, AgentRunStatus.running)
+            agentRunRepo.updateMetadata(ledgerId, buildJsonObject {
+                put("conversation_id", effectiveConvIdStr)
+                if (effectiveParentChatId != null) put("parent_chat_id", effectiveParentChatId)
+            })
+        }
 
         val executionJob = appScope.launch(Dispatchers.IO) {
-            executeReinject(runId, convUuid, existingRun.parentChatId, prompt, timeout, toolPolicy)
+            executeReinject(runId, convUuid, effectiveParentChatId, prompt, timeout, toolPolicy)
         }
         registry.setJob(runId, executionJob)
 
@@ -905,32 +913,23 @@ class SubAgentEngine(
                     .onFailure { Log.w(TAG, "sub-agent reinject timeout: stopGeneration failed for $runId", it) }
             }
             if (timedOut) {
-                markTerminal(runId, SubAgentStatus.TIMED_OUT, "exceeded $timeoutSeconds-second cap on reinject")
+                harvestMetricsAndFinish(runId, convId, SubAgentStatus.TIMED_OUT, error = "exceeded $timeoutSeconds-second cap on reinject")
                 notifyParentIfBackground(parentChatId, registry.get(runId))
                 return
             }
             val finalText = waitResult?.takeIf { it.isNotBlank() } ?: harvestFinalText(convId)
             val validationError = validateCompletion(convId, finalText)
             if (validationError != null) {
-                markTerminal(runId, SubAgentStatus.FAILED, validationError)
+                harvestMetricsAndFinish(runId, convId, SubAgentStatus.FAILED, error = validationError)
                 notifyParentIfBackground(parentChatId, registry.get(runId))
                 return
             }
-            registry.update(runId) {
-                it.copy(
-                    status = SubAgentStatus.SUCCEEDED,
-                    result = finalText,
-                    finishedAtMs = System.currentTimeMillis(),
-                )
-            }
-            ledgerIds.remove(runId)?.let {
-                agentRunRepo.markTerminal(it, AgentRunStatus.succeeded)
-            }
+            harvestMetricsAndFinish(runId, convId, SubAgentStatus.SUCCEEDED, result = finalText)
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } catch (t: Throwable) {
             Log.w(TAG, "sub-agent reinject failed", t)
             val terminal = if (t is kotlinx.coroutines.CancellationException) SubAgentStatus.CANCELLED else SubAgentStatus.FAILED
-            markTerminal(runId, terminal, "${t::class.simpleName}: ${t.message.orEmpty()}")
+            harvestMetricsAndFinish(runId, convId, terminal, error = "${t::class.simpleName}: ${t.message.orEmpty()}")
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } finally {
             SubAgentToolPolicies.unregister(convId)
@@ -939,21 +938,81 @@ class SubAgentEngine(
         }
     }
 
-    private suspend fun markTerminal(runId: String, status: SubAgentStatus, error: String?) {
+    private suspend fun harvestMetricsAndFinish(
+        runId: String,
+        convId: Uuid,
+        status: SubAgentStatus,
+        result: String? = null,
+        error: String? = null,
+    ) {
+        val totals = runCatching { usageRecordDao?.getTotalsByConversation(convId.toString()) }.getOrNull()
+        val requestCount = runCatching { usageRecordDao?.getRequestCountByConversation(convId.toString()) }.getOrNull() ?: 0
+        val tokensIn = totals?.promptTokens ?: 0L
+        val tokensOut = totals?.completionTokens ?: 0L
+        val tripCount = requestCount
+
         registry.update(runId) {
             it.copy(
                 status = status,
-                error = error,
+                result = result ?: it.result,
+                error = error ?: it.error,
                 finishedAtMs = System.currentTimeMillis(),
+                tokensIn = tokensIn,
+                tokensOut = tokensOut,
+                tripCount = tripCount,
             )
         }
+
         ledgerIds.remove(runId)?.let { ledgerId ->
             val ledgerStatus = when (status) {
                 SubAgentStatus.CANCELLED -> AgentRunStatus.cancelled
                 SubAgentStatus.SUCCEEDED -> AgentRunStatus.succeeded
                 else -> AgentRunStatus.failed
             }
+            runCatching {
+                val r = registry.get(runId)
+                agentRunRepo.updateMetadata(ledgerId, buildJsonObject {
+                    if (r?.label != null) put("label", r.label)
+                    if (r?.parentAssistantId != null) put("parent_assistant_id", r.parentAssistantId)
+                    put("run_in_background", r?.runInBackground ?: false)
+                    put("conversation_id", convId.toString())
+                    if (r?.parentChatId != null) put("parent_chat_id", r.parentChatId)
+                    if (r?.agentName != null) put("agent_name", r.agentName)
+                    if (r?.attemptedModel != null) put("attempted_model", r.attemptedModel)
+                    if (r?.resolvedModelSlug != null) put("resolved_model", r.resolvedModelSlug)
+                    if (r?.providerName != null) put("provider", r.providerName)
+                    if (r?.endpoint != null) put("endpoint", r.endpoint)
+                    if (r?.fallbackReason != null) put("fallback_reason", r.fallbackReason)
+                    put("tokens_in", tokensIn)
+                    put("tokens_out", tokensOut)
+                    put("trip_count", tripCount)
+                })
+            }
             agentRunRepo.markTerminal(ledgerId, ledgerStatus, error)
+        }
+    }
+
+    private suspend fun markTerminal(runId: String, status: SubAgentStatus, error: String?) {
+        val existingRun = registry.get(runId)
+        val convUuid = existingRun?.conversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+        if (convUuid != null) {
+            harvestMetricsAndFinish(runId, convUuid, status, error = error)
+        } else {
+            registry.update(runId) {
+                it.copy(
+                    status = status,
+                    error = error,
+                    finishedAtMs = System.currentTimeMillis(),
+                )
+            }
+            ledgerIds.remove(runId)?.let { ledgerId ->
+                val ledgerStatus = when (status) {
+                    SubAgentStatus.CANCELLED -> AgentRunStatus.cancelled
+                    SubAgentStatus.SUCCEEDED -> AgentRunStatus.succeeded
+                    else -> AgentRunStatus.failed
+                }
+                agentRunRepo.markTerminal(ledgerId, ledgerStatus, error)
+            }
         }
     }
 
@@ -1094,5 +1153,8 @@ private fun me.rerere.rikkahub.data.agentrun.AgentRun.toSubAgentRun(): SubAgentR
         agentName = meta?.get("agent_name")?.jsonPrimitive?.contentOrNull,
         attemptedModel = meta?.get("attempted_model")?.jsonPrimitive?.contentOrNull,
         fallbackReason = meta?.get("fallback_reason")?.jsonPrimitive?.contentOrNull,
+        tokensIn = meta?.get("tokens_in")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+        tokensOut = meta?.get("tokens_out")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+        tripCount = meta?.get("trip_count")?.jsonPrimitive?.intOrNull ?: 0,
     )
 }

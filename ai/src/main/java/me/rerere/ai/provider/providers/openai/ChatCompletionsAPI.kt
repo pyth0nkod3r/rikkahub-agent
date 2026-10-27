@@ -215,10 +215,18 @@ class ChatCompletionsAPI(
                         Log.d(TAG, "onFailure: error body $bodyElement")
                         exception = bodyElement.parseErrorDetail()
                         Log.i(TAG, "onFailure: $exception")
+                    } else if (response != null && !response.isSuccessful) {
+                        exception = me.rerere.ai.util.HttpException("HTTP ${response.code}: ${response.message}", statusCode = response.code)
                     }
                 } catch (e: Throwable) {
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw", e)
-                    exception = e
+                    val status = response?.code
+                    val snippet = bodyRaw?.take(300)?.replace(Regex("<[^>]*>"), " ")?.trim()
+                    exception = if (status != null) {
+                        me.rerere.ai.util.HttpException("HTTP $status: ${snippet?.ifBlank { response.message } ?: response.message}", statusCode = status)
+                    } else {
+                        e
+                    }
                 } finally {
                     close(exception)
                 }

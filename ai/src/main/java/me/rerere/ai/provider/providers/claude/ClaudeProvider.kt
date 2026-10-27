@@ -762,7 +762,20 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
     private fun UIMessagePart.ServerTool.serverToolContentBlocks(): List<JsonObject> {
         val metadata = metadataAs<ServerToolMetadata>()
         val protocol = metadata?.protocol
-        if (protocol != null && protocol != ServerToolProtocol.ANTHROPIC_MESSAGES) return emptyList()
+        if (protocol != null && protocol != ServerToolProtocol.ANTHROPIC_MESSAGES) {
+            val summary = buildString {
+                append("[Server tool: $toolName]")
+                output?.takeIf { it.toString().isNotBlank() }?.let {
+                    append(" -> $it")
+                }
+            }
+            return listOf(
+                buildJsonObject {
+                    put("type", "text")
+                    put("text", summary)
+                }
+            )
+        }
 
         return buildList {
             val rawCall = metadata?.call.takeIf { protocol == ServerToolProtocol.ANTHROPIC_MESSAGES }

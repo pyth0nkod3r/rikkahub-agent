@@ -148,7 +148,16 @@ class ResponseAPI(
         // await() waits for the response headers; reading the body can still block.
         client.newCall(request).await().use { response ->
             if (!response.isSuccessful) {
-                throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+                val bodyStr = response.body.stringSafe()
+                val parsedException = try {
+                    if (!bodyStr.isNullOrBlank()) {
+                        json.parseToJsonElement(bodyStr).parseErrorDetail()
+                    } else null
+                } catch (_: Throwable) { null }
+                throw parsedException ?: me.rerere.ai.util.HttpException(
+                    "HTTP ${response.code}: ${bodyStr?.take(300)?.replace(Regex("<[^>]*>"), " ")?.trim() ?: response.message}",
+                    statusCode = response.code,
+                )
             }
 
             val bodyStr = response.body.string()
@@ -217,10 +226,19 @@ class ResponseAPI(
                         println(bodyElement)
                         exception = bodyElement.parseErrorDetail()
                         Log.i(TAG, "onFailure: $exception")
+                    } else if (response != null && !response.isSuccessful) {
+                        exception = me.rerere.ai.util.HttpException("HTTP ${response.code}: ${response.message}", statusCode = response.code)
                     }
                 } catch (e: Throwable) {
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
                     e.printStackTrace()
+                    val status = response?.code
+                    val snippet = bodyRaw?.take(300)?.replace(Regex("<[^>]*>"), " ")?.trim()
+                    exception = if (status != null) {
+                        me.rerere.ai.util.HttpException("HTTP $status: ${snippet?.ifBlank { response.message } ?: response.message}", statusCode = status)
+                    } else {
+                        e
+                    }
                 } finally {
                     close(exception)
                 }
@@ -519,7 +537,20 @@ class ResponseAPI(
     private fun JsonArrayBuilder.addServerToolItem(tool: UIMessagePart.ServerTool) {
         val metadata = tool.metadataAs<ServerToolMetadata>()
         val protocol = metadata?.protocol
-        if (protocol != null && protocol != ServerToolProtocol.OPENAI_RESPONSES) return
+        if (protocol != null && protocol != ServerToolProtocol.OPENAI_RESPONSES) {
+            val summary = buildString {
+                append("[Server tool: ${tool.toolName}]")
+                tool.output?.takeIf { it.toString().isNotBlank() }?.let {
+                    append(" -> $it")
+                }
+            }
+            add(buildJsonObject {
+                put("type", "message")
+                put("role", "assistant")
+                put("content", summary)
+            })
+            return
+        }
 
         val rawCall = metadata?.call.takeIf { protocol == ServerToolProtocol.OPENAI_RESPONSES }
         if (rawCall != null) {
@@ -555,10 +586,12 @@ class ResponseAPI(
         if (parts.isEmpty()) return
 
         add(buildJsonObject {
+            put("type", "message")
             put("role", JsonPrimitive(role.name.lowercase()))
 
             if (parts.isOnlyTextPart()) {
-                put("content", (parts.first() as UIMessagePart.Text).text)
+                val text = (parts.first() as UIMessagePart.Text).text
+                put("content", if (text.isBlank()) " " else text)
             } else {
                 putJsonArray("content") {
                     parts.forEach { part ->

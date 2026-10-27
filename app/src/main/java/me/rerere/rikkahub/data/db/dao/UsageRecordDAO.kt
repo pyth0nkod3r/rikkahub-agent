@@ -52,6 +52,17 @@ interface UsageRecordDAO {
             "GROUP BY source ORDER BY SUM(prompt_tokens + completion_tokens) DESC"
     )
     suspend fun getTotalsBySource(since: Long): List<SourceUsage>
+
+    @Query(
+        "SELECT COALESCE(SUM(prompt_tokens), 0) AS promptTokens, " +
+            "COALESCE(SUM(completion_tokens), 0) AS completionTokens, " +
+            "COALESCE(SUM(cached_tokens), 0) AS cachedTokens " +
+            "FROM usage_record WHERE conversation_id = :conversationId"
+    )
+    suspend fun getTotalsByConversation(conversationId: String): UsageTotals
+
+    @Query("SELECT COUNT(*) FROM usage_record WHERE conversation_id = :conversationId")
+    suspend fun getRequestCountByConversation(conversationId: String): Int
 }
 
 data class UsageTotals(

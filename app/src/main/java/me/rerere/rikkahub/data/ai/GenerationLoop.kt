@@ -180,7 +180,14 @@ private fun isContextLimitFailure(failure: Throwable): Boolean =
                 .replace('_', ' ')
             "context length exceeded" in text ||
                 "maximum context length" in text ||
-                "maximum context window" in text
+                "maximum context window" in text ||
+                "context limit" in text ||
+                "context window" in text ||
+                "token limit" in text ||
+                "too many tokens" in text ||
+                "maximum prompt length" in text ||
+                "prompt is too long" in text ||
+                "exceeds the context limit" in text
         }
 
 private fun generationStreamRetryDelayMs(retryAttempt: Long): Long =

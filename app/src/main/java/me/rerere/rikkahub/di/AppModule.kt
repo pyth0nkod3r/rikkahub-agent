@@ -118,6 +118,7 @@ val appModule = module {
             // Phase 24 — unified AgentRun ledger writer. No DI cycle: AgentRunRepository
             // depends only on its DAO.
             agentRunRepo = get(),
+            usageRecordDao = get(),
         )
     }
 

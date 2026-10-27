@@ -62,12 +62,14 @@ import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
@@ -285,15 +287,18 @@ private fun ChatPageContent(
     val workspaceRepository: WorkspaceRepository = koinInject()
     var previewMode by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
-    val assistant = setting.getCurrentAssistant()
+    val assistant = setting.getAssistantById(conversation.assistantId) ?: setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
         inputState = inputState,
         setting = setting,
         onAttachmentAdded = { showFilesSheet = false },
     )
+    val activeChatModel = conversation.chatModelId?.let { setting.findModelById(it) }
+        ?: setting.getChatModelOf(conversation)
+        ?: setting.getCurrentChatModel()
     val allowAudioVideoAttachments =
-        setting.getCurrentChatModel()?.findProvider(setting.providers) is ProviderSetting.Google
+        activeChatModel?.findProvider(setting.providers) is ProviderSetting.Google
 
     val agentMode by ConversationAgentMode.getFlow(conversation.id).collectAsStateWithLifecycle()
     val completionProviders = remember(assistant.workspaceId, conversation.workspaceCwd, workspaceRepository, agentMode) {
@@ -700,8 +705,10 @@ private fun TopBar(
                 color = Color.Transparent,
             ) {
                 Column {
-                    val assistant = settings.getCurrentAssistant()
-                    val model = settings.getCurrentChatModel()
+                    val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
+                    val model = conversation.chatModelId?.let { settings.findModelById(it) }
+                        ?: settings.getChatModelOf(conversation)
+                        ?: settings.getCurrentChatModel()
                     val provider = model?.findProvider(providers = settings.providers, checkOverwrite = false)
                     Text(
                         text = conversation.title.ifBlank { stringResource(R.string.chat_page_new_chat) },
