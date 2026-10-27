@@ -51,7 +51,21 @@ internal fun Settings.withoutInvalidReferences(): Settings {
     val validLorebookIds = settings.lorebooks.map { it.id }.toSet()
     val validQuickMessageIds = settings.quickMessages.map { it.id }.toSet()
     val validModelIds by lazy { settings.providers.flatMap { it.models }.mapTo(HashSet()) { it.id } }
+    val allChatModels by lazy { settings.providers.flatMap { it.models }.filter { it.type == me.rerere.ai.provider.ModelType.CHAT } }
     val asrProviders = settings.asrProviders.distinctBy { it.id }
+    val normalizedSubAgents = settings.subAgents.distinctBy { it.id }.map { profile ->
+        if (profile.modelId != null || !profile.modelSlug.isNullOrBlank()) {
+            val matched = allChatModels.firstOrNull { it.id == profile.modelId }
+                ?: allChatModels.firstOrNull { !profile.modelSlug.isNullOrBlank() && it.modelId.equals(profile.modelSlug, ignoreCase = true) }
+            if (matched != null) {
+                profile.copy(modelId = matched.id, modelSlug = matched.modelId)
+            } else {
+                profile
+            }
+        } else {
+            profile
+        }
+    }
     return settings.copy(
         providers = settings.providers.distinctBy { it.id }.map { provider ->
             if (provider is ProviderSetting.GeminiOAuth) {
@@ -86,6 +100,7 @@ internal fun Settings.withoutInvalidReferences(): Settings {
             ?.takeIf { id -> asrProviders.any { provider -> provider.id == id } }
             ?: asrProviders.firstOrNull()?.id,
         favoriteModels = settings.favoriteModels.filter { it in validModelIds },
+        subAgents = normalizedSubAgents,
         modeInjections = settings.modeInjections.distinctBy { it.id },
         lorebooks = settings.lorebooks.distinctBy { it.id },
         quickMessages = settings.quickMessages.distinctBy { it.id },

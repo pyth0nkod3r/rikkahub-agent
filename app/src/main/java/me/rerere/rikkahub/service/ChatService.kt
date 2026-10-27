@@ -39,6 +39,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import me.rerere.rikkahub.subagent.providerTypeName
+import me.rerere.rikkahub.subagent.endpointUrl
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
@@ -420,6 +424,10 @@ class ChatService(
 ) {
     // workspace 系统提示注入 (依赖 workspaceRepository, 故在类内构造)
     private val workspaceReminderTransformer = WorkspaceReminderTransformer(workspaceRepository)
+
+    private val agentRunRepo: me.rerere.rikkahub.data.agentrun.AgentRunRepository by lazy {
+        org.koin.java.KoinJavaComponent.getKoin().get<me.rerere.rikkahub.data.agentrun.AgentRunRepository>()
+    }
 
     // 统一会话管理
     private val sessions = ConcurrentHashMap<Uuid, ConversationSession>()
@@ -1664,12 +1672,38 @@ class ChatService(
             )
         }
 
-        val senderName = if (assistant.useAssistantAvatar) {
+        val isSubAgent = me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId) ||
+            me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId)
+        val senderName = if (isSubAgent) {
+            "Sub-agent"
+        } else if (assistant.useAssistantAvatar) {
             assistant.name.ifEmpty { context.getString(R.string.assistant_page_default_assistant) }
         } else {
             model.displayName
         }
         val useExternalWebSearch = shouldUseExternalWebSearch(assistant, model)
+
+        val attemptedModelId = initialConversation.chatModelId ?: assistant.chatModelId ?: settings.chatModelId
+        val attemptedModelSlug = settings.findModelById(attemptedModelId)?.modelId ?: attemptedModelId?.toString()
+        val chatLedgerId = if (!isSubAgent) {
+            runCatching {
+                agentRunRepo.open(
+                    kind = me.rerere.rikkahub.data.agentrun.AgentRunKind.Chat,
+                    domainId = "$conversationId:${System.currentTimeMillis()}",
+                    parentRunId = conversationId.toString(),
+                    status = me.rerere.rikkahub.data.agentrun.AgentRunStatus.running,
+                    metadata = buildJsonObject {
+                        put("conversation_id", conversationId.toString())
+                        put("attempted_model", attemptedModelSlug ?: "unknown")
+                        put("resolved_model", model.modelId)
+                        put("provider", resolvedProvider.name)
+                        put("provider_type", resolvedProvider.providerTypeName)
+                        put("endpoint", resolvedProvider.endpointUrl)
+                        put("assistant_id", assistant.id.toString())
+                    }
+                )
+            }.getOrNull()
+        } else null
 
         val generationResult = runCatching {
             // reset suggestions
@@ -2178,6 +2212,19 @@ class ChatService(
                 ?: settingsStore.settingsFlow.value.getCurrentAssistant()
             if (assistant.enableMemory) {
                 memoryConsolidationScheduler.onTurnFinished(finalConversation)
+            }
+        }
+
+        chatLedgerId?.let { ledgerId ->
+            if (generationResult.isSuccess) {
+                appScope.launch(Dispatchers.IO) {
+                    agentRunRepo.markTerminal(ledgerId, me.rerere.rikkahub.data.agentrun.AgentRunStatus.succeeded)
+                }
+            } else {
+                val err = generationResult.exceptionOrNull()
+                appScope.launch(Dispatchers.IO) {
+                    agentRunRepo.markTerminal(ledgerId, me.rerere.rikkahub.data.agentrun.AgentRunStatus.failed, err?.message)
+                }
             }
         }
     }

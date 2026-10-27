@@ -95,13 +95,15 @@ fun SettingSubAgentsPage(vm: SettingVM = koinViewModel()) {
     var expanded by rememberSaveable { mutableStateOf(true) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val editState = useEditState<SubAgentProfile> { edited ->
-        val index = profiles.indexOfFirst { it.id == edited.id }
-        val updated = if (index >= 0) {
-            profiles.toMutableList().apply { set(index, edited) }
-        } else {
-            profiles + edited
+        vm.updateSettings { current ->
+            val index = current.subAgents.indexOfFirst { it.id == edited.id }
+            val updated = if (index >= 0) {
+                current.subAgents.toMutableList().apply { set(index, edited) }
+            } else {
+                current.subAgents + edited
+            }
+            current.copy(subAgents = updated)
         }
-        vm.updateSettings(settings.copy(subAgents = updated))
     }
 
     Scaffold(
@@ -153,8 +155,13 @@ fun SettingSubAgentsPage(vm: SettingVM = koinViewModel()) {
                     items(profiles, key = { it.id }) { profile ->
                         SubAgentProfileCard(
                             profile = profile,
+                            providers = settings.providers,
                             onEdit = { editState.open(profile) },
-                            onDelete = { vm.updateSettings(settings.copy(subAgents = profiles - profile)) },
+                            onDelete = {
+                                vm.updateSettings { current ->
+                                    current.copy(subAgents = current.subAgents.filter { it.id != profile.id })
+                                }
+                            },
                         )
                     }
                 }
@@ -200,11 +207,18 @@ fun SettingSubAgentsPage(vm: SettingVM = koinViewModel()) {
 @Composable
 private fun SubAgentProfileCard(
     profile: SubAgentProfile,
+    providers: List<ProviderSetting>,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val swipeState = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
+    val hasConfiguredModel = profile.modelId != null || !profile.modelSlug.isNullOrBlank()
+    val resolvedModel = remember(profile.modelId, profile.modelSlug, providers) {
+        val chatModels = providers.filter { it.enabled }.flatMap { it.models }.filter { it.type == ModelType.CHAT }
+        (if (profile.modelId != null) chatModels.firstOrNull { it.id == profile.modelId } else null)
+            ?: (if (!profile.modelSlug.isNullOrBlank()) chatModels.firstOrNull { it.modelId.equals(profile.modelSlug, ignoreCase = true) } else null)
+    }
 
     SwipeToDismissBox(
         state = swipeState,
@@ -261,6 +275,26 @@ private fun SubAgentProfileCard(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
+                    }
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        if (hasConfiguredModel) {
+                            if (resolvedModel != null) {
+                                Tag(type = TagType.DEFAULT) {
+                                    Text(resolvedModel.displayName.ifBlank { resolvedModel.modelId })
+                                }
+                            } else {
+                                Tag(type = TagType.ERROR) {
+                                    Text("Stale selection: ${profile.modelSlug ?: profile.modelId}")
+                                }
+                            }
+                        } else {
+                            Tag(type = TagType.DEFAULT) {
+                                Text("Inherits default model")
+                            }
+                        }
                     }
                     if (profile.capabilities.isNotEmpty() || profile.tools.isNotEmpty()) {
                         FlowRow(
@@ -379,8 +413,17 @@ private fun SubAgentProfileEditSheet(
                     label = { Text(stringResource(R.string.setting_sub_agents_page_model)) },
                     description = { Text(stringResource(R.string.setting_sub_agents_page_model_desc)) },
                     content = {
+                        val effectiveModelId = remember(profile.modelId, profile.modelSlug, providers) {
+                            if (profile.modelId != null && providers.any { p -> p.models.any { it.id == profile.modelId } }) {
+                                profile.modelId
+                            } else if (!profile.modelSlug.isNullOrBlank()) {
+                                providers.flatMap { it.models }.firstOrNull { it.modelId.equals(profile.modelSlug, ignoreCase = true) }?.id
+                            } else {
+                                null
+                            }
+                        }
                         ModelSelector(
-                            modelId = profile.modelId,
+                            modelId = effectiveModelId,
                             providers = providers,
                             type = ModelType.CHAT,
                             allowClear = true,
@@ -388,7 +431,12 @@ private fun SubAgentProfileEditSheet(
                                 // ModelSelector's clear button calls onSelect(Model()), whose
                                 // default modelId is "" - no real model ever has a blank
                                 // provider model id, so that's the clear signal.
-                                onEdit(profile.copy(modelId = model.id.takeIf { model.modelId.isNotBlank() }))
+                                onEdit(
+                                    profile.copy(
+                                        modelId = model.id.takeIf { model.modelId.isNotBlank() },
+                                        modelSlug = model.modelId.takeIf { it.isNotBlank() },
+                                    )
+                                )
                             },
                         )
                     },

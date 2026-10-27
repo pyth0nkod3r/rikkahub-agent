@@ -138,6 +138,22 @@ class AgentRunRepository(private val dao: AgentRunDao) {
     suspend fun getById(id: String): AgentRun? =
         runCatching { dao.getById(id) }.getOrNull()
 
+    suspend fun updateMetadata(id: String, metadata: JsonObject) {
+        runCatching {
+            writeMutex.withLock {
+                val existing = dao.getById(id) ?: return@withLock
+                val now = System.currentTimeMillis()
+                dao.update(
+                    existing.copy(
+                        updatedAtMs = now,
+                        metadataJson = boundMetadata(metadata),
+                    )
+                )
+            }
+        }.onFailure { logSafe { Log.w(TAG, "updateMetadata($id) failed", it) } }
+    }
+        runCatching { dao.getById(id) }.getOrNull()
+
     suspend fun count(): Int = runCatching { dao.count() }.getOrDefault(0)
 
     suspend fun countByStatusSince(status: AgentRunStatus, sinceMs: Long): Int =

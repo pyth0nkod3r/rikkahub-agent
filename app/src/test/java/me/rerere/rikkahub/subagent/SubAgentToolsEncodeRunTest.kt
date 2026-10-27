@@ -80,4 +80,18 @@ class SubAgentToolsEncodeRunTest {
         assertEquals("200", json["http_status"]?.toString())
         assertEquals("45000", json["resumed_after_ms"]?.toString())
     }
+
+    @Test fun `attempted_model and fallback_reason encoded when present`() {
+        val run = makeRun().copy(
+            agentName = "researcher",
+            attemptedModel = "gemini-3.8-flash-high",
+            resolvedModelSlug = "glm-4-flash",
+            fallbackReason = "provider rate limited",
+        )
+        val json = encodeRun(run)
+        assertEquals("researcher", json["agent"]?.toString()?.trim('"'))
+        assertEquals("gemini-3.8-flash-high", json["attempted_model"]?.toString()?.trim('"'))
+        assertEquals("glm-4-flash", json["resolved_model"]?.toString()?.trim('"'))
+        assertEquals("provider rate limited", json["fallback_reason"]?.toString()?.trim('"'))
+    }
 }

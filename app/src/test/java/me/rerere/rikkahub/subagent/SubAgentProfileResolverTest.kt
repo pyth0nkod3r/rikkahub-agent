@@ -139,4 +139,41 @@ class SubAgentProfileResolverTest {
 
         assertTrue(combined is SubAgentModelResolver.Result.Inherit)
     }
+
+    @Test fun `resolveProfileModel resolves by modelSlug case-insensitively`() {
+        val model = me.rerere.ai.provider.Model(
+            modelId = "gemini-3.8-flash-high",
+            displayName = "Gemini 3.8 Flash High",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val provider = me.rerere.ai.provider.ProviderSetting.Google(
+            name = "Google AI",
+            enabled = true,
+            models = listOf(model),
+        )
+        val profile = researcher.copy(modelSlug = "Gemini-3.8-Flash-High")
+        val res = SubAgentModelResolver.resolveProfileModel(profile, listOf(provider))
+        assertTrue(res is SubAgentModelResolver.Result.Resolved)
+        val resolved = res as SubAgentModelResolver.Result.Resolved
+        assertEquals(model.id, resolved.modelId)
+        assertEquals("gemini-3.8-flash-high", resolved.modelSlug)
+    }
+
+    @Test fun `resolveProfileModel fails loudly when provider is disabled or model removed`() {
+        val model = me.rerere.ai.provider.Model(
+            modelId = "gemini-3.8-flash-high",
+            displayName = "Gemini 3.8 Flash High",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val provider = me.rerere.ai.provider.ProviderSetting.Google(
+            name = "Google AI",
+            enabled = false,
+            models = listOf(model),
+        )
+        val profile = researcher.copy(modelSlug = "gemini-3.8-flash-high")
+        val res = SubAgentModelResolver.resolveProfileModel(profile, listOf(provider))
+        assertTrue(res is SubAgentModelResolver.Result.Failed)
+        val failed = res as SubAgentModelResolver.Result.Failed
+        assertTrue(failed.message.contains("Refusing silent fallback"))
+    }
 }

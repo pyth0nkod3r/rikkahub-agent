@@ -29,12 +29,15 @@ internal fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject 
     if (run.conversationId != null) put("conversation_id", run.conversationId)
     put("status", run.status.name)
     put("label", run.label)
+    if (run.agentName != null) put("agent", run.agentName)
     if (run.modelId != null) put("model_id", run.modelId)
+    if (run.attemptedModel != null) put("attempted_model", run.attemptedModel)
     if (run.resolvedModelSlug != null) put("resolved_model", run.resolvedModelSlug)
     if (run.resolvedModelId != null) put("resolved_model_uuid", run.resolvedModelId)
     if (run.providerName != null) put("provider", run.providerName)
     if (run.providerType != null) put("provider_type", run.providerType)
     if (run.endpoint != null) put("endpoint", run.endpoint)
+    if (run.fallbackReason != null) put("fallback_reason", run.fallbackReason)
     if (run.httpStatus != null) put("http_status", run.httpStatus)
     if (run.resumedAfterMs != null) put("resumed_after_ms", run.resumedAfterMs)
     put("run_in_background", run.runInBackground)
@@ -150,6 +153,13 @@ fun subagentDispatchTool(
                     })
                     put("timeout_seconds", buildJsonObject { put("type", "integer") })
                     put("max_trips", buildJsonObject { put("type", "integer") })
+                    put("wait_for_slot", buildJsonObject {
+                        put("type", "boolean")
+                        put(
+                            "description",
+                            "When true, wait up to 30s for a slot if concurrency cap is reached instead of immediately rejecting."
+                        )
+                    })
                     put("capabilities", buildJsonObject {
                         put("type", "array")
                         put("items", buildJsonObject { put("type", "string") })
@@ -184,7 +194,9 @@ fun subagentDispatchTool(
             val request = SubAgentRequest(
                 task = task,
                 modelId = params["model_id"]?.jsonPrimitive?.contentOrNull,
-                agentName = params["agent"]?.jsonPrimitive?.contentOrNull,
+                agentName = params["agent"]?.jsonPrimitive?.contentOrNull
+                    ?: params["profile"]?.jsonPrimitive?.contentOrNull
+                    ?: params["subagent"]?.jsonPrimitive?.contentOrNull,
                 systemPrompt = params["system_prompt"]?.jsonPrimitive?.contentOrNull,
                 tools = params["tools"]?.let { runCatching { it.jsonArray }.getOrNull() }
                     ?.mapNotNull { it.jsonPrimitive.contentOrNull },
@@ -197,6 +209,7 @@ fun subagentDispatchTool(
                 label = params["label"]?.jsonPrimitive?.contentOrNull,
                 capabilities = params["capabilities"]?.let { runCatching { it.jsonArray }.getOrNull() }
                     ?.mapNotNull { it.jsonPrimitive.contentOrNull },
+                waitForSlot = params["wait_for_slot"]?.jsonPrimitive?.booleanOrNull ?: false,
             )
             val parentAssistantId = callerContext.callerAssistantId.orEmpty()
             val parentChatId: String? = callerContext.callerConversationId

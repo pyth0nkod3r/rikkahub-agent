@@ -56,7 +56,7 @@ internal suspend fun finishSubAgentWait(completed: Boolean, stop: suspend () -> 
     return false
 }
 
-private val ProviderSetting.providerTypeName: String
+internal val ProviderSetting.providerTypeName: String
     get() = when (this) {
         is ProviderSetting.OpenAI -> "openai"
         is ProviderSetting.Google -> "google"
@@ -70,7 +70,7 @@ private val ProviderSetting.providerTypeName: String
         is ProviderSetting.GeminiOAuth -> "gemini_oauth"
     }
 
-private val ProviderSetting.endpointUrl: String
+internal val ProviderSetting.endpointUrl: String
     get() = when (this) {
         is ProviderSetting.ApiKey -> baseUrl
         is ProviderSetting.Account -> credential?.accountId ?: "oauth"
@@ -163,10 +163,10 @@ internal object SubAgentModelResolver {
             .filter { it.enabled }
             .flatMap { provider -> provider.models.filter { it.type == ModelType.CHAT }.map { provider to it } }
 
-        if (profile.modelId != null) {
-            val byUuid = chatModels.firstOrNull { (_, model) -> model.id == profile.modelId }
-            if (byUuid != null) {
-                val (provider, model) = byUuid
+        if (!profile.modelSlug.isNullOrBlank()) {
+            val bySlug = chatModels.firstOrNull { (_, model) -> model.modelId.equals(profile.modelSlug, ignoreCase = true) }
+            if (bySlug != null) {
+                val (provider, model) = bySlug
                 return Result.Resolved(
                     modelId = model.id,
                     modelSlug = model.modelId,
@@ -177,10 +177,10 @@ internal object SubAgentModelResolver {
                 )
             }
         }
-        if (!profile.modelSlug.isNullOrBlank()) {
-            val bySlug = chatModels.firstOrNull { (_, model) -> model.modelId.equals(profile.modelSlug, ignoreCase = true) }
-            if (bySlug != null) {
-                val (provider, model) = bySlug
+        if (profile.modelId != null) {
+            val byUuid = chatModels.firstOrNull { (_, model) -> model.id == profile.modelId }
+            if (byUuid != null) {
+                val (provider, model) = byUuid
                 return Result.Resolved(
                     modelId = model.id,
                     modelSlug = model.modelId,
@@ -402,24 +402,40 @@ class SubAgentEngine(
         val cleaned = (validation as SubAgentRequestValidator.Result.Ok).request
 
         // Concurrency cap. Global first (cheaper), then per-assistant.
-        if (registry.globalActiveCount() >= SubAgentDefaults.GLOBAL_CONCURRENCY_CAP) {
-            return@withContext DispatchResult.Reject(
-                "global_cap_reached",
-                "max ${SubAgentDefaults.GLOBAL_CONCURRENCY_CAP} concurrent sub-agents across all assistants"
-            )
+        val globalCap = SubAgentDefaults.GLOBAL_CONCURRENCY_CAP
+        if (registry.globalActiveCount() >= globalCap) {
+            if (cleaned.waitForSlot || !cleaned.runInBackground) {
+                val waitStart = System.currentTimeMillis()
+                while (System.currentTimeMillis() - waitStart < 30_000L) {
+                    delay(1000L)
+                    if (registry.globalActiveCount() < globalCap) break
+                }
+            }
+            if (registry.globalActiveCount() >= globalCap) {
+                val activeRuns = registry.all().values.filter {
+                    it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING
+                }
+                val activeSummary = activeRuns.take(5).joinToString { r ->
+                    val elapsed = (System.currentTimeMillis() - r.startedAtMs) / 1000
+                    "${r.id} (${r.label.take(20)}, ${elapsed}s)"
+                }
+                val queuePos = registry.globalActiveCount() - globalCap + 1
+                return@withContext DispatchResult.Reject(
+                    "global_cap_reached",
+                    "Global cap of $globalCap active sub-agents reached (queue position: $queuePos). Active runs: [$activeSummary]. Retry hint: wait for completion or cancel an active run with subagent_cancel(id=...)."
+                )
+            }
         }
         val perAssistantCap = currentAssistantCap(parentAssistantId)
         if (registry.activeCountForAssistant(parentAssistantId) >= perAssistantCap) {
-            val waitStart = System.currentTimeMillis()
-            var acquired = false
-            while (System.currentTimeMillis() - waitStart < 30_000L) {
-                delay(1000L)
-                if (registry.activeCountForAssistant(parentAssistantId) < perAssistantCap) {
-                    acquired = true
-                    break
+            if (cleaned.waitForSlot || !cleaned.runInBackground) {
+                val waitStart = System.currentTimeMillis()
+                while (System.currentTimeMillis() - waitStart < 30_000L) {
+                    delay(1000L)
+                    if (registry.activeCountForAssistant(parentAssistantId) < perAssistantCap) break
                 }
             }
-            if (!acquired) {
+            if (registry.activeCountForAssistant(parentAssistantId) >= perAssistantCap) {
                 val activeRuns = registry.all().values.filter {
                     it.parentAssistantId == parentAssistantId &&
                         (it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING)
@@ -428,9 +444,10 @@ class SubAgentEngine(
                     val elapsed = (System.currentTimeMillis() - r.startedAtMs) / 1000
                     "${r.id} (${r.label.take(20)}, ${elapsed}s)"
                 }
+                val queuePos = registry.activeCountForAssistant(parentAssistantId) - perAssistantCap + 1
                 return@withContext DispatchResult.Reject(
                     "assistant_cap_reached",
-                    "Cap of $perAssistantCap active sub-agents reached after 30s wait. Active runs: [$activeSummary]. Retry when one completes."
+                    "Cap of $perAssistantCap active sub-agents reached for assistant (queue position: $queuePos). Active runs: [$activeSummary]. Retry hint: wait for completion or cancel an active run with subagent_cancel(id=...)."
                 )
             }
         }
@@ -438,6 +455,7 @@ class SubAgentEngine(
         val runId = Uuid.random().toString()
         val convId = Uuid.random()
         val now = System.currentTimeMillis()
+        val attemptedModel = cleaned.modelId ?: cleaned.agentName
         val initialRun = SubAgentRun(
             id = runId,
             conversationId = convId.toString(),
@@ -446,6 +464,8 @@ class SubAgentEngine(
             label = cleaned.label?.takeIf { it.isNotBlank() } ?: cleaned.task.take(60),
             task = cleaned.task,
             modelId = cleaned.modelId,
+            agentName = cleaned.agentName,
+            attemptedModel = attemptedModel,
             tools = cleaned.tools,
             runInBackground = cleaned.runInBackground,
             noResult = cleaned.noResult,
@@ -468,6 +488,8 @@ class SubAgentEngine(
                 put("parent_assistant_id", parentAssistantId)
                 put("run_in_background", cleaned.runInBackground)
                 put("conversation_id", convId.toString())
+                if (cleaned.agentName != null) put("agent_name", cleaned.agentName)
+                if (attemptedModel != null) put("attempted_model", attemptedModel)
             },
         )
         ledgerIds[runId] = ledgerId
@@ -523,34 +545,97 @@ class SubAgentEngine(
             is SubAgentProfileResolver.Result.NotRequested -> null
             is SubAgentProfileResolver.Result.Resolved -> profileResolution.profile
             is SubAgentProfileResolver.Result.Failed -> {
+                val attempted = request.modelId ?: request.agentName
+                registry.update(runId) {
+                    it.copy(
+                        attemptedModel = attempted,
+                        fallbackReason = "profile resolution failed: ${profileResolution.message}",
+                    )
+                }
                 markTerminal(runId, SubAgentStatus.FAILED, profileResolution.message)
                 return
             }
         }
+        val attemptedModelStr = request.modelId
+            ?: profile?.modelSlug
+            ?: profile?.modelId?.toString()
+            ?: "inherited"
+
+        if (profile != null && profile.modelId == null && profile.modelSlug.isNullOrBlank()) {
+            registry.update(runId) {
+                it.copy(
+                    attemptedModel = attemptedModelStr,
+                    fallbackReason = "profile model unresolvable: no model configured in profile '${profile.name}'",
+                )
+            }
+            markTerminal(runId, SubAgentStatus.FAILED, "profile model unresolvable: sub-agent profile '${profile.name}' has no model configured")
+            return
+        }
+
         val modelResolution = resolveSubAgentModel(
             SubAgentModelResolver.resolve(request.modelId, settings.providers),
             profile,
             settings.providers,
         )
-        val resolvedChatModelId = when (modelResolution) {
-            is SubAgentModelResolver.Result.Inherit -> null
+        val resolvedChatModelId: Uuid? = when (modelResolution) {
+            is SubAgentModelResolver.Result.Inherit -> {
+                val defaultModel = settings.getCurrentChatModel()
+                val defaultProvider = defaultModel?.findProvider(settings.providers)
+                registry.update(runId) {
+                    it.copy(
+                        attemptedModel = attemptedModelStr,
+                        resolvedModelId = defaultModel?.id?.toString(),
+                        resolvedModelSlug = defaultModel?.modelId,
+                        providerName = defaultProvider?.name,
+                        providerType = defaultProvider?.providerTypeName,
+                        endpoint = defaultProvider?.endpointUrl,
+                        fallbackReason = "inherited from parent assistant",
+                    )
+                }
+                null
+            }
             is SubAgentModelResolver.Result.Resolved -> {
                 registry.update(runId) {
                     it.copy(
+                        attemptedModel = attemptedModelStr,
                         resolvedModelId = modelResolution.modelId.toString(),
                         resolvedModelSlug = modelResolution.modelSlug,
                         providerName = modelResolution.providerName,
                         providerType = modelResolution.providerType,
                         endpoint = modelResolution.endpoint,
+                        fallbackReason = null,
                     )
                 }
                 modelResolution.modelId
             }
             is SubAgentModelResolver.Result.Failed -> {
+                registry.update(runId) {
+                    it.copy(
+                        attemptedModel = attemptedModelStr,
+                        fallbackReason = "profile model unresolvable: ${modelResolution.message}",
+                    )
+                }
                 markTerminal(runId, SubAgentStatus.FAILED, modelResolution.message)
                 return
             }
         }
+
+        ledgerIds[runId]?.let { ledgerId ->
+            val r = registry.get(runId)
+            agentRunRepo.updateMetadata(ledgerId, buildJsonObject {
+                put("label", r?.label.orEmpty())
+                put("parent_assistant_id", parentAssistantId)
+                put("run_in_background", request.runInBackground)
+                put("conversation_id", convId.toString())
+                if (r?.agentName != null) put("agent_name", r.agentName)
+                if (r?.attemptedModel != null) put("attempted_model", r.attemptedModel)
+                if (r?.resolvedModelSlug != null) put("resolved_model", r.resolvedModelSlug)
+                if (r?.providerName != null) put("provider", r.providerName)
+                if (r?.endpoint != null) put("endpoint", r.endpoint)
+                if (r?.fallbackReason != null) put("fallback_reason", r.fallbackReason)
+            })
+        }
+
         val profilePrompt = profile?.systemPrompt?.trim()?.takeIf { it.isNotEmpty() }
         val dispatchPrompt = request.systemPrompt?.trim()?.takeIf { it.isNotEmpty() }
         val combinedPrompt = buildList {
@@ -558,12 +643,23 @@ class SubAgentEngine(
             if (dispatchPrompt != null) add(dispatchPrompt)
         }.takeIf { it.isNotEmpty() }?.joinToString("\n\n---\n\n") ?: DEFAULT_SUBAGENT_SYSTEM_PROMPT
 
-        val identityBanner = if (profile != null) {
-            "You are \"${profile.name}\" (sub-agent profile), running as model ${modelResolution.let { if (it is SubAgentModelResolver.Result.Resolved) it.displayName.ifBlank { it.modelSlug } else "inherited" }} via provider ${modelResolution.let { if (it is SubAgentModelResolver.Result.Resolved) it.providerName else "inherited" }}."
-        } else if (modelResolution is SubAgentModelResolver.Result.Resolved) {
-            "You are an ad-hoc sub-agent, running as model ${modelResolution.displayName.ifBlank { modelResolution.modelSlug }} via provider ${modelResolution.providerName}."
+        val actualModelName = if (modelResolution is SubAgentModelResolver.Result.Resolved) {
+            modelResolution.displayName.ifBlank { modelResolution.modelSlug }
         } else {
-            "You are a focused sub-agent dispatched by a parent assistant."
+            val defaultModel = settings.getCurrentChatModel()
+            defaultModel?.displayName?.ifBlank { defaultModel.modelId } ?: "default"
+        }
+        val actualProviderName = if (modelResolution is SubAgentModelResolver.Result.Resolved) {
+            modelResolution.providerName
+        } else {
+            val defaultModel = settings.getCurrentChatModel()
+            defaultModel?.findProvider(settings.providers)?.name ?: "default"
+        }
+
+        val identityBanner = if (profile != null) {
+            "You are \"${profile.name}\" (sub-agent profile), running as model $actualModelName via provider $actualProviderName."
+        } else {
+            "You are an ad-hoc sub-agent, running as model $actualModelName via provider $actualProviderName."
         }
         val subAgentSystemPrompt = "$identityBanner\n\n$combinedPrompt"
 
@@ -619,8 +715,9 @@ class SubAgentEngine(
                 return
             }
             val finalText = waitResult?.takeIf { it.isNotBlank() } ?: harvestFinalText(conv.id)
-            if (finalText.isNullOrBlank()) {
-                markTerminal(runId, SubAgentStatus.FAILED, "empty_result: sub-agent finished with no response or progress")
+            val validationError = validateCompletion(conv.id, finalText)
+            if (validationError != null) {
+                markTerminal(runId, SubAgentStatus.FAILED, validationError)
                 notifyParentIfBackground(parentChatId, registry.get(runId))
                 return
             }
@@ -676,11 +773,41 @@ class SubAgentEngine(
                 "conversation id $convIdStr is invalid"
             )
 
-        conversationRepo.getConversationById(convUuid)
+        val conv = conversationRepo.getConversationById(convUuid)
             ?: return@withContext DispatchResult.Reject(
                 "conversation_not_found",
                 "conversation $convIdStr was not found in storage"
             )
+
+        val settings = settingsStore.settingsFlow.first()
+        var reinjectModelId = existingRun.resolvedModelId
+        var reinjectModelSlug = existingRun.resolvedModelSlug
+        var reinjectProviderName = existingRun.providerName
+        var reinjectProviderType = existingRun.providerType
+        var reinjectEndpoint = existingRun.endpoint
+
+        if (!existingRun.agentName.isNullOrBlank()) {
+            val profileRes = SubAgentProfileResolver.resolve(existingRun.agentName, settings.subAgents)
+            if (profileRes is SubAgentProfileResolver.Result.Resolved) {
+                val profile = profileRes.profile
+                val modelRes = SubAgentModelResolver.resolveProfileModel(profile, settings.providers)
+                if (modelRes is SubAgentModelResolver.Result.Resolved) {
+                    if (modelRes.modelId != conv.chatModelId) {
+                        conversationRepo.updateConversation(conv.copy(chatModelId = modelRes.modelId))
+                    }
+                    reinjectModelId = modelRes.modelId.toString()
+                    reinjectModelSlug = modelRes.modelSlug
+                    reinjectProviderName = modelRes.providerName
+                    reinjectProviderType = modelRes.providerType
+                    reinjectEndpoint = modelRes.endpoint
+                } else if (modelRes is SubAgentModelResolver.Result.Failed) {
+                    return@withContext DispatchResult.Reject(
+                        "profile_model_unresolvable",
+                        modelRes.message
+                    )
+                }
+            }
+        }
 
         // Cancel previous job if still hanging
         if (existingRun.status == SubAgentStatus.RUNNING) {
@@ -716,6 +843,11 @@ class SubAgentEngine(
                 timeoutSeconds = timeout,
                 capabilities = effectiveCaps,
                 resumedAfterMs = resumedAfter,
+                resolvedModelId = reinjectModelId,
+                resolvedModelSlug = reinjectModelSlug,
+                providerName = reinjectProviderName,
+                providerType = reinjectProviderType,
+                endpoint = reinjectEndpoint,
             )
         }
         ledgerIds[runId]?.let { agentRunRepo.setStatus(it, AgentRunStatus.running) }
@@ -774,8 +906,9 @@ class SubAgentEngine(
                 return
             }
             val finalText = waitResult?.takeIf { it.isNotBlank() } ?: harvestFinalText(convId)
-            if (finalText.isNullOrBlank()) {
-                markTerminal(runId, SubAgentStatus.FAILED, "empty_result: sub-agent reinject finished with no response or progress")
+            val validationError = validateCompletion(convId, finalText)
+            if (validationError != null) {
+                markTerminal(runId, SubAgentStatus.FAILED, validationError)
                 notifyParentIfBackground(parentChatId, registry.get(runId))
                 return
             }
@@ -877,6 +1010,49 @@ class SubAgentEngine(
                 .trim()
         }.getOrDefault("")
     }
+
+    private val writeClaimPattern = Regex(
+        """(?i)\b(created (?:the )?(?:directory|folder|file|files)|wrote (?:to )?(?:the )?(?:file|files)?|saved to|updated (?:the )?(?:file|files)|deleted (?:the )?(?:file|files)|patched (?:the )?(?:file|files)|written to|written \d+ files?)\b|创建了?(?:目录|文件夹|文件)|写入了?(?:文件)?|保存到|更新了?(?:文件)?|删除了?(?:文件)?"""
+    )
+
+    private val writeToolNames = setOf(
+        "workspace_write_file",
+        "workspace_edit_file",
+        "workspace_create_folder",
+        "workspace_shell",
+        "write_text_file",
+        "write_binary_file",
+        "create_directory",
+        "delete_file",
+        "move_file",
+        "copy_file",
+        "termux_run_command",
+        "ssh_exec",
+    )
+
+    private suspend fun validateCompletion(conversationId: Uuid, finalText: String): String? {
+        if (finalText.isBlank()) {
+            return "empty_result: sub-agent finished with no response or progress"
+        }
+        if (writeClaimPattern.containsMatchIn(finalText)) {
+            val conv = conversationRepo.getConversationById(conversationId)
+            val tools = conv?.currentMessages
+                ?.flatMap { it.parts }
+                ?.filterIsInstance<UIMessagePart.Tool>()
+                .orEmpty()
+            val hasSuccessfulWrite = tools.any { tool ->
+                tool.toolName in writeToolNames &&
+                    tool.output.isNotEmpty() &&
+                    tool.output.none { part ->
+                        part is UIMessagePart.Text && part.text.contains("\"error\"")
+                    }
+            }
+            if (!hasSuccessfulWrite) {
+                return "unverified_claims: sub-agent claimed file/directory modifications in final text without corresponding successful write tool executions"
+            }
+        }
+        return null
+    }
 }
 
 private fun me.rerere.rikkahub.data.agentrun.AgentRun.toSubAgentRun(): SubAgentRun? {
@@ -911,5 +1087,8 @@ private fun me.rerere.rikkahub.data.agentrun.AgentRun.toSubAgentRun(): SubAgentR
         startedAtMs = startedAtMs ?: createdAtMs,
         finishedAtMs = finishedAtMs,
         conversationId = meta?.get("conversation_id")?.jsonPrimitive?.contentOrNull,
+        agentName = meta?.get("agent_name")?.jsonPrimitive?.contentOrNull,
+        attemptedModel = meta?.get("attempted_model")?.jsonPrimitive?.contentOrNull,
+        fallbackReason = meta?.get("fallback_reason")?.jsonPrimitive?.contentOrNull,
     )
 }

@@ -42,6 +42,9 @@ data class SubAgentRun(
     val endpoint: String? = null,
     val httpStatus: Int? = null,
     val resumedAfterMs: Long? = null,
+    val agentName: String? = null,
+    val attemptedModel: String? = null,
+    val fallbackReason: String? = null,
 )
 
 @Serializable
@@ -100,6 +103,7 @@ data class SubAgentRequest(
     /** Opt-in capability categories (see [SubAgentCapability]) granted to this run. */
     val capabilities: List<String>? = null,
     val label: String? = null,
+    val waitForSlot: Boolean = false,
 )
 
 object SubAgentRequestValidator {

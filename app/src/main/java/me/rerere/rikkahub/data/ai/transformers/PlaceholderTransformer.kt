@@ -27,6 +27,7 @@ data class PlaceholderCtx(
     val settingsStore: SettingsStore,
     val model: Model,
     val assistant: Assistant,
+    val isSubAgent: Boolean = false,
 )
 
 interface PlaceholderProvider {
@@ -95,7 +96,7 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
         }
 
         placeholder("char", { Text(stringResource(R.string.placeholder_char)) }) {
-            it.assistant.name.ifBlank { "assistant" }
+            if (it.isSubAgent) "sub-agent" else it.assistant.name.ifBlank { "assistant" }
         }
 
         placeholder("user", { Text(stringResource(R.string.placeholder_user)) }) {
@@ -148,7 +149,10 @@ object PlaceholderTransformer : InputMessageTransformer, KoinComponent {
             context = ctx.context,
             settingsStore = settingsStore,
             model = ctx.model,
-            assistant = ctx.assistant
+            assistant = ctx.assistant,
+            isSubAgent = ctx.conversationId != null &&
+                (me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(ctx.conversationId) ||
+                 me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(ctx.conversationId))
         )
         defaultProvider.placeholders.forEach { (key, placeholderInfo) ->
             val value = placeholderInfo.resolver(ctx)
