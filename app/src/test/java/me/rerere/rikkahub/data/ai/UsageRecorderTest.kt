@@ -115,6 +115,10 @@ private class FakeUsageRecordDAO : UsageRecordDAO {
     override suspend fun getRequestCountPerDay(source: String, since: Long) = emptyList<DayCount>()
 
     override suspend fun getTotalsBySource(since: Long) = emptyList<SourceUsage>()
+
+    override suspend fun getTotalsByConversation(conversationId: String) = UsageTotals()
+
+    override suspend fun getRequestCountByConversation(conversationId: String) = 0
 }
 
 private class FakeProvider(
