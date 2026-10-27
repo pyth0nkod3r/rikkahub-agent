@@ -152,7 +152,6 @@ class AgentRunRepository(private val dao: AgentRunDao) {
             }
         }.onFailure { logSafe { Log.w(TAG, "updateMetadata($id) failed", it) } }
     }
-        runCatching { dao.getById(id) }.getOrNull()
 
     suspend fun count(): Int = runCatching { dao.count() }.getOrDefault(0)
 

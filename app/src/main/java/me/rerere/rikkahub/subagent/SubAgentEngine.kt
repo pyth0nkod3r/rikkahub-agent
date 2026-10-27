@@ -26,6 +26,8 @@ import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunStatus
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
@@ -647,7 +649,9 @@ class SubAgentEngine(
             modelResolution.displayName.ifBlank { modelResolution.modelSlug }
         } else {
             val defaultModel = settings.getCurrentChatModel()
-            defaultModel?.displayName?.ifBlank { defaultModel.modelId } ?: "default"
+            defaultModel?.displayName?.takeIf { it.isNotBlank() }
+                ?: defaultModel?.modelId?.takeIf { it.isNotBlank() }
+                ?: "default"
         }
         val actualProviderName = if (modelResolution is SubAgentModelResolver.Result.Resolved) {
             modelResolution.providerName
