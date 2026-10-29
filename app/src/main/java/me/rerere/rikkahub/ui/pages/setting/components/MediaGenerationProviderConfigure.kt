@@ -30,6 +30,7 @@ import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
 import me.rerere.rikkahub.ui.components.ui.CardGroupValue
 import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceButtons
 import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceLabel
+import me.rerere.rikkahub.ui.components.ui.switchItem
 
 val MediaGenerationProviderSetting.typeName: String
     @Composable get() = when (this) {
@@ -131,10 +132,10 @@ fun MediaGenerationProviderBasicConfigure(
                 }
 
                 switchItem(
+                    checked = setting.supportVideo,
+                    onCheckedChange = { onValueChange(setting.copy(supportVideo = it)) },
                     headlineContent = { Text(stringResource(R.string.setting_media_page_support_video)) },
                     supportingContent = { Text(stringResource(R.string.setting_media_page_support_video_desc)) },
-                    checked = setting.supportVideo,
-                    onCheckedChange = { onValueChange(setting.copy(supportVideo = it)) }
                 )
             }
 

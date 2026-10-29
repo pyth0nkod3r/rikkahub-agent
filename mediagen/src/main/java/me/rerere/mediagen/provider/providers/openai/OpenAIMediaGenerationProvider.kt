@@ -47,8 +47,16 @@ class OpenAIMediaGenerationProvider(
         request: MediaGenerationRequest,
     ): Result<MediaGenerationTask> = runCatching {
         val baseUrl = setting.baseUrl.trimEnd('/')
-        val genPath = if (setting.generationPath.startsWith("/")) setting.generationPath else "/${setting.generationPath}"
-        val edPath = if (setting.editPath.startsWith("/")) setting.editPath else "/${setting.editPath}"
+        fun normalizePath(path: String): String {
+            val trimmed = if (path.startsWith("/")) path else "/$path"
+            return if (baseUrl.endsWith("/v1") && trimmed.startsWith("/v1/")) {
+                trimmed.removePrefix("/v1")
+            } else {
+                trimmed
+            }
+        }
+        val genPath = normalizePath(setting.generationPath)
+        val edPath = normalizePath(setting.editPath)
         val builder = Request.Builder().addHeader("Authorization", "Bearer ${setting.apiKey}")
         val httpRequest = if (request.inputs.isEmpty()) {
             builder.url("$baseUrl$genPath").postJson(buildGenerationBody(setting, model, request))
