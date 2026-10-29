@@ -80,11 +80,12 @@ class OpenAIProvider(
     private fun isDecisionRequest(params: TextGenerationParams, providerSetting: ProviderSetting.OpenAI): Boolean {
         if (params.model.type == ModelType.DECISION) return true
         val modelId = params.model.modelId.lowercase()
-        if (modelId.contains("decision") ||
-            modelId.contains("/jev-") ||
-            modelId.contains("laya-free") ||
-            modelId.contains("laguna-s") ||
-            modelId.contains("beam-free")
+        val displayName = params.model.displayName.lowercase()
+        if (modelId.contains("decision") || displayName.contains("decision") ||
+            modelId.contains("jev") ||
+            modelId.contains("laya") ||
+            modelId.contains("laguna") ||
+            modelId.contains("beam")
         ) return true
         if (providerSetting.chatCompletionsPath.contains("decision", ignoreCase = true) ||
             providerSetting.name.contains("decision", ignoreCase = true)

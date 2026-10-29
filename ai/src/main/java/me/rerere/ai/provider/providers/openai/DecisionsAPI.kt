@@ -117,21 +117,32 @@ class DecisionsAPI(
         // Decision models return complete structured decisions rather than SSE token streams.
         val result = generateText(providerSetting, messages, params)
         val text = result.message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("") { it.text }
-        emit(StreamChunk.TextDelta(text))
+        val textId = "decision_text_${System.currentTimeMillis()}"
+        emit(StreamChunk.TextStart(textId))
+        emit(StreamChunk.TextDelta(textId, text))
+        emit(StreamChunk.TextEnd(textId))
         result.usage?.let { u ->
             emit(StreamChunk.Usage(u))
         }
+        emit(StreamChunk.Finish(finishReason = "stop", responseId = result.id, model = result.model))
     }.flowOn(Dispatchers.IO)
 
     private fun resolveEndpoint(providerSetting: ProviderSetting.OpenAI): String {
         val base = providerSetting.baseUrl.trimEnd('/')
         // If chatCompletionsPath is already configured to point to decisions, honor it
-        if (providerSetting.chatCompletionsPath.contains("decision", ignoreCase = true)) {
-            val p = providerSetting.chatCompletionsPath.trimStart('/')
-            return "$base/$p"
+        val configuredPath = if (providerSetting.chatCompletionsPath.contains("decision", ignoreCase = true)) {
+            providerSetting.chatCompletionsPath
+        } else {
+            providerSetting.decisionsPath.ifBlank { "/decisions" }
         }
-        val path = providerSetting.decisionsPath.ifBlank { "/decisions" }.trimStart('/')
-        return "$base/$path"
+        val path = configuredPath.trimStart('/')
+        // Avoid duplicate /v1 if baseUrl already ends with /v1
+        val finalPath = if (base.endsWith("/v1") && path.startsWith("v1/")) {
+            path.removePrefix("v1/")
+        } else {
+            path
+        }
+        return "$base/$finalPath"
     }
 
     private fun extractInputText(messages: List<UIMessage>): String {

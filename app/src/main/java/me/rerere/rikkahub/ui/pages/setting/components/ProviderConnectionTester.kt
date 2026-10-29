@@ -174,10 +174,12 @@ fun ProviderConnectionTester(
                                 val currentModel = model
                                 if (currentModel != null && (currentModel.type == ModelType.DECISION ||
                                     currentModel.modelId.contains("decision", ignoreCase = true) ||
-                                    currentModel.modelId.contains("/jev-", ignoreCase = true) ||
-                                    currentModel.modelId.contains("laya-free", ignoreCase = true) ||
-                                    currentModel.modelId.contains("laguna-s", ignoreCase = true) ||
-                                    currentModel.modelId.contains("beam-free", ignoreCase = true))
+                                    currentModel.displayName.contains("decision", ignoreCase = true) ||
+                                    currentModel.modelId.contains("jev", ignoreCase = true) ||
+                                    currentModel.modelId.contains("laya", ignoreCase = true) ||
+                                    currentModel.modelId.contains("laguna", ignoreCase = true) ||
+                                    currentModel.modelId.contains("beam", ignoreCase = true) ||
+                                    internalProvider.name.contains("decision", ignoreCase = true))
                                 ) {
                                     toolsState = UiState.Success("N/A (Decision models evaluate inputs and do not support tool calling)")
                                     return@launch
