@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import me.rerere.mediagen.model.MediaGenerationInput
 import me.rerere.mediagen.model.MediaGenerationModel
+import me.rerere.mediagen.model.MediaKind
 import me.rerere.mediagen.model.MediaGenerationOutput
 import me.rerere.mediagen.model.MediaGenerationRequest
 import me.rerere.mediagen.model.MediaGenerationStatus

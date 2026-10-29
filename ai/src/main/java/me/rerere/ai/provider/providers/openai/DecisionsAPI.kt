@@ -19,7 +19,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.ProviderSetting
-import me.rerere.ai.provider.StreamChunk
+import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.ui.UIMessage
