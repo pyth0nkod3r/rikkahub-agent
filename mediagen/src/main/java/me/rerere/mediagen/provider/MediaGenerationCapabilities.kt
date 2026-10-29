@@ -57,7 +57,7 @@ fun MediaGenerationProviderSetting.capabilities(kind: MediaKind): MediaGeneratio
     when (this) {
         is MediaGenerationProviderSetting.OpenAI -> when (kind) {
             MediaKind.IMAGE -> OPENAI_IMAGE
-            MediaKind.VIDEO -> null
+            MediaKind.VIDEO -> if (supportVideo) OPENAI_VIDEO else null
         }
 
         is MediaGenerationProviderSetting.Aliyun -> when (kind) {
@@ -88,6 +88,17 @@ private val ALL_IMAGE_ROLES = ImageRole.entries.toSet()
 private val OPENAI_IMAGE = MediaGenerationCapabilities(
     parameters = setOf(MediaGenerationParameter.COUNT, MediaGenerationParameter.RESOLUTION),
     imageRoles = REFERENCE_ONLY,
+    requiresPrompt = true,
+)
+
+private val OPENAI_VIDEO = MediaGenerationCapabilities(
+    parameters = setOf(
+        MediaGenerationParameter.RESOLUTION,
+        MediaGenerationParameter.ASPECT_RATIO,
+        MediaGenerationParameter.DURATION,
+        MediaGenerationParameter.GENERATE_AUDIO,
+        MediaGenerationParameter.SEED,
+    ),
     requiresPrompt = true,
 )
 

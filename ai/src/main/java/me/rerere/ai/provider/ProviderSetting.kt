@@ -110,6 +110,7 @@ sealed class ProviderSetting {
         // OpenRouter only: provider-routing preferences emitted as the `provider` object.
         var routing: OpenRouterRouting = OpenRouterRouting(),
         var responsesPath: String = "/responses",
+        var decisionsPath: String = "/decisions",
     ) : ApiKey() {
         override fun withQuotaQuery(query: QuotaQuery): ApiKey = copy(quotaQuery = query)
 

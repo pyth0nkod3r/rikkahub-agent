@@ -258,4 +258,39 @@ class OpenAIMediaGenerationProviderTest {
         assertTrue(error is UnsupportedOperationException)
         assertEquals("openai does not support VIDEO generation", error!!.message)
     }
+
+    @Test
+    fun customPathsAndVideoSupportedWhenEnabled() = runBlocking {
+        val videoSetting = setting.copy(
+            generationPath = "/v1/custom/video/generate",
+            editPath = "/v1/custom/video/edit",
+            supportVideo = true,
+        )
+        assertEquals(setOf(MediaKind.IMAGE, MediaKind.VIDEO), videoSetting.supportedKinds)
+
+        var requestedUrl: String? = null
+        val manager = MediaGenerationManager(fakeClient { req ->
+            requestedUrl = req.url.toString()
+            jsonResponse(
+                request = req,
+                body = """{"data":[{"url":"https://example.com/output.mp4"}]}""",
+            )
+        })
+
+        val videoModel = MediaGenerationModel(modelId = "agnes-video-flash", kind = MediaKind.VIDEO)
+        val result = manager.create(
+            videoSetting,
+            videoModel,
+            MediaGenerationRequest(
+                prompt = "A drone flying over the ocean",
+                durationSeconds = 5,
+                aspectRatio = "16:9",
+            )
+        ).getOrThrow()
+
+        assertEquals("https://example.com/v1/custom/video/generate", requestedUrl)
+        assertEquals(1, result.outputs.size)
+        assertEquals("video/mp4", result.outputs.first().mimeType)
+        assertEquals("https://example.com/output.mp4", result.outputs.first().url)
+    }
 }

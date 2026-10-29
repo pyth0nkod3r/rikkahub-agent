@@ -29,6 +29,7 @@ enum class ModelType {
     CHAT,
     IMAGE,
     EMBEDDING,
+    DECISION,
 }
 
 @Serializable
@@ -60,6 +61,3 @@ sealed class BuiltInTools {
     @SerialName("image_generation")
     data object ImageGeneration : BuiltInTools()
 }
-
-
-

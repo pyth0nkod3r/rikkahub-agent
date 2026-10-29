@@ -576,7 +576,7 @@ class ResponseAPI(
             put("role", JsonPrimitive(role.name.lowercase()))
 
             if (parts.isOnlyTextPart()) {
-                val text = (parts.first() as UIMessagePart.Text).text
+                val text = parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n\n") { it.text }
                 put("content", if (text.isBlank()) " " else text)
             } else if (role == MessageRole.ASSISTANT) {
                 // OpenAI Responses API restricts assistant content array length to 1.
@@ -806,7 +806,7 @@ private fun isModelAllowTemperature(model: Model): Boolean {
 private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
     val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
     val texts = filter { it is UIMessagePart.Text }.size
-    return gonnaSend == texts && texts == 1
+    return gonnaSend == texts && texts > 0
 }
 
 internal data class ResponseProviderCapabilities(

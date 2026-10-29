@@ -46,11 +46,13 @@ class OpenAIMediaGenerationProvider(
         request: MediaGenerationRequest,
     ): Result<MediaGenerationTask> = runCatching {
         val baseUrl = setting.baseUrl.trimEnd('/')
+        val genPath = if (setting.generationPath.startsWith("/")) setting.generationPath else "/${setting.generationPath}"
+        val edPath = if (setting.editPath.startsWith("/")) setting.editPath else "/${setting.editPath}"
         val builder = Request.Builder().addHeader("Authorization", "Bearer ${setting.apiKey}")
         val httpRequest = if (request.inputs.isEmpty()) {
-            builder.url("$baseUrl/images/generations").postJson(buildGenerationBody(setting, model, request))
+            builder.url("$baseUrl$genPath").postJson(buildGenerationBody(setting, model, request))
         } else {
-            builder.url("$baseUrl/images/edits").post(buildEditBody(setting, model, request))
+            builder.url("$baseUrl$edPath").post(buildEditBody(setting, model, request))
         }.build()
         parseTask(client.executeJson(httpRequest, id), model.modelId)
     }
@@ -60,12 +62,29 @@ class OpenAIMediaGenerationProvider(
         model: MediaGenerationModel,
         request: MediaGenerationRequest,
     ): JsonObject = buildJsonObject {
-        validate(request)
-        request.extraParameters.forEach { (key, value) -> put(key, value) }
-        put("model", model.modelId)
-        put("prompt", request.prompt)
-        request.count?.let { put("n", it) }
-        resolveSize(setting, model, request.resolution)?.let { put("size", it) }
+        if (model.kind == MediaKind.VIDEO) {
+            validateVideo(request)
+            request.extraParameters.forEach { (key, value) -> put(key, value) }
+            put("model", model.modelId)
+            put("prompt", request.prompt)
+            request.aspectRatio?.let { put("aspect_ratio", it) }
+            request.durationSeconds?.let { put("duration", it) }
+            request.generateAudio?.let { put("generate_audio", it) }
+            request.seed?.let { put("seed", it) }
+            request.count?.let { put("n", it) }
+            resolveSize(setting, model, request.resolution)?.let { put("size", it) }
+        } else {
+            validate(request)
+            request.extraParameters.forEach { (key, value) -> put(key, value) }
+            put("model", model.modelId)
+            put("prompt", request.prompt)
+            request.count?.let { put("n", it) }
+            resolveSize(setting, model, request.resolution)?.let { put("size", it) }
+        }
+    }
+
+    private fun validateVideo(request: MediaGenerationRequest) {
+        require(!request.prompt.isNullOrBlank()) { "OpenAI video generation requires a non-empty prompt" }
     }
 
     internal fun buildEditBody(
@@ -114,13 +133,16 @@ class OpenAIMediaGenerationProvider(
                 // 部分中转同时给 url 和空字符串的 b64_json，空串当作没有
                 val base64 = item.string("b64_json")?.takeIf { it.isNotBlank() }
                 // dall-e 系列和部分中转不返回 b64_json，而是有时效的 url
-                val url = item.string("url")?.takeIf { it.isNotBlank() }
-                if (base64 == null && url == null) error("OpenAI image contains neither b64_json nor url")
+                val url = (item.string("url") ?: item.string("video_url"))?.takeIf { it.isNotBlank() }
+                if (base64 == null && url == null) error("OpenAI media contains neither b64_json nor url")
+                val isVideo = (fallbackModel != null && fallbackModel.contains("video", ignoreCase = true)) ||
+                    url?.endsWith(".mp4", ignoreCase = true) == true
+                val mimeType = if (isVideo) "video/mp4" else imageMimeType(item.string("output_format") ?: defaultFormat, "image/png")
                 MediaGenerationOutput(
                     url = url,
                     data = base64?.let { Base64.decode(it.substringAfter("base64,")) },
-                    mimeType = imageMimeType(item.string("output_format") ?: defaultFormat, "image/png"),
-                    resolution = root.string("size"),
+                    mimeType = mimeType,
+                    resolution = root.string("size") ?: item.string("resolution"),
                 )
             },
             createdAtEpochSeconds = root.long("created"),

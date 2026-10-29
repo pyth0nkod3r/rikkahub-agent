@@ -54,9 +54,12 @@ sealed class MediaGenerationProviderSetting {
             MediaGenerationModel(modelId = "gpt-image-2.5-sunburst", kind = MediaKind.IMAGE),
             MediaGenerationModel(modelId = "gpt-image-2.5-flare", kind = MediaKind.IMAGE),
         ),
+        val generationPath: String = "/images/generations",
+        val editPath: String = "/images/edits",
+        val supportVideo: Boolean = false,
     ) : MediaGenerationProviderSetting() {
         override val supportedKinds: Set<MediaKind>
-            get() = setOf(MediaKind.IMAGE)
+            get() = if (supportVideo) setOf(MediaKind.IMAGE, MediaKind.VIDEO) else setOf(MediaKind.IMAGE)
 
         override fun copyProvider(
             id: Uuid,

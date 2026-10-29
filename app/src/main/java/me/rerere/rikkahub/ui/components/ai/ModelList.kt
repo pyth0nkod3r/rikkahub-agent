@@ -102,6 +102,7 @@ import kotlin.uuid.Uuid
 // image output modality by hand, still belongs there. Chat/embedding pickers stay an exact match.
 internal fun Model.matchesPickerType(pickerType: ModelType): Boolean =
     type == pickerType ||
+        (pickerType == ModelType.CHAT && type == ModelType.DECISION) ||
         (pickerType == ModelType.IMAGE && Modality.IMAGE in outputModalities)
 
 class ModelListState internal constructor(
@@ -836,6 +837,7 @@ fun ModelTypeTag(model: Model) {
                     ModelType.CHAT -> R.string.setting_provider_page_chat_model
                     ModelType.EMBEDDING -> R.string.setting_provider_page_embedding_model
                     ModelType.IMAGE -> R.string.setting_provider_page_image_model
+                    ModelType.DECISION -> R.string.setting_provider_page_decision_model
                 }
             )
         )

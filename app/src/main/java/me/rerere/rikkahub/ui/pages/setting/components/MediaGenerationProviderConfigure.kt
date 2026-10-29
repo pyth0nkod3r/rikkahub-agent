@@ -105,6 +105,39 @@ fun MediaGenerationProviderBasicConfigure(
                 )
             }
 
+            if (setting is MediaGenerationProviderSetting.OpenAI) {
+                formItem(
+                    headlineContent = { Text(stringResource(R.string.setting_media_page_generation_path)) },
+                ) {
+                    OutlinedTextField(
+                        value = setting.generationPath,
+                        onValueChange = { onValueChange(setting.copy(generationPath = it.trim())) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("/images/generations") }
+                    )
+                }
+
+                formItem(
+                    headlineContent = { Text(stringResource(R.string.setting_media_page_edit_path)) },
+                ) {
+                    OutlinedTextField(
+                        value = setting.editPath,
+                        onValueChange = { onValueChange(setting.copy(editPath = it.trim())) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("/images/edits") }
+                    )
+                }
+
+                switchItem(
+                    headlineContent = { Text(stringResource(R.string.setting_media_page_support_video)) },
+                    supportingContent = { Text(stringResource(R.string.setting_media_page_support_video_desc)) },
+                    checked = setting.supportVideo,
+                    onCheckedChange = { onValueChange(setting.copy(supportVideo = it)) }
+                )
+            }
+
             if (setting is MediaGenerationProviderSetting.Aliyun) {
                 formItem(
                     headlineContent = { Text(stringResource(R.string.setting_media_page_workspace_id)) },

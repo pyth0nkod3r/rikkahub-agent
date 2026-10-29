@@ -75,6 +75,22 @@ class OpenAIProvider(
 
     private val chatCompletionsAPI = ChatCompletionsAPI(client = client, keyRoulette = keyRoulette)
     private val responseAPI = ResponseAPI(client = client, keyRoulette = keyRoulette)
+    private val decisionsAPI = DecisionsAPI(client = client, keyRoulette = keyRoulette)
+
+    private fun isDecisionRequest(params: TextGenerationParams, providerSetting: ProviderSetting.OpenAI): Boolean {
+        if (params.model.type == ModelType.DECISION) return true
+        val modelId = params.model.modelId.lowercase()
+        if (modelId.contains("decision") ||
+            modelId.contains("/jev-") ||
+            modelId.contains("laya-free") ||
+            modelId.contains("laguna-s") ||
+            modelId.contains("beam-free")
+        ) return true
+        if (providerSetting.chatCompletionsPath.contains("decision", ignoreCase = true) ||
+            providerSetting.name.contains("decision", ignoreCase = true)
+        ) return true
+        return false
+    }
 
 
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =
@@ -150,7 +166,13 @@ class OpenAIProvider(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams
-    ): Flow<StreamChunk> = if (providerSetting.useResponseApi) {
+    ): Flow<StreamChunk> = if (isDecisionRequest(params, providerSetting)) {
+        decisionsAPI.streamText(
+            providerSetting = providerSetting,
+            messages = messages,
+            params = params
+        )
+    } else if (providerSetting.useResponseApi) {
         responseAPI.streamText(
             providerSetting = providerSetting,
             messages = messages,
@@ -168,7 +190,13 @@ class OpenAIProvider(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams
-    ): TextGenerationResult = if (providerSetting.useResponseApi) {
+    ): TextGenerationResult = if (isDecisionRequest(params, providerSetting)) {
+        decisionsAPI.generateText(
+            providerSetting = providerSetting,
+            messages = messages,
+            params = params
+        )
+    } else if (providerSetting.useResponseApi) {
         responseAPI.generateText(
             providerSetting = providerSetting,
             messages = messages,

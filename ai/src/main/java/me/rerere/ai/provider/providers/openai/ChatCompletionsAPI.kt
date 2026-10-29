@@ -255,11 +255,10 @@ class ChatCompletionsAPI(
     ): JsonObject {
         val host = providerSetting.baseUrl.toHttpUrl().host
         val isOpenRouter = host == "openrouter.ai"
-        // OpenRouter prompt caching: add per-block cache_control breakpoints for every model.
-        // Anthropic/Gemini/Qwen need them explicitly; providers that cache automatically
-        // (OpenAI/DeepSeek/Grok/MiniMax) have the field stripped by OpenRouter. So this is safe
-        // for any model and, unlike top-level cache_control, never pins routing to one upstream.
-        val openRouterCache = isOpenRouter && providerSetting.promptCaching
+        // OpenRouter prompt caching: add per-block cache_control breakpoints for models that support it.
+        // Free tier models (:free) route to varied community providers that reject cache_control with "Provider returned error".
+        val isFreeModel = params.model.modelId.contains(":free", ignoreCase = true)
+        val openRouterCache = isOpenRouter && providerSetting.promptCaching && !isFreeModel
         val messagesArray = buildMessages(
             messages = messages,
             includeHistoryReasoning = providerSetting.includeHistoryReasoning,
@@ -834,7 +833,7 @@ class ChatCompletionsAPI(
                 // byte-identical to the combined system prompt other providers received.
                 put("content", textParts.joinToString("\n") { it.text })
             } else if (message.parts.isOnlyTextPart()) {
-                put("content", message.parts.filterIsInstance<UIMessagePart.Text>().first().text)
+                put("content", textParts.joinToString("\n\n") { it.text })
             } else {
                 putJsonArray("content") {
                     message.parts.forEach { part ->
@@ -1027,6 +1026,6 @@ class ChatCompletionsAPI(
     private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
         val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
         val texts = filter { it is UIMessagePart.Text }.size
-        return gonnaSend == texts && texts == 1
+        return gonnaSend == texts && texts > 0
     }
 }

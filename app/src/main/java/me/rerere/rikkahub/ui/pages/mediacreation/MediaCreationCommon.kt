@@ -143,10 +143,17 @@ internal data class MediaCreationPresets(
 }
 
 internal fun MediaGenerationProviderSetting.presets(kind: MediaKind): MediaCreationPresets = when (this) {
-    is MediaGenerationProviderSetting.OpenAI -> MediaCreationPresets(
-        resolutions = listOf("1024x1024", "1536x1024", "1024x1536"),
-        counts = IMAGE_COUNTS,
-    )
+    is MediaGenerationProviderSetting.OpenAI -> when (kind) {
+        MediaKind.IMAGE -> MediaCreationPresets(
+            resolutions = listOf("1024x1024", "1536x1024", "1024x1536"),
+            counts = IMAGE_COUNTS,
+        )
+        MediaKind.VIDEO -> MediaCreationPresets(
+            resolutions = listOf("720p", "1080p"),
+            aspectRatios = VIDEO_ASPECT_RATIOS,
+            durations = listOf(5, 10),
+        )
+    }
 
     is MediaGenerationProviderSetting.Volcengine -> when (kind) {
         // 各代 Seedream 的档位不同：5.0 pro / flash 是 1K、1.5K、2K，5.0 lite 是 2K、3K、4K，4.5 是 2K、4K

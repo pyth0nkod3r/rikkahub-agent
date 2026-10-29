@@ -65,7 +65,7 @@ fun ProviderConnectionTester(
 
     if (showTestDialog) {
         var model by remember(internalProvider) {
-            mutableStateOf(internalProvider.models.firstOrNull { it.type == ModelType.CHAT })
+            mutableStateOf(internalProvider.models.firstOrNull { it.type == ModelType.CHAT || it.type == ModelType.DECISION })
         }
         var nonStreamingState: UiState<String> by remember { mutableStateOf(UiState.Idle) }
         var streamingState: UiState<String> by remember { mutableStateOf(UiState.Idle) }
@@ -171,6 +171,17 @@ fun ProviderConnectionTester(
                                 }.onFailure { streamingState = UiState.Error(it) }
                             }
                             launch {
+                                val currentModel = model
+                                if (currentModel != null && (currentModel.type == ModelType.DECISION ||
+                                    currentModel.modelId.contains("decision", ignoreCase = true) ||
+                                    currentModel.modelId.contains("/jev-", ignoreCase = true) ||
+                                    currentModel.modelId.contains("laya-free", ignoreCase = true) ||
+                                    currentModel.modelId.contains("laguna-s", ignoreCase = true) ||
+                                    currentModel.modelId.contains("beam-free", ignoreCase = true))
+                                ) {
+                                    toolsState = UiState.Success("N/A (Decision models evaluate inputs and do not support tool calling)")
+                                    return@launch
+                                }
                                 runCatching {
                                     toolsState = UiState.Loading
                                     val testTool = Tool(

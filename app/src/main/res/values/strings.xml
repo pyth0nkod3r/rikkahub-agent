@@ -967,6 +967,7 @@
   <string name="setting_provider_page_balance_json_key">Result Json Key</string>
   <string name="setting_provider_page_basic_settings">Basic Settings</string>
   <string name="setting_provider_page_chat_model">Chat</string>
+  <string name="setting_provider_page_decision_model">Decision</string>
   <string name="setting_provider_page_claude_prompt_cache_ttl">Prompt cache TTL</string>
   <string name="setting_provider_page_claude_prompt_cache_ttl_1h">1 hour</string>
   <string name="setting_provider_page_claude_prompt_cache_ttl_5m">5 minutes</string>
@@ -2728,6 +2729,10 @@
   <string name="setting_media_page_models_desc">Model IDs are sent to the API as-is</string>
   <string name="setting_media_page_model_id">Model ID</string>
   <string name="setting_media_page_add_model">Add model</string>
+  <string name="setting_media_page_generation_path">Generation API Path</string>
+  <string name="setting_media_page_edit_path">Edit API Path</string>
+  <string name="setting_media_page_support_video">Support Video Generation</string>
+  <string name="setting_media_page_support_video_desc">Allow configuring video models and endpoints for this provider</string>
   <string name="video_player_error">Unable to play this video</string>
   <string name="video_player_open_with">Open with another app</string>
   <string name="search_picker_off">Off</string>
