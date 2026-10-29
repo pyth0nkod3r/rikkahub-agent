@@ -1,6 +1,5 @@
 package me.rerere.ai.provider.providers.openai
 
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -12,12 +11,13 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import me.rerere.ai.core.Usage
+import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.StreamChunk
 import me.rerere.ai.provider.TextGenerationParams
@@ -26,16 +26,14 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.KeyRoulette
-import me.rerere.ai.util.await
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.toHeaders
+import me.rerere.common.http.await
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-
-private const val TAG = "DecisionsAPI"
 
 class DecisionsAPI(
     private val client: OkHttpClient,
@@ -101,9 +99,12 @@ class DecisionsAPI(
         }
 
         val usage = parseUsage(bodyElement["usage"])
+        val id = bodyElement["id"]?.jsonPrimitive?.contentOrNull ?: "decision_${System.currentTimeMillis()}"
 
         TextGenerationResult(
-            text = formattedMarkdown,
+            id = id,
+            model = params.model.modelId,
+            message = UIMessage.assistant(formattedMarkdown),
             usage = usage,
         )
     }
@@ -115,15 +116,10 @@ class DecisionsAPI(
     ): Flow<StreamChunk> = flow {
         // Decision models return complete structured decisions rather than SSE token streams.
         val result = generateText(providerSetting, messages, params)
-        emit(StreamChunk.TextDelta(result.text))
+        val text = result.message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("") { it.text }
+        emit(StreamChunk.TextDelta(text))
         result.usage?.let { u ->
-            emit(
-                StreamChunk.Usage(
-                    promptTokens = u.promptTokens,
-                    completionTokens = u.completionTokens,
-                    totalTokens = u.totalTokens,
-                )
-            )
+            emit(StreamChunk.Usage(u))
         }
     }.flowOn(Dispatchers.IO)
 
@@ -150,7 +146,7 @@ class DecisionsAPI(
         return texts.joinToString("\n\n").ifBlank { "Evaluate input" }
     }
 
-    private fun parseUsage(usageElement: JsonElement?): Usage? {
+    private fun parseUsage(usageElement: JsonElement?): TokenUsage? {
         val obj = usageElement as? JsonObject ?: return null
         val promptTokens = obj["input_tokens"]?.jsonPrimitive?.intOrNull
             ?: obj["prompt_tokens"]?.jsonPrimitive?.intOrNull
@@ -160,7 +156,7 @@ class DecisionsAPI(
             ?: 0
         val totalTokens = obj["total_tokens"]?.jsonPrimitive?.intOrNull
             ?: (promptTokens + completionTokens)
-        return Usage(
+        return TokenUsage(
             promptTokens = promptTokens,
             completionTokens = completionTokens,
             totalTokens = totalTokens,

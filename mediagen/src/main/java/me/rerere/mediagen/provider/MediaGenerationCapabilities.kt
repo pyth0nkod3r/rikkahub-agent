@@ -99,6 +99,7 @@ private val OPENAI_VIDEO = MediaGenerationCapabilities(
         MediaGenerationParameter.GENERATE_AUDIO,
         MediaGenerationParameter.SEED,
     ),
+    imageRoles = emptySet(),
     requiresPrompt = true,
 )
 
