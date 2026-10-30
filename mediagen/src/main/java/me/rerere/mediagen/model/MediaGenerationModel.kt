@@ -19,4 +19,5 @@ data class MediaGenerationModel(
     val kind: MediaKind,
     val displayName: String = "",
     val id: Uuid = Uuid.random(),
+    val customParameters: Map<String, String> = emptyMap(),
 )

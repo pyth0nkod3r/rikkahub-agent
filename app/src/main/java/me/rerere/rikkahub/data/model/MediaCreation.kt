@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.data.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import me.rerere.mediagen.model.ImageRole
 import me.rerere.mediagen.model.MediaGenerationInput
 import me.rerere.mediagen.model.MediaGenerationRequest
@@ -69,6 +71,7 @@ data class MediaCreationParams(
     val watermark: Boolean? = null,
     val seed: Long? = null,
     val promptEnhancement: Boolean? = null,
+    val mode: String? = null,
 )
 
 /**
@@ -166,6 +169,7 @@ fun MediaCreationParams.supportedBy(capabilities: MediaGenerationCapabilities): 
         watermark = watermark.takeIfSupported(MediaGenerationParameter.WATERMARK),
         seed = seed.takeIfSupported(MediaGenerationParameter.SEED),
         promptEnhancement = promptEnhancement.takeIfSupported(MediaGenerationParameter.PROMPT_ENHANCEMENT),
+        mode = mode?.takeIf(String::isNotBlank),
     )
 }
 
@@ -190,6 +194,7 @@ fun MediaCreationParams.withRequired(
         seed = seed.orRequired(MediaGenerationParameter.SEED, defaults.seed),
         promptEnhancement = promptEnhancement
             .orRequired(MediaGenerationParameter.PROMPT_ENHANCEMENT, defaults.promptEnhancement),
+        mode = mode?.takeIf(String::isNotBlank) ?: defaults.mode,
     )
 }
 
@@ -245,6 +250,9 @@ fun buildMediaGenerationRequest(
 ): MediaGenerationRequest {
     require(assets.size == inputUrls.size) { "assets and inputUrls must have the same size" }
     val supported = params.supportedBy(capabilities)
+    val extraParams = buildJsonObject {
+        supported.mode?.takeIf(String::isNotBlank)?.let { put("mode", it) }
+    }
     return MediaGenerationRequest(
         prompt = prompt.takeIf(String::isNotBlank),
         inputs = assets.zip(inputUrls) { asset, url ->
@@ -261,6 +269,7 @@ fun buildMediaGenerationRequest(
         watermark = supported.watermark,
         seed = supported.seed,
         promptEnhancement = supported.promptEnhancement,
+        extraParameters = extraParams,
     )
 }
 

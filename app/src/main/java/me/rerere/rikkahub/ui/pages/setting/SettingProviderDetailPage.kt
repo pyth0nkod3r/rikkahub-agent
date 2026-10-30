@@ -34,6 +34,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -86,6 +87,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastFilter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ui.toast.ToastType
@@ -1044,6 +1046,8 @@ private fun ModelTypeSelector(
         ModelType.entries.forEachIndexed { index, type ->
             SegmentedButton(
                 shape = SegmentedButtonDefaults.itemShape(index, ModelType.entries.size),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                icon = {},
                 label = {
                     Text(
                         text = stringResource(
@@ -1053,7 +1057,11 @@ private fun ModelTypeSelector(
                                 ModelType.IMAGE -> R.string.setting_provider_page_image_model
                                 ModelType.DECISION -> R.string.setting_provider_page_decision_model
                             }
-                        )
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                        autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 14.sp),
+                        overflow = TextOverflow.Ellipsis
                     )
                 },
                 selected = selectedType == type,

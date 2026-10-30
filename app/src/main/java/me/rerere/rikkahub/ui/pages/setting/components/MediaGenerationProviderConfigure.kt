@@ -14,10 +14,17 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Delete01
@@ -210,6 +217,21 @@ fun MediaGenerationProviderModelsConfigure(
                             ConnectedChoiceLabel(text = kind.label, selected = selected)
                         }
                     }
+                    var customParamsText by remember(model.id) {
+                        mutableStateOf(model.customParameters.entries.joinToString(", ") { "${it.key}=${it.value}" })
+                    }
+                    OutlinedTextField(
+                        value = customParamsText,
+                        onValueChange = { text ->
+                            customParamsText = text
+                            val parsed = parseCustomParameters(text)
+                            updateModels(models.map { if (it.id == model.id) model.copy(customParameters = parsed) else it })
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.setting_media_page_custom_parameters)) },
+                        placeholder = { Text(stringResource(R.string.setting_media_page_custom_parameters_hint)) },
+                        singleLine = true
+                    )
                 }
             }
 
@@ -223,4 +245,21 @@ fun MediaGenerationProviderModelsConfigure(
             )
         }
     }
+}
+
+private fun parseCustomParameters(raw: String): Map<String, String> {
+    if (raw.isBlank()) return emptyMap()
+    val trimmed = raw.trim()
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+        return runCatching {
+            val json = Json.parseToJsonElement(trimmed)
+            (json as? JsonObject)?.mapValues { (_, v) ->
+                (v as? JsonPrimitive)?.content ?: v.toString()
+            } ?: emptyMap()
+        }.getOrDefault(emptyMap())
+    }
+    return trimmed.split(',', ';', '\n').mapNotNull { pair ->
+        val parts = pair.split('=', limit = 2)
+        if (parts.size == 2 && parts[0].isNotBlank()) parts[0].trim() to parts[1].trim() else null
+    }.toMap()
 }

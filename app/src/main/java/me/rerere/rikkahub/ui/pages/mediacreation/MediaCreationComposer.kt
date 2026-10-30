@@ -943,6 +943,15 @@ private fun ParamsSheet(
                     onValueChange = { update(current.copy(durationSeconds = it?.toInt())) },
                 )
             }
+            if (kind == MediaKind.VIDEO) {
+                TextParam(
+                    label = stringResource(R.string.media_creation_page_param_mode),
+                    value = current.mode,
+                    presets = presets.modes.ifEmpty { listOf("text", "reference", "keyframe", "std", "pro") },
+                    placeholder = stringResource(R.string.media_creation_page_param_mode_hint),
+                    onValueChange = { update(current.copy(mode = it)) },
+                )
+            }
             if (MediaGenerationParameter.COUNT in supported) {
                 NumberParam(
                     label = stringResource(R.string.media_creation_page_param_count),

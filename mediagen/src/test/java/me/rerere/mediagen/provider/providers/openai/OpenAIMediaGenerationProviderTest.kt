@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import me.rerere.mediagen.model.ImageRole
 import me.rerere.mediagen.model.MediaGenerationInput
 import me.rerere.mediagen.model.MediaGenerationModel
 import me.rerere.mediagen.model.MediaGenerationRequest
@@ -292,5 +293,55 @@ class OpenAIMediaGenerationProviderTest {
         assertEquals(1, result.outputs.size)
         assertEquals("video/mp4", result.outputs.first().mimeType)
         assertEquals("https://example.com/output.mp4", result.outputs.first().url)
+    }
+
+    @Test
+    fun agnesVideoAutomaticallySuppliesTextModeForPromptOnly() {
+        val provider = OpenAIMediaGenerationProvider(OkHttpClient())
+        val agnesModel = MediaGenerationModel(modelId = "agnes-video-2.5-flash", kind = MediaKind.VIDEO)
+        val body = provider.buildGenerationBody(
+            setting = setting,
+            model = agnesModel,
+            request = MediaGenerationRequest(prompt = "A beautiful African girl child laughing"),
+        )
+        assertEquals(JsonPrimitive("agnes-video-2.5-flash"), body["model"])
+        assertEquals(JsonPrimitive("text"), body["mode"])
+        assertEquals(JsonPrimitive("A beautiful African girl child laughing"), body["prompt"])
+    }
+
+    @Test
+    fun agnesVideoAutomaticallySuppliesReferenceModeForImageInput() {
+        val provider = OpenAIMediaGenerationProvider(OkHttpClient())
+        val agnesModel = MediaGenerationModel(modelId = "agnes-video-2.5", kind = MediaKind.VIDEO)
+        val body = provider.buildGenerationBody(
+            setting = setting,
+            model = agnesModel,
+            request = MediaGenerationRequest(
+                prompt = "animate this",
+                inputs = listOf(MediaGenerationInput.Image("https://example.com/face.png", role = ImageRole.REFERENCE)),
+            ),
+        )
+        assertEquals(JsonPrimitive("reference"), body["mode"])
+    }
+
+    @Test
+    fun customModeAndModelParametersOverrideDefaults() {
+        val provider = OpenAIMediaGenerationProvider(OkHttpClient())
+        val customModel = MediaGenerationModel(
+            modelId = "custom-video",
+            kind = MediaKind.VIDEO,
+            customParameters = mapOf("fps" to "30", "motion" to "high"),
+        )
+        val body = provider.buildGenerationBody(
+            setting = setting,
+            model = customModel,
+            request = MediaGenerationRequest(
+                prompt = "test video",
+                extraParameters = buildJsonObject { put("mode", "pro") },
+            ),
+        )
+        assertEquals(JsonPrimitive("pro"), body["mode"])
+        assertEquals(JsonPrimitive("30"), body["fps"])
+        assertEquals(JsonPrimitive("high"), body["motion"])
     }
 }

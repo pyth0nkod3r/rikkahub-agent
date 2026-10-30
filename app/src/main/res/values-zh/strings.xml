@@ -2357,6 +2357,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="media_creation_page_param_default">默认</string>
   <string name="media_creation_page_param_on">开</string>
   <string name="media_creation_page_param_off">关</string>
+  <string name="media_creation_page_param_mode">模式</string>
+  <string name="media_creation_page_param_mode_hint">如 text、std、pro</string>
   <string name="media_creation_page_upload_dialog_title">还没有配置素材上传</string>
   <string name="media_creation_page_go_configure">去配置</string>
   <string name="media_creation_page_upload_dialog_text">这个模型只接受公网地址的素材。在「设置 → 媒体 → S3」里配置一个桶后，素材会在提交时自动上传。</string>
@@ -2424,6 +2426,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_media_page_edit_path">编辑接口路径</string>
   <string name="setting_media_page_support_video">支持视频生成</string>
   <string name="setting_media_page_support_video_desc">允许为此提供商配置视频模型和接口</string>
+  <string name="setting_media_page_custom_parameters">自定义参数</string>
+  <string name="setting_media_page_custom_parameters_hint">key=value，逗号分隔</string>
   <string name="video_player_error">无法播放这个视频</string>
   <string name="video_player_open_with">用其他应用打开</string>
   <string name="common_delete_confirm_message">您确定要删除“%s”吗？此操作无法撤销。</string>

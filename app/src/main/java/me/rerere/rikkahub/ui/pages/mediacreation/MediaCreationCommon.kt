@@ -96,6 +96,7 @@ internal fun MediaCreationParams.summary(kind: MediaKind): List<String> = listOf
             stringResource(R.string.media_creation_page_summary_image_count, it)
         }
     },
+    mode?.takeIf(String::isNotBlank),
     generateAudio?.let {
         stringResource(
             if (it) R.string.media_creation_page_summary_audio_on else R.string.media_creation_page_summary_audio_off
@@ -131,6 +132,7 @@ internal data class MediaCreationPresets(
     val aspectRatios: List<String> = emptyList(),
     val durations: List<Int> = emptyList(),
     val counts: List<Int> = emptyList(),
+    val modes: List<String> = emptyList(),
 ) {
     /** 接口必填的参数没有设置时使用的值：各自的第一个快捷选项。 */
     val defaults: MediaCreationParams
@@ -139,6 +141,7 @@ internal data class MediaCreationPresets(
             resolution = resolutions.firstOrNull(),
             aspectRatio = aspectRatios.firstOrNull(),
             durationSeconds = durations.firstOrNull(),
+            mode = modes.firstOrNull(),
         )
 }
 
@@ -152,6 +155,7 @@ internal fun MediaGenerationProviderSetting.presets(kind: MediaKind): MediaCreat
             resolutions = listOf("720p", "1080p"),
             aspectRatios = VIDEO_ASPECT_RATIOS,
             durations = listOf(5, 10),
+            modes = listOf("text", "reference", "keyframe", "std", "pro"),
         )
     }
 

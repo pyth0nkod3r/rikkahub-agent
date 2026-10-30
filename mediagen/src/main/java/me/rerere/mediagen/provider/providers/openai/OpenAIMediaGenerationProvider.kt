@@ -7,6 +7,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import me.rerere.mediagen.model.ImageRole
 import me.rerere.mediagen.model.MediaGenerationInput
 import me.rerere.mediagen.model.MediaGenerationModel
 import me.rerere.mediagen.model.MediaKind
@@ -73,6 +74,7 @@ class OpenAIMediaGenerationProvider(
     ): JsonObject = buildJsonObject {
         if (model.kind == MediaKind.VIDEO) {
             validateVideo(request)
+            model.customParameters.forEach { (key, value) -> put(key, value) }
             request.extraParameters.forEach { (key, value) -> put(key, value) }
             put("model", model.modelId)
             put("prompt", request.prompt)
@@ -82,8 +84,29 @@ class OpenAIMediaGenerationProvider(
             request.seed?.let { put("seed", it) }
             request.count?.let { put("n", it) }
             resolveSize(setting, model, request.resolution)?.let { put("size", it) }
+
+            // Automatic mode inference for video generation if not explicitly provided
+            if (!containsKey("mode")) {
+                val modelIdLower = model.modelId.lowercase()
+                if (modelIdLower.contains("agnes")) {
+                    val hasKeyframes = request.inputs.any {
+                        it is MediaGenerationInput.Image &&
+                            (it.role == ImageRole.FIRST_FRAME || it.role == ImageRole.LAST_FRAME)
+                    }
+                    val hasReference = request.inputs.any {
+                        it is MediaGenerationInput.Image && it.role == ImageRole.REFERENCE
+                    }
+                    val mode = when {
+                        hasKeyframes -> "keyframe"
+                        hasReference -> "reference"
+                        else -> "text"
+                    }
+                    put("mode", mode)
+                }
+            }
         } else {
             validate(request)
+            model.customParameters.forEach { (key, value) -> put(key, value) }
             request.extraParameters.forEach { (key, value) -> put(key, value) }
             put("model", model.modelId)
             put("prompt", request.prompt)
@@ -103,6 +126,7 @@ class OpenAIMediaGenerationProvider(
     ): MultipartBody {
         validate(request)
         val fields = linkedMapOf<String, String>()
+        model.customParameters.forEach { (key, value) -> fields[key] = value }
         request.extraParameters.forEach { (key, value) ->
             fields[key] = (value as? JsonPrimitive)?.contentOrNull ?: value.toString()
         }

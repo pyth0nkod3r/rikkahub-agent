@@ -2666,6 +2666,8 @@
   <string name="media_creation_page_param_default">Default</string>
   <string name="media_creation_page_param_on">On</string>
   <string name="media_creation_page_param_off">Off</string>
+  <string name="media_creation_page_param_mode">Mode</string>
+  <string name="media_creation_page_param_mode_hint">e.g. text, std, pro</string>
   <string name="media_creation_page_upload_dialog_title">Asset upload isn\'t set up yet</string>
   <string name="media_creation_page_go_configure">Set up</string>
   <string name="media_creation_page_upload_dialog_text">This model only accepts assets at public URLs. After you set up a bucket in Settings → Media → S3, assets are uploaded automatically on submission.</string>
@@ -2733,6 +2735,8 @@
   <string name="setting_media_page_edit_path">Edit API Path</string>
   <string name="setting_media_page_support_video">Support Video Generation</string>
   <string name="setting_media_page_support_video_desc">Allow configuring video models and endpoints for this provider</string>
+  <string name="setting_media_page_custom_parameters">Custom parameters</string>
+  <string name="setting_media_page_custom_parameters_hint">key=value, separated by comma</string>
   <string name="video_player_error">Unable to play this video</string>
   <string name="video_player_open_with">Open with another app</string>
   <string name="search_picker_off">Off</string>
