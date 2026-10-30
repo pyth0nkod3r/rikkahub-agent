@@ -23,11 +23,10 @@ internal fun MediaGenerationInput.Image.toUrlOrDataUri(): String {
     if (REMOTE_PREFIXES.any { url.startsWith(it, ignoreCase = true) }) return url
     val path = if (url.startsWith("file://")) url.removePrefix("file://") else url
     val file = File(path)
-    if (!file.exists()) return url
-    val mimeType = LOCAL_IMAGE_MIME_TYPES[file.extension.lowercase()] ?: "image/jpeg"
-    return runCatching {
-        "data:$mimeType;base64,${Base64.encode(file.readBytes())}"
-    }.getOrDefault(url)
+    require(file.exists()) { "Image file does not exist: $url" }
+    val mimeType = LOCAL_IMAGE_MIME_TYPES[file.extension.lowercase()]
+        ?: throw IllegalArgumentException("Unsupported image file type: ${file.extension}")
+    return "data:$mimeType;base64,${Base64.encode(file.readBytes())}"
 }
 
 /**
@@ -37,16 +36,14 @@ internal fun MediaGenerationInput.Video.toUrlOrDataUri(): String {
     if (REMOTE_PREFIXES.any { url.startsWith(it, ignoreCase = true) }) return url
     val path = if (url.startsWith("file://")) url.removePrefix("file://") else url
     val file = File(path)
-    if (!file.exists()) return url
+    require(file.exists()) { "Video file does not exist: $url" }
     val mimeType = when (file.extension.lowercase()) {
         "mp4" -> "video/mp4"
         "webm" -> "video/webm"
         "mov" -> "video/quicktime"
-        else -> "video/mp4"
+        else -> throw IllegalArgumentException("Unsupported video file type: ${file.extension}")
     }
-    return runCatching {
-        "data:$mimeType;base64,${Base64.encode(file.readBytes())}"
-    }.getOrDefault(url)
+    return "data:$mimeType;base64,${Base64.encode(file.readBytes())}"
 }
 
 private val REMOTE_PREFIXES = listOf("http://", "https://", "data:")
