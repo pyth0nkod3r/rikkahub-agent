@@ -948,6 +948,7 @@ private fun ParamsSheet(
                     label = stringResource(R.string.media_creation_page_param_mode),
                     value = current.mode,
                     presets = presets.modes.ifEmpty { listOf("text", "reference", "keyframe", "std", "pro") },
+                    default = null,
                     placeholder = stringResource(R.string.media_creation_page_param_mode_hint),
                     onValueChange = { update(current.copy(mode = it)) },
                 )
@@ -1096,7 +1097,7 @@ private fun TextParam(
     label: String,
     value: String?,
     presets: List<String>,
-    default: String?,
+    default: String? = null,
     placeholder: String,
     onValueChange: (String?) -> Unit,
     presetIcon: (@Composable (String) -> Unit)? = null,

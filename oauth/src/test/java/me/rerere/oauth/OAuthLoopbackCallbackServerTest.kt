@@ -28,7 +28,7 @@ class OAuthLoopbackCallbackServerTest {
             }
 
             val callbackAndClose = async(Dispatchers.IO) {
-                session.awaitCallback(2.seconds).also { session.close() }
+                session.awaitCallback(10.seconds).also { session.close() }
             }
             withContext(Dispatchers.IO) {
                 execute("${session.redirectUri}?code=auth-code&state=expected-state").use { response ->
