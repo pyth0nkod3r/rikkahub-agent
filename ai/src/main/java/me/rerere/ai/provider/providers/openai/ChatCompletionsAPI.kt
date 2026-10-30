@@ -126,7 +126,7 @@ class ChatCompletionsAPI(
             val formatted = if (answers != null) formatDecisionAnswers(answers) else bodyStr
             val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: "decision_${System.currentTimeMillis()}"
             val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: params.model.modelId
-            return TextGenerationResult(
+            return@withContext TextGenerationResult(
                 id = id,
                 model = model,
                 message = UIMessage.assistant(formatted),
