@@ -18,6 +18,7 @@ import me.rerere.mediagen.provider.MediaGenerationProviderSetting
 import me.rerere.mediagen.provider.providers.executeJson
 import me.rerere.mediagen.provider.providers.postJson
 import me.rerere.mediagen.provider.providers.string
+import me.rerere.mediagen.provider.providers.toUrlOrDataUri
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 
@@ -62,7 +63,7 @@ internal class OpenRouterVideoGeneration(
         request.inputs.forEach { input ->
             when (input) {
                 is MediaGenerationInput.Image -> {
-                    val part = imageUrlPart(input.url, input.extra)
+                    val part = imageUrlPart(input.toUrlOrDataUri(), input.extra)
                     val frameType = when (input.role) {
                         ImageRole.FIRST_FRAME -> "first_frame"
                         ImageRole.LAST_FRAME -> "last_frame"
@@ -78,7 +79,7 @@ internal class OpenRouterVideoGeneration(
                 is MediaGenerationInput.Video -> references += buildJsonObject {
                     input.extra.forEach { (key, value) -> put(key, value) }
                     put("type", "video_url")
-                    put("video_url", buildJsonObject { put("url", input.url) })
+                    put("video_url", buildJsonObject { put("url", input.toUrlOrDataUri()) })
                 }
 
                 is MediaGenerationInput.Audio -> references += buildJsonObject {

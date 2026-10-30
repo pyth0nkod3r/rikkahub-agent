@@ -3,17 +3,26 @@ package me.rerere.ai.provider.providers.openai
 import kotlinx.serialization.json.Json
 import me.rerere.ai.util.KeyRoulette
 import okhttp3.OkHttpClient
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.TextGenerationParams
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 class DecisionsApiTest {
     private lateinit var api: DecisionsAPI
+    private lateinit var provider: OpenAIProvider
     private val json = Json { ignoreUnknownKeys = true }
 
     @Before
     fun setUp() {
-        api = DecisionsAPI(OkHttpClient(), KeyRoulette.default())
+        val client = OkHttpClient()
+        val keyRoulette = KeyRoulette.default()
+        api = DecisionsAPI(client, keyRoulette)
+        provider = OpenAIProvider(client, keyRoulette)
     }
 
     @Test
@@ -64,5 +73,49 @@ class DecisionsApiTest {
         val formatted = api.formatDecisionAnswers(element)
 
         assertTrue(formatted.contains("Correctness Assessment") && formatted.contains("`2`") && formatted.contains("Confidence: 95%"))
+    }
+
+    @Test
+    fun `beam model is treated as chat and not decision model`() {
+        val beamModel = Model(
+            modelId = "reflection/beam-free",
+            displayName = "reflection/beam-free",
+            type = ModelType.CHAT,
+        )
+        val providerSetting = ProviderSetting.OpenAI(
+            apiKey = "sk-test",
+            baseUrl = "https://api.kilo.ai/api/gateway",
+        )
+        val params = TextGenerationParams(model = beamModel)
+        assertFalse(provider.isDecisionRequest(params, providerSetting))
+    }
+
+    @Test
+    fun `decision models are recognized by model type or known decision family`() {
+        val providerSetting = ProviderSetting.OpenAI(
+            apiKey = "sk-test",
+            baseUrl = "https://api.example.com/v1",
+        )
+
+        val explicitDecision = Model(
+            modelId = "custom-model",
+            displayName = "Custom Model",
+            type = ModelType.DECISION,
+        )
+        assertTrue(provider.isDecisionRequest(TextGenerationParams(model = explicitDecision), providerSetting))
+
+        val jevModel = Model(
+            modelId = "free/jev-1.13",
+            displayName = "free/jev-1.13",
+            type = ModelType.CHAT,
+        )
+        assertTrue(provider.isDecisionRequest(TextGenerationParams(model = jevModel), providerSetting))
+
+        val layaModel = Model(
+            modelId = "convaiinnovations/laya-free",
+            displayName = "convaiinnovations/laya-free",
+            type = ModelType.CHAT,
+        )
+        assertTrue(provider.isDecisionRequest(TextGenerationParams(model = layaModel), providerSetting))
     }
 }

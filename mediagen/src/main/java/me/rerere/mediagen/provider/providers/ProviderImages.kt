@@ -21,11 +21,32 @@ internal fun String.urlFileExtension(): String? =
  */
 internal fun MediaGenerationInput.Image.toUrlOrDataUri(): String {
     if (REMOTE_PREFIXES.any { url.startsWith(it, ignoreCase = true) }) return url
-    val file = File(url.removePrefix("file://"))
-    require(file.exists()) { "Image file does not exist: $url" }
-    val mimeType = LOCAL_IMAGE_MIME_TYPES[file.extension.lowercase()]
-        ?: throw IllegalArgumentException("Unsupported image file type: ${file.extension}")
-    return "data:$mimeType;base64,${Base64.encode(file.readBytes())}"
+    val path = if (url.startsWith("file://")) url.removePrefix("file://") else url
+    val file = File(path)
+    if (!file.exists()) return url
+    val mimeType = LOCAL_IMAGE_MIME_TYPES[file.extension.lowercase()] ?: "image/jpeg"
+    return runCatching {
+        "data:$mimeType;base64,${Base64.encode(file.readBytes())}"
+    }.getOrDefault(url)
+}
+
+/**
+ * 把视频输入转成 JSON 接口可直接引用的地址：公网地址和 data URI 原样返回，本地文件读出后编码成 data URI。
+ */
+internal fun MediaGenerationInput.Video.toUrlOrDataUri(): String {
+    if (REMOTE_PREFIXES.any { url.startsWith(it, ignoreCase = true) }) return url
+    val path = if (url.startsWith("file://")) url.removePrefix("file://") else url
+    val file = File(path)
+    if (!file.exists()) return url
+    val mimeType = when (file.extension.lowercase()) {
+        "mp4" -> "video/mp4"
+        "webm" -> "video/webm"
+        "mov" -> "video/quicktime"
+        else -> "video/mp4"
+    }
+    return runCatching {
+        "data:$mimeType;base64,${Base64.encode(file.readBytes())}"
+    }.getOrDefault(url)
 }
 
 private val REMOTE_PREFIXES = listOf("http://", "https://", "data:")

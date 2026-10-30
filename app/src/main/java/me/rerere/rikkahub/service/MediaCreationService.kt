@@ -309,8 +309,7 @@ class MediaCreationService(
     ): MediaGenerationTask {
         val capabilities = setting.capabilities(record.kind)
             ?: error(context.getString(R.string.media_creation_error_kind_unsupported, setting.name))
-        val inputUrls = if (capabilities.requiresRemoteInputs && record.inputs.isNotEmpty()) {
-            check(remoteFileStore.isConfigured) { context.getString(R.string.media_creation_error_upload_required) }
+        val inputUrls = if (record.inputs.isNotEmpty() && remoteFileStore.isConfigured) {
             repository.updateRecord(record.id) { it.copy(status = MediaCreationStatus.PREPARING) }
             record.inputs.map { remoteFileStore.upload(repository.resolve(it.path)).getOrThrow().url }
         } else {

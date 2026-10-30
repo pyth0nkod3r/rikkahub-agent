@@ -19,6 +19,7 @@ import me.rerere.mediagen.provider.providers.executeJson
 import me.rerere.mediagen.provider.providers.obj
 import me.rerere.mediagen.provider.providers.postJson
 import me.rerere.mediagen.provider.providers.string
+import me.rerere.mediagen.provider.providers.toUrlOrDataUri
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -75,12 +76,12 @@ internal class AliyunVideoGeneration(
                                             ImageRole.REFERENCE -> "reference_image"
                                         }
                                     )
-                                    put("url", input.url)
+                                    put("url", input.toUrlOrDataUri())
                                 }
 
                                 is MediaGenerationInput.Video -> {
                                     put("type", "reference_video")
-                                    put("url", input.url)
+                                    put("url", input.toUrlOrDataUri())
                                 }
 
                                 is MediaGenerationInput.Audio -> {

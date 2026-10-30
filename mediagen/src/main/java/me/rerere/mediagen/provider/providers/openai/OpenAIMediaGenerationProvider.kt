@@ -7,6 +7,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import me.rerere.mediagen.model.ImageRole
 import me.rerere.mediagen.model.MediaGenerationInput
 import me.rerere.mediagen.model.MediaGenerationModel
@@ -24,6 +25,7 @@ import me.rerere.mediagen.provider.providers.long
 import me.rerere.mediagen.provider.providers.obj
 import me.rerere.mediagen.provider.providers.postJson
 import me.rerere.mediagen.provider.providers.string
+import me.rerere.mediagen.provider.providers.toUrlOrDataUri
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -59,7 +61,7 @@ class OpenAIMediaGenerationProvider(
         val genPath = normalizePath(setting.generationPath)
         val edPath = normalizePath(setting.editPath)
         val builder = Request.Builder().addHeader("Authorization", "Bearer ${setting.apiKey}")
-        val httpRequest = if (request.inputs.isEmpty()) {
+        val httpRequest = if (model.kind == MediaKind.VIDEO || request.inputs.isEmpty()) {
             builder.url("$baseUrl$genPath").postJson(buildGenerationBody(setting, model, request))
         } else {
             builder.url("$baseUrl$edPath").post(buildEditBody(setting, model, request))
@@ -85,21 +87,49 @@ class OpenAIMediaGenerationProvider(
             request.count?.let { put("n", it) }
             resolveSize(setting, model, request.resolution)?.let { put("size", it) }
 
+            val firstFrame = request.inputs.filterIsInstance<MediaGenerationInput.Image>()
+                .firstOrNull { it.role == ImageRole.FIRST_FRAME }
+            val lastFrame = request.inputs.filterIsInstance<MediaGenerationInput.Image>()
+                .firstOrNull { it.role == ImageRole.LAST_FRAME }
+            val references = request.inputs.filterIsInstance<MediaGenerationInput.Image>()
+                .filter { it.role == ImageRole.REFERENCE }
+            val videoRef = request.inputs.filterIsInstance<MediaGenerationInput.Video>().firstOrNull()
+
+            firstFrame?.let {
+                val uri = it.toUrlOrDataUri()
+                put("first_frame", uri)
+                put("first_image", uri)
+                put("image_url", uri)
+                put("image", uri)
+            }
+            lastFrame?.let {
+                val uri = it.toUrlOrDataUri()
+                put("last_frame", uri)
+                put("end_frame", uri)
+            }
+            if (firstFrame == null && references.isNotEmpty()) {
+                val uri = references.first().toUrlOrDataUri()
+                put("image_url", uri)
+                put("image", uri)
+                put("input_reference", uri)
+                putJsonArray("images") {
+                    references.forEach { ref -> add(JsonPrimitive(ref.toUrlOrDataUri())) }
+                }
+            }
+            videoRef?.let {
+                val uri = it.toUrlOrDataUri()
+                put("video_url", uri)
+                put("video", uri)
+            }
+
             // Automatic mode inference for video generation if not explicitly provided
             val hasExplicitMode = request.extraParameters.containsKey("mode") || model.customParameters.containsKey("mode")
             if (!hasExplicitMode) {
                 val modelIdLower = model.modelId.lowercase()
                 if (modelIdLower.contains("agnes")) {
-                    val hasKeyframes = request.inputs.any {
-                        it is MediaGenerationInput.Image &&
-                            (it.role == ImageRole.FIRST_FRAME || it.role == ImageRole.LAST_FRAME)
-                    }
-                    val hasReference = request.inputs.any {
-                        it is MediaGenerationInput.Image && it.role == ImageRole.REFERENCE
-                    }
                     val mode = when {
-                        hasKeyframes -> "keyframe"
-                        hasReference -> "reference"
+                        firstFrame != null || lastFrame != null -> "keyframe"
+                        references.isNotEmpty() || videoRef != null -> "reference"
                         else -> "text"
                     }
                     put("mode", mode)

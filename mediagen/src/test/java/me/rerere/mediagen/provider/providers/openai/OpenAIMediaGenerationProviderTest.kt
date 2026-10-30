@@ -344,4 +344,45 @@ class OpenAIMediaGenerationProviderTest {
         assertEquals(JsonPrimitive("30"), body["fps"])
         assertEquals(JsonPrimitive("high"), body["motion"])
     }
+
+    @Test
+    fun videoWithKeyframesPopulatesFirstAndLastFramesAndSetsKeyframeMode() {
+        val provider = OpenAIMediaGenerationProvider(OkHttpClient())
+        val agnesModel = MediaGenerationModel(modelId = "agnes-video-2.5-flash", kind = MediaKind.VIDEO)
+        val body = provider.buildGenerationBody(
+            setting = setting,
+            model = agnesModel,
+            request = MediaGenerationRequest(
+                prompt = "interpolate frames",
+                inputs = listOf(
+                    MediaGenerationInput.Image("https://example.com/first.png", role = ImageRole.FIRST_FRAME),
+                    MediaGenerationInput.Image("https://example.com/last.png", role = ImageRole.LAST_FRAME),
+                ),
+            ),
+        )
+        assertEquals(JsonPrimitive("keyframe"), body["mode"])
+        assertEquals(JsonPrimitive("https://example.com/first.png"), body["first_frame"])
+        assertEquals(JsonPrimitive("https://example.com/last.png"), body["last_frame"])
+    }
+
+    @Test
+    fun videoWithLocalImageEncodesToDataUri() {
+        val localImage = tempFolder.newFile("sample.png")
+        localImage.writeBytes(byteArrayOf(1, 2, 3, 4))
+
+        val provider = OpenAIMediaGenerationProvider(OkHttpClient())
+        val agnesModel = MediaGenerationModel(modelId = "agnes-video-2.5-flash", kind = MediaKind.VIDEO)
+        val body = provider.buildGenerationBody(
+            setting = setting,
+            model = agnesModel,
+            request = MediaGenerationRequest(
+                prompt = "animate local image",
+                inputs = listOf(
+                    MediaGenerationInput.Image(localImage.absolutePath, role = ImageRole.FIRST_FRAME),
+                ),
+            ),
+        )
+        val firstFrame = body["first_frame"] as? JsonPrimitive
+        assertTrue(firstFrame?.content?.startsWith("data:image/png;base64,") == true)
+    }
 }

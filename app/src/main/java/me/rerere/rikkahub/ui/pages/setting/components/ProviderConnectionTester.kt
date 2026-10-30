@@ -178,7 +178,6 @@ fun ProviderConnectionTester(
                                     currentModel.modelId.contains("jev", ignoreCase = true) ||
                                     currentModel.modelId.contains("laya", ignoreCase = true) ||
                                     currentModel.modelId.contains("laguna", ignoreCase = true) ||
-                                    currentModel.modelId.contains("beam", ignoreCase = true) ||
                                     internalProvider.name.contains("decision", ignoreCase = true))
                                 ) {
                                     toolsState = UiState.Success("N/A (Decision models evaluate inputs and do not support tool calling)")

@@ -194,7 +194,7 @@ fun MediaCreationParams.withRequired(
         seed = seed.orRequired(MediaGenerationParameter.SEED, defaults.seed),
         promptEnhancement = promptEnhancement
             .orRequired(MediaGenerationParameter.PROMPT_ENHANCEMENT, defaults.promptEnhancement),
-        mode = mode?.takeIf(String::isNotBlank) ?: defaults.mode,
+        mode = mode?.takeIf(String::isNotBlank),
     )
 }
 

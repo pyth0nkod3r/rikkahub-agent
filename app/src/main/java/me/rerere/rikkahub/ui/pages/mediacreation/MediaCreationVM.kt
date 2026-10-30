@@ -490,10 +490,6 @@ class MediaCreationVM(
         capabilities: MediaGenerationCapabilities,
         onSubmitted: () -> Unit = {},
     ): Job? {
-        if (capabilities.requiresRemoteInputs && submission.assets.isNotEmpty() && !remoteFileStore.isConfigured) {
-            _events.trySend(MediaCreationEvent.UploadNotConfigured)
-            return null
-        }
         // 接口必填的参数没有设置时用默认值，记录里保存的就是实际下发的值
         val defaults = submission.provider.presets(submission.model.kind).defaults
         val completed = submission.copy(params = submission.params.withRequired(capabilities, defaults))

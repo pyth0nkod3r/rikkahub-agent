@@ -99,8 +99,11 @@ private val OPENAI_VIDEO = MediaGenerationCapabilities(
         MediaGenerationParameter.GENERATE_AUDIO,
         MediaGenerationParameter.SEED,
     ),
-    imageRoles = emptySet(),
+    imageRoles = ALL_IMAGE_ROLES,
+    videoInput = true,
+    framesExcludeReferences = true,
     requiresPrompt = true,
+    requiresRemoteInputs = false,
 )
 
 private val ALIYUN_IMAGE = MediaGenerationCapabilities(
@@ -128,7 +131,7 @@ private val ALIYUN_VIDEO = MediaGenerationCapabilities(
     imageRoles = ALL_IMAGE_ROLES,
     videoInput = true,
     framesExcludeReferences = true,
-    requiresRemoteInputs = true,
+    requiresRemoteInputs = false,
 )
 
 private val VOLCENGINE_IMAGE = MediaGenerationCapabilities(
@@ -150,7 +153,7 @@ private val VOLCENGINE_VIDEO = MediaGenerationCapabilities(
     imageRoles = ALL_IMAGE_ROLES,
     videoInput = true,
     framesExcludeReferences = true,
-    requiresRemoteInputs = true,
+    requiresRemoteInputs = false,
 )
 
 private val MINIMAX_VIDEO = MediaGenerationCapabilities(
@@ -170,7 +173,7 @@ private val MINIMAX_VIDEO = MediaGenerationCapabilities(
     videoInput = true,
     framesExcludeReferences = true,
     requiresPrompt = true,
-    requiresRemoteInputs = true,
+    requiresRemoteInputs = false,
 )
 
 private val OPENROUTER_IMAGE = MediaGenerationCapabilities(
@@ -196,5 +199,5 @@ private val OPENROUTER_VIDEO = MediaGenerationCapabilities(
     videoInput = true,
     // 两者同时出现时接口不报错，但只按首尾帧生成，参考素材被忽略
     framesExcludeReferences = true,
-    requiresRemoteInputs = true,
+    requiresRemoteInputs = false,
 )

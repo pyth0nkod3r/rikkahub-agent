@@ -20,6 +20,7 @@ import me.rerere.mediagen.provider.providers.long
 import me.rerere.mediagen.provider.providers.obj
 import me.rerere.mediagen.provider.providers.postJson
 import me.rerere.mediagen.provider.providers.string
+import me.rerere.mediagen.provider.providers.toUrlOrDataUri
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -71,7 +72,7 @@ internal class VolcengineVideoGeneration(
                     when (input) {
                         is MediaGenerationInput.Image -> {
                             put("type", "image_url")
-                            put("image_url", buildJsonObject { put("url", input.url) })
+                            put("image_url", buildJsonObject { put("url", input.toUrlOrDataUri()) })
                             put(
                                 "role", when (input.role) {
                                     ImageRole.FIRST_FRAME -> "first_frame"
@@ -83,7 +84,7 @@ internal class VolcengineVideoGeneration(
 
                         is MediaGenerationInput.Video -> {
                             put("type", "video_url")
-                            put("video_url", buildJsonObject { put("url", input.url) })
+                            put("video_url", buildJsonObject { put("url", input.toUrlOrDataUri()) })
                             put("role", "reference_video")
                         }
 

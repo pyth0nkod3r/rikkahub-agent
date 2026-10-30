@@ -96,7 +96,6 @@ internal fun MediaCreationParams.summary(kind: MediaKind): List<String> = listOf
             stringResource(R.string.media_creation_page_summary_image_count, it)
         }
     },
-    mode?.takeIf(String::isNotBlank),
     generateAudio?.let {
         stringResource(
             if (it) R.string.media_creation_page_summary_audio_on else R.string.media_creation_page_summary_audio_off
