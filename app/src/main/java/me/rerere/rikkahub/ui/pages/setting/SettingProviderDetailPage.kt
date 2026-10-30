@@ -98,6 +98,7 @@ import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.isAuthenticDecisionModel
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
@@ -546,10 +547,12 @@ private fun ModelSettingsForm(
         val inputModality = ModelRegistry.MODEL_INPUT_MODALITIES.getData(id)
         val outputModality = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(id)
         val abilities = ModelRegistry.MODEL_ABILITIES.getData(id)
+        val detectedType = if (isAuthenticDecisionModel(id)) ModelType.DECISION else ModelType.CHAT
         onModelChange(
             model.copy(
                 modelId = id,
                 displayName = id,
+                type = detectedType,
                 inputModalities = inputModality,
                 outputModalities = outputModality,
                 abilities = abilities
@@ -1609,7 +1612,13 @@ private fun Model.enrichCapabilities(): Model =
     if (supportedParameters.isNotEmpty()) {
         this
     } else {
+        val detectedType = if (type == ModelType.CHAT && isAuthenticDecisionModel(modelId, displayName)) {
+            ModelType.DECISION
+        } else {
+            type
+        }
         copy(
+            type = detectedType,
             inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(modelId),
             outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(modelId),
             abilities = ModelRegistry.MODEL_ABILITIES.getData(modelId),

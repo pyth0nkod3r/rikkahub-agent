@@ -24,6 +24,7 @@ import me.rerere.ai.provider.ImageEditParams
 import me.rerere.ai.provider.ImageGenerationParams
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.isAuthenticDecisionModel
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderQuota
 import me.rerere.ai.provider.runQuotaQuery
@@ -79,14 +80,12 @@ class OpenAIProvider(
     private val decisionsAPI = DecisionsAPI(client = client, keyRoulette = keyRoulette)
 
     internal fun isDecisionRequest(params: TextGenerationParams, providerSetting: ProviderSetting.OpenAI): Boolean {
+        // User settings override auto-detect in model settings:
         if (params.model.type == ModelType.DECISION) return true
-        val modelId = params.model.modelId.lowercase()
-        val displayName = params.model.displayName.lowercase()
-        if (modelId.contains("decision") || displayName.contains("decision") ||
-            modelId.contains("jev") ||
-            modelId.contains("laya") ||
-            modelId.contains("laguna")
-        ) return true
+        if (params.model.type == ModelType.CHAT) return false
+
+        // Fallback for models without explicit type:
+        if (isAuthenticDecisionModel(params.model.modelId, params.model.displayName)) return true
         if (providerSetting.chatCompletionsPath.contains("decision", ignoreCase = true) ||
             providerSetting.name.contains("decision", ignoreCase = true)
         ) return true
@@ -150,9 +149,11 @@ class OpenAIProvider(
                     openRouterModelFromJson(modelObj)
                 } else {
                     val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val detectedType = if (isAuthenticDecisionModel(id)) ModelType.DECISION else ModelType.CHAT
                     Model(
                         modelId = id,
                         displayName = id,
+                        type = detectedType,
                     )
                 }
             }

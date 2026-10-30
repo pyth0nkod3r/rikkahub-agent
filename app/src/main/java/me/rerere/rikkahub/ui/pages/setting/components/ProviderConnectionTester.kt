@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.isAuthenticDecisionModel
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
@@ -172,14 +173,14 @@ fun ProviderConnectionTester(
                             }
                             launch {
                                 val currentModel = model
-                                if (currentModel != null && (currentModel.type == ModelType.DECISION ||
-                                    currentModel.modelId.contains("decision", ignoreCase = true) ||
-                                    currentModel.displayName.contains("decision", ignoreCase = true) ||
-                                    currentModel.modelId.contains("jev", ignoreCase = true) ||
-                                    currentModel.modelId.contains("laya", ignoreCase = true) ||
-                                    currentModel.modelId.contains("laguna", ignoreCase = true) ||
-                                    internalProvider.name.contains("decision", ignoreCase = true))
-                                ) {
+                                val isDecision = if (currentModel != null) {
+                                    if (currentModel.type == ModelType.DECISION) true
+                                    else if (currentModel.type == ModelType.CHAT) false
+                                    else isAuthenticDecisionModel(currentModel.modelId, currentModel.displayName) ||
+                                         internalProvider.name.contains("decision", ignoreCase = true)
+                                } else false
+
+                                if (isDecision) {
                                     toolsState = UiState.Success("N/A (Decision models evaluate inputs and do not support tool calling)")
                                     return@launch
                                 }

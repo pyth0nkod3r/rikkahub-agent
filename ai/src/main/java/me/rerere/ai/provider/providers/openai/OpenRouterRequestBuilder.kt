@@ -18,6 +18,7 @@ import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.isAuthenticDecisionModel
 import me.rerere.ai.provider.OpenRouterRouting
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
@@ -126,11 +127,14 @@ fun openRouterModelFromJson(modelObj: JsonObject): Model? {
         if ("reasoning" in supported || "include_reasoning" in supported) add(ModelAbility.REASONING)
     }
 
-    // Models that can output images are typed IMAGE so they appear in the image-generation
-    // model picker (which filters strictly by ModelType.IMAGE); others stay CHAT. Recraft's
-    // *-vector models only output SVG, which Android can't rasterize, so they're excluded
-    // from the image picker even though OpenRouter lists "image" in their output_modalities.
-    val type = if ("image" in outMods && !isSvgOnlyImageModel(id)) ModelType.IMAGE else ModelType.CHAT
+    // Decision models (strictly "jev" and "laya") are typed DECISION. Models that can
+    // output images are typed IMAGE so they appear in the image-generation model picker;
+    // others stay CHAT.
+    val type = when {
+        isAuthenticDecisionModel(id, name) -> ModelType.DECISION
+        "image" in outMods && !isSvgOnlyImageModel(id) -> ModelType.IMAGE
+        else -> ModelType.CHAT
+    }
 
     return Model(
         modelId = id,

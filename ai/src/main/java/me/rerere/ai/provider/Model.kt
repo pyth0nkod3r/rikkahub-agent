@@ -32,6 +32,17 @@ enum class ModelType {
     DECISION,
 }
 
+/**
+ * Detect authentic decision model families (strictly "jev" and "laya").
+ * Used for auto-detection when models are listed, discovered, or imported.
+ */
+fun isAuthenticDecisionModel(modelId: String, displayName: String = ""): Boolean {
+    val id = modelId.lowercase()
+    val name = displayName.lowercase()
+    return id.contains("jev") || id.contains("laya") ||
+           name.contains("jev") || name.contains("laya")
+}
+
 @Serializable
 enum class Modality {
     TEXT,
