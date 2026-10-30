@@ -138,4 +138,26 @@ class DecisionsApiTest {
         )
         assertTrue(provider.isDecisionRequest(TextGenerationParams(model = explicitDecision), providerSetting))
     }
+
+    @Test
+    fun `formatDecisionAnswers formats real apinex payload from jev`() {
+        val payload = """
+            {
+              "assessment": {"type": "noul", "noul": 0.49},
+              "is_safe": {"type": "noul", "noul": 0.96},
+              "category": {
+                "type": "choice",
+                "choice": "general",
+                "probabilities": {"coding": 0, "general": 0.94, "analysis": 0.06}
+              }
+            }
+        """.trimIndent()
+        val element = json.parseToJsonElement(payload)
+        val formatted = formatDecisionAnswers(element)
+        assertTrue(formatted.contains("### Decision Output"))
+        assertTrue(formatted.contains("Assessment") && formatted.contains("0.49 (49.0%)"))
+        assertTrue(formatted.contains("Is Safe") && formatted.contains("0.96 (96.0%)"))
+        assertTrue(formatted.contains("Category") && formatted.contains("`general`"))
+        assertTrue(formatted.contains("coding: 0%") && formatted.contains("general: 94%") && formatted.contains("analysis: 6%"))
+    }
 }

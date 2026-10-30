@@ -120,6 +120,21 @@ class ChatCompletionsAPI(
         val bodyStr = response.body.string()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
 
+        // Handle decision model response if returned (e.g. from Apinex or OpenRouter)
+        if (bodyJson["object"]?.jsonPrimitive?.contentOrNull == "decision" || bodyJson["answers"] != null) {
+            val answers = bodyJson["answers"]
+            val formatted = if (answers != null) formatDecisionAnswers(answers) else bodyStr
+            val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: "decision_${System.currentTimeMillis()}"
+            val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: params.model.modelId
+            return TextGenerationResult(
+                id = id,
+                model = model,
+                message = UIMessage.assistant(formatted),
+                finishReason = "stop",
+                usage = parseTokenUsage(bodyJson["usage"] as? JsonObject)
+            )
+        }
+
         // 从 JsonObject 中提取必要的信息
         val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
         val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
@@ -213,6 +228,49 @@ class ChatCompletionsAPI(
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         Log.d(TAG, "onFailure: error body $bodyElement")
+
+                        // If the server returned HTTP 200 OK with application/json instead of SSE stream
+                        if (response != null && response.isSuccessful && bodyElement is JsonObject) {
+                            // 1. Structured decision model output (e.g. Jev or Laya on Apinex)
+                            if (bodyElement["object"]?.jsonPrimitive?.contentOrNull == "decision" || bodyElement["answers"] != null) {
+                                val answers = bodyElement["answers"]
+                                val formatted = if (answers != null) formatDecisionAnswers(answers) else bodyRaw
+                                val textId = "decision_${System.currentTimeMillis()}"
+                                sendChunks(listOf(
+                                    StreamChunk.TextStart(textId),
+                                    StreamChunk.TextDelta(textId, formatted),
+                                    StreamChunk.TextEnd(textId),
+                                    StreamChunk.Finish(
+                                        finishReason = "stop",
+                                        responseId = bodyElement["id"]?.jsonPrimitive?.contentOrNull ?: textId,
+                                        model = bodyElement["model"]?.jsonPrimitive?.contentOrNull ?: params.model.modelId
+                                    )
+                                ))
+                                close()
+                                return
+                            }
+                            // 2. Non-streamed chat completion payload returned directly
+                            if (bodyElement["choices"] != null) {
+                                val choice = bodyElement["choices"]?.jsonArray?.getOrNull(0)?.jsonObject
+                                val content = choice?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull
+                                if (content != null) {
+                                    val textId = "chat_${System.currentTimeMillis()}"
+                                    sendChunks(listOf(
+                                        StreamChunk.TextStart(textId),
+                                        StreamChunk.TextDelta(textId, content),
+                                        StreamChunk.TextEnd(textId),
+                                        StreamChunk.Finish(
+                                            finishReason = choice["finish_reason"]?.jsonPrimitive?.contentOrNull ?: "stop",
+                                            responseId = bodyElement["id"]?.jsonPrimitive?.contentOrNull ?: textId,
+                                            model = bodyElement["model"]?.jsonPrimitive?.contentOrNull ?: params.model.modelId
+                                        )
+                                    ))
+                                    close()
+                                    return
+                                }
+                            }
+                        }
+
                         exception = bodyElement.parseErrorDetail()
                         Log.i(TAG, "onFailure: $exception")
                     } else if (response != null && !response.isSuccessful) {

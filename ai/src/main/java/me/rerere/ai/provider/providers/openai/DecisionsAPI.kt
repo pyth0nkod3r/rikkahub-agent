@@ -30,6 +30,7 @@ import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.toHeaders
 import me.rerere.common.http.await
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -129,6 +130,10 @@ class DecisionsAPI(
 
     private fun resolveEndpoint(providerSetting: ProviderSetting.OpenAI): String {
         val base = providerSetting.baseUrl.trimEnd('/')
+        val host = runCatching { providerSetting.baseUrl.toHttpUrl().host }.getOrNull()
+        if (host == "openrouter.ai") {
+            return "https://openrouter.ai/api/alpha/decisions"
+        }
         // If chatCompletionsPath is already configured to point to decisions, honor it
         val configuredPath = if (providerSetting.chatCompletionsPath.contains("decision", ignoreCase = true)) {
             providerSetting.chatCompletionsPath
@@ -174,93 +179,96 @@ class DecisionsAPI(
         )
     }
 
-    internal fun formatDecisionAnswers(answersElement: JsonElement): String {
-        val sb = StringBuilder()
-        sb.append("### Decision Output\n\n")
-        when (answersElement) {
-            is JsonObject -> {
-                answersElement.forEach { (name, item) ->
-                    formatAnswerItem(sb, name, item)
-                }
-            }
-            is JsonArray -> {
-                answersElement.forEach { item ->
-                    val obj = item as? JsonObject
-                    val name = obj?.get("name")?.jsonPrimitive?.contentOrNull ?: "Decision"
-                    formatAnswerItem(sb, name, item)
-                }
-            }
-            else -> sb.append(answersElement.toString()).append("\n")
-        }
-        return sb.toString().trim()
-    }
-
-    private fun formatAnswerItem(sb: StringBuilder, name: String, item: JsonElement) {
-        val obj = item as? JsonObject
-        if (obj == null) {
-            sb.append("- **").append(name.replace('_', ' ').capitalizeWords()).append("**: ")
-                .append(item.toString()).append("\n")
-            return
-        }
-
-        val type = obj["type"]?.jsonPrimitive?.contentOrNull
-        val readableName = name.replace('_', ' ').capitalizeWords()
-
-        when (type) {
-            "noul", "predicate" -> {
-                val score = obj["noul"]?.jsonPrimitive?.doubleOrNull
-                    ?: obj["probability"]?.jsonPrimitive?.doubleOrNull
-                if (score != null) {
-                    val percent = (score * 100.0)
-                    sb.append("- **").append(readableName).append("**: ")
-                        .append(String.format(java.util.Locale.US, "%.2f (%.1f%%)", score, percent))
-                        .append("\n")
-                } else {
-                    sb.append("- **").append(readableName).append("**: ").append(obj).append("\n")
-                }
-            }
-            "choice" -> {
-                val choice = obj["choice"]?.jsonPrimitive?.contentOrNull ?: "unknown"
-                val confidence = obj["confidence"]?.jsonPrimitive?.doubleOrNull
-                sb.append("- **").append(readableName).append("**: `").append(choice).append("`")
-                if (confidence != null) {
-                    sb.append(" (Confidence: ").append((confidence * 100).toInt()).append("%)")
-                }
-                sb.append("\n")
-                val probs = obj["probabilities"] as? JsonObject
-                if (probs != null && probs.isNotEmpty()) {
-                    val probStr = probs.entries.joinToString(", ") { (k, v) ->
-                        val p = v.jsonPrimitive.doubleOrNull?.let { (it * 100).toInt() } ?: 0
-                        "$k: $p%"
-                    }
-                    sb.append("  - Distribution: ").append(probStr).append("\n")
-                }
-            }
-            "score" -> {
-                val score = obj["score"]?.jsonPrimitive?.contentOrNull ?: "0"
-                val legend = obj["legend"] as? JsonObject
-                val legendLabel = legend?.get(score)?.jsonPrimitive?.contentOrNull
-                val confidence = obj["confidence"]?.jsonPrimitive?.doubleOrNull
-                sb.append("- **").append(readableName).append("**: `").append(score).append("`")
-                if (legendLabel != null) {
-                    sb.append(" - ").append(legendLabel)
-                }
-                if (confidence != null) {
-                    sb.append(" (Confidence: ").append((confidence * 100).toInt()).append("%)")
-                }
-                sb.append("\n")
-            }
-            else -> {
-                val value = obj["value"]?.jsonPrimitive?.contentOrNull
-                    ?: obj["result"]?.jsonPrimitive?.contentOrNull
-                    ?: obj.toString()
-                sb.append("- **").append(readableName).append("**: ").append(value).append("\n")
-            }
-        }
-    }
-
-    private fun String.capitalizeWords(): String =
-        split(" ").joinToString(" ") { word ->
-            word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() }
-        }
+    internal fun formatDecisionAnswers(answersElement: JsonElement): String =
+        me.rerere.ai.provider.providers.openai.formatDecisionAnswers(answersElement)
 }
+
+internal fun formatDecisionAnswers(answersElement: JsonElement): String {
+    val sb = StringBuilder()
+    sb.append("### Decision Output\n\n")
+    when (answersElement) {
+        is JsonObject -> {
+            answersElement.forEach { (name, item) ->
+                formatAnswerItem(sb, name, item)
+            }
+        }
+        is JsonArray -> {
+            answersElement.forEach { item ->
+                val obj = item as? JsonObject
+                val name = obj?.get("name")?.jsonPrimitive?.contentOrNull ?: "Decision"
+                formatAnswerItem(sb, name, item)
+            }
+        }
+        else -> sb.append(answersElement.toString()).append("\n")
+    }
+    return sb.toString().trim()
+}
+
+private fun formatAnswerItem(sb: StringBuilder, name: String, item: JsonElement) {
+    val obj = item as? JsonObject
+    if (obj == null) {
+        sb.append("- **").append(name.replace('_', ' ').capitalizeWords()).append("**: ")
+            .append(item.toString()).append("\n")
+        return
+    }
+
+    val type = obj["type"]?.jsonPrimitive?.contentOrNull
+    val readableName = name.replace('_', ' ').capitalizeWords()
+
+    when (type) {
+        "noul", "predicate" -> {
+            val score = obj["noul"]?.jsonPrimitive?.doubleOrNull
+                ?: obj["probability"]?.jsonPrimitive?.doubleOrNull
+            if (score != null) {
+                val percent = (score * 100.0)
+                sb.append("- **").append(readableName).append("**: ")
+                    .append(String.format(java.util.Locale.US, "%.2f (%.1f%%)", score, percent))
+                    .append("\n")
+            } else {
+                sb.append("- **").append(readableName).append("**: ").append(obj).append("\n")
+            }
+        }
+        "choice" -> {
+            val choice = obj["choice"]?.jsonPrimitive?.contentOrNull ?: "unknown"
+            val confidence = obj["confidence"]?.jsonPrimitive?.doubleOrNull
+            sb.append("- **").append(readableName).append("**: `").append(choice).append("`")
+            if (confidence != null) {
+                sb.append(" (Confidence: ").append((confidence * 100).toInt()).append("%)")
+            }
+            sb.append("\n")
+            val probs = obj["probabilities"] as? JsonObject
+            if (probs != null && probs.isNotEmpty()) {
+                val probStr = probs.entries.joinToString(", ") { (k, v) ->
+                    val p = v.jsonPrimitive.doubleOrNull?.let { (it * 100).toInt() } ?: 0
+                    "$k: $p%"
+                }
+                sb.append("  - Distribution: ").append(probStr).append("\n")
+            }
+        }
+        "score" -> {
+            val score = obj["score"]?.jsonPrimitive?.contentOrNull ?: "0"
+            val legend = obj["legend"] as? JsonObject
+            val legendLabel = legend?.get(score)?.jsonPrimitive?.contentOrNull
+            val confidence = obj["confidence"]?.jsonPrimitive?.doubleOrNull
+            sb.append("- **").append(readableName).append("**: `").append(score).append("`")
+            if (legendLabel != null) {
+                sb.append(" - ").append(legendLabel)
+            }
+            if (confidence != null) {
+                sb.append(" (Confidence: ").append((confidence * 100).toInt()).append("%)")
+            }
+            sb.append("\n")
+        }
+        else -> {
+            val value = obj["value"]?.jsonPrimitive?.contentOrNull
+                ?: obj["result"]?.jsonPrimitive?.contentOrNull
+                ?: obj.toString()
+            sb.append("- **").append(readableName).append("**: ").append(value).append("\n")
+        }
+    }
+}
+
+private fun String.capitalizeWords(): String =
+    split(" ").joinToString(" ") { word ->
+        word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() }
+    }
