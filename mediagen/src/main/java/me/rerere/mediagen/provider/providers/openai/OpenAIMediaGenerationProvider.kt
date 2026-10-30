@@ -86,7 +86,8 @@ class OpenAIMediaGenerationProvider(
             resolveSize(setting, model, request.resolution)?.let { put("size", it) }
 
             // Automatic mode inference for video generation if not explicitly provided
-            if (!containsKey("mode")) {
+            val hasExplicitMode = request.extraParameters.containsKey("mode") || model.customParameters.containsKey("mode")
+            if (!hasExplicitMode) {
                 val modelIdLower = model.modelId.lowercase()
                 if (modelIdLower.contains("agnes")) {
                     val hasKeyframes = request.inputs.any {
