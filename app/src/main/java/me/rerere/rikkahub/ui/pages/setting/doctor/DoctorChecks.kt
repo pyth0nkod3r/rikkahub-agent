@@ -1855,8 +1855,11 @@ internal fun subAgentProfileStatus(
 ): SubAgentProfileStatus = SubAgentProfileStatus(
     total = profiles.size,
     broken = profiles.filter { profile ->
-        val modelId = profile.modelId ?: return@filter false
-        SubAgentModelResolver.resolve(modelId.toString(), providers) is SubAgentModelResolver.Result.Failed
+        if (profile.modelId != null || !profile.modelSlug.isNullOrBlank()) {
+            SubAgentModelResolver.resolveProfileModel(profile, providers) is SubAgentModelResolver.Result.Failed
+        } else {
+            false
+        }
     }.map { it.name },
 )
 

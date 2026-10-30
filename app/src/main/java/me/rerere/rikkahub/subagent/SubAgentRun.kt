@@ -169,6 +169,7 @@ data class SubAgentProfile(
     val systemPrompt: String = "",
     val modelId: Uuid? = null,
     val modelSlug: String? = null,
+    val providerId: Uuid? = null,
     val enabled: Boolean = true,
     /** Role tool names this profile always grants (added to the dispatch `tools` list). */
     val tools: List<String> = emptyList(),

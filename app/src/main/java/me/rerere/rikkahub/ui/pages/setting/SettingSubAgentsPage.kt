@@ -214,10 +214,17 @@ private fun SubAgentProfileCard(
     val swipeState = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
     val hasConfiguredModel = profile.modelId != null || !profile.modelSlug.isNullOrBlank()
-    val resolvedModel = remember(profile.modelId, profile.modelSlug, providers) {
+    val resolvedModel = remember(profile.modelId, profile.modelSlug, profile.providerId, providers) {
         val chatModels = providers.filter { it.enabled }.flatMap { it.models }.filter { it.type == ModelType.CHAT }
         (if (profile.modelId != null) chatModels.firstOrNull { it.id == profile.modelId } else null)
-            ?: (if (!profile.modelSlug.isNullOrBlank()) chatModels.firstOrNull { it.modelId.equals(profile.modelSlug, ignoreCase = true) } else null)
+            ?: (if (profile.providerId != null && !profile.modelSlug.isNullOrBlank()) {
+                providers.filter { it.enabled }.firstOrNull { it.id == profile.providerId }?.models
+                    ?.firstOrNull { it.type == ModelType.CHAT && it.modelId.equals(profile.modelSlug, ignoreCase = true) }
+            } else null)
+            ?: (if (!profile.modelSlug.isNullOrBlank()) {
+                val matches = chatModels.filter { it.modelId.equals(profile.modelSlug, ignoreCase = true) }
+                if (matches.size == 1) matches[0] else null
+            } else null)
     }
 
     SwipeToDismissBox(
@@ -413,11 +420,15 @@ private fun SubAgentProfileEditSheet(
                     label = { Text(stringResource(R.string.setting_sub_agents_page_model)) },
                     description = { Text(stringResource(R.string.setting_sub_agents_page_model_desc)) },
                     content = {
-                        val effectiveModelId = remember(profile.modelId, profile.modelSlug, providers) {
+                        val effectiveModelId = remember(profile.modelId, profile.modelSlug, profile.providerId, providers) {
                             if (profile.modelId != null && providers.any { p -> p.models.any { it.id == profile.modelId } }) {
                                 profile.modelId
+                            } else if (profile.providerId != null && !profile.modelSlug.isNullOrBlank()) {
+                                providers.firstOrNull { it.id == profile.providerId }?.models
+                                    ?.firstOrNull { it.type == ModelType.CHAT && it.modelId.equals(profile.modelSlug, ignoreCase = true) }?.id
                             } else if (!profile.modelSlug.isNullOrBlank()) {
-                                providers.flatMap { it.models }.firstOrNull { it.modelId.equals(profile.modelSlug, ignoreCase = true) }?.id
+                                val matches = providers.flatMap { it.models }.filter { it.type == ModelType.CHAT && it.modelId.equals(profile.modelSlug, ignoreCase = true) }
+                                if (matches.size == 1) matches[0].id else null
                             } else {
                                 null
                             }
@@ -431,10 +442,15 @@ private fun SubAgentProfileEditSheet(
                                 // ModelSelector's clear button calls onSelect(Model()), whose
                                 // default modelId is "" - no real model ever has a blank
                                 // provider model id, so that's the clear signal.
+                                val isCleared = model.modelId.isBlank()
+                                val selectedProvider = if (!isCleared) {
+                                    providers.firstOrNull { p -> p.models.any { it.id == model.id } }
+                                } else null
                                 onEdit(
                                     profile.copy(
-                                        modelId = model.id.takeIf { model.modelId.isNotBlank() },
-                                        modelSlug = model.modelId.takeIf { it.isNotBlank() },
+                                        modelId = model.id.takeIf { !isCleared },
+                                        modelSlug = model.modelId.takeIf { !isCleared },
+                                        providerId = selectedProvider?.id.takeIf { !isCleared },
                                     )
                                 )
                             },

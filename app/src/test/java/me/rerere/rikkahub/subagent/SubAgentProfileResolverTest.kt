@@ -176,4 +176,148 @@ class SubAgentProfileResolverTest {
         val failed = res as SubAgentModelResolver.Result.Failed
         assertTrue(failed.message.contains("Refusing silent fallback"))
     }
+
+    @Test fun `resolveProfileModel matches exact modelId first even when duplicate modelSlug exists in other providers`() {
+        val modelZen = me.rerere.ai.provider.Model(
+            modelId = "glm-5.3-flash-free",
+            displayName = "GLM 5.3 Flash",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val providerZen = me.rerere.ai.provider.ProviderSetting.OpenAI(
+            name = "Opencode Zen",
+            enabled = true,
+            models = listOf(modelZen),
+        )
+        val modelKios = me.rerere.ai.provider.Model(
+            modelId = "glm-5.3-flash-free",
+            displayName = "GLM 5.3 Flash",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val providerKios = me.rerere.ai.provider.ProviderSetting.OpenAI(
+            name = "Kiosapi-FreePro",
+            enabled = true,
+            models = listOf(modelKios),
+        )
+
+        // Profile points to Kiosapi-FreePro modelId (UUID), but modelSlug is shared
+        val profile = researcher.copy(
+            modelId = modelKios.id,
+            modelSlug = "glm-5.3-flash-free",
+            providerId = providerKios.id,
+        )
+
+        val res = SubAgentModelResolver.resolveProfileModel(profile, listOf(providerZen, providerKios))
+        assertTrue(res is SubAgentModelResolver.Result.Resolved)
+        val resolved = res as SubAgentModelResolver.Result.Resolved
+        assertEquals(modelKios.id, resolved.modelId)
+        assertEquals("Kiosapi-FreePro", resolved.providerName)
+    }
+
+    @Test fun `resolveProfileModel falls back to providerId affinity when modelId UUID is stale after catalog refresh`() {
+        val modelZen = me.rerere.ai.provider.Model(
+            modelId = "glm-5.3-flash-free",
+            displayName = "GLM 5.3 Flash",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val providerZen = me.rerere.ai.provider.ProviderSetting.OpenAI(
+            name = "Opencode Zen",
+            enabled = true,
+            models = listOf(modelZen),
+        )
+        val refreshedModelKios = me.rerere.ai.provider.Model(
+            modelId = "glm-5.3-flash-free",
+            displayName = "GLM 5.3 Flash",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val providerKios = me.rerere.ai.provider.ProviderSetting.OpenAI(
+            name = "Kiosapi-FreePro",
+            enabled = true,
+            models = listOf(refreshedModelKios),
+        )
+
+        // Stale modelId UUID that no longer matches, but providerId and modelSlug match
+        val profile = researcher.copy(
+            modelId = Uuid.random(),
+            modelSlug = "glm-5.3-flash-free",
+            providerId = providerKios.id,
+        )
+
+        val res = SubAgentModelResolver.resolveProfileModel(profile, listOf(providerZen, providerKios))
+        assertTrue(res is SubAgentModelResolver.Result.Resolved)
+        val resolved = res as SubAgentModelResolver.Result.Resolved
+        assertEquals(refreshedModelKios.id, resolved.modelId)
+        assertEquals("Kiosapi-FreePro", resolved.providerName)
+    }
+
+    @Test fun `resolveProfileModel fails loudly when modelSlug is ambiguous across multiple providers and no providerId or modelId matches`() {
+        val modelZen = me.rerere.ai.provider.Model(
+            modelId = "glm-5.3-flash-free",
+            displayName = "GLM 5.3 Flash (Zen)",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val providerZen = me.rerere.ai.provider.ProviderSetting.OpenAI(
+            name = "Opencode Zen",
+            enabled = true,
+            models = listOf(modelZen),
+        )
+        val modelKios = me.rerere.ai.provider.Model(
+            modelId = "glm-5.3-flash-free",
+            displayName = "GLM 5.3 Flash (Kios)",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val providerKios = me.rerere.ai.provider.ProviderSetting.OpenAI(
+            name = "Kiosapi-FreePro",
+            enabled = true,
+            models = listOf(modelKios),
+        )
+
+        // Ambiguous: modelSlug matches both, but no modelId or providerId matches
+        val profile = researcher.copy(
+            modelId = null,
+            modelSlug = "glm-5.3-flash-free",
+            providerId = null,
+        )
+
+        val res = SubAgentModelResolver.resolveProfileModel(profile, listOf(providerZen, providerKios))
+        assertTrue(res is SubAgentModelResolver.Result.Failed)
+        val failed = res as SubAgentModelResolver.Result.Failed
+        assertTrue(failed.message.contains("is ambiguous across multiple providers (2 matches)"))
+        assertTrue(failed.message.contains("Opencode Zen"))
+        assertTrue(failed.message.contains("Kiosapi-FreePro"))
+    }
+
+    @Test fun `resolveProfileModel succeeds with unambiguous unique modelSlug when providerId is null`() {
+        val modelZen = me.rerere.ai.provider.Model(
+            modelId = "glm-5.3-flash-free",
+            displayName = "GLM 5.3 Flash",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val providerZen = me.rerere.ai.provider.ProviderSetting.OpenAI(
+            name = "Opencode Zen",
+            enabled = true,
+            models = listOf(modelZen),
+        )
+        val modelUnique = me.rerere.ai.provider.Model(
+            modelId = "unique-kios-model",
+            displayName = "Unique Kios Model",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val providerKios = me.rerere.ai.provider.ProviderSetting.OpenAI(
+            name = "Kiosapi-FreePro",
+            enabled = true,
+            models = listOf(modelUnique),
+        )
+
+        val profile = researcher.copy(
+            modelId = null,
+            modelSlug = "unique-kios-model",
+            providerId = null,
+        )
+
+        val res = SubAgentModelResolver.resolveProfileModel(profile, listOf(providerZen, providerKios))
+        assertTrue(res is SubAgentModelResolver.Result.Resolved)
+        val resolved = res as SubAgentModelResolver.Result.Resolved
+        assertEquals(modelUnique.id, resolved.modelId)
+        assertEquals("Kiosapi-FreePro", resolved.providerName)
+    }
 }

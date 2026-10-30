@@ -26,8 +26,10 @@ import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunStatus
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.findAssistantById
+import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
@@ -161,24 +163,11 @@ internal object SubAgentModelResolver {
     }
 
     fun resolveProfileModel(profile: SubAgentProfile, providers: List<ProviderSetting>): Result {
-        val chatModels: List<Pair<ProviderSetting, Model>> = providers
-            .filter { it.enabled }
+        val enabledProviders = providers.filter { it.enabled }
+        val chatModels: List<Pair<ProviderSetting, Model>> = enabledProviders
             .flatMap { provider -> provider.models.filter { it.type == ModelType.CHAT }.map { provider to it } }
 
-        if (!profile.modelSlug.isNullOrBlank()) {
-            val bySlug = chatModels.firstOrNull { (_, model) -> model.modelId.equals(profile.modelSlug, ignoreCase = true) }
-            if (bySlug != null) {
-                val (provider, model) = bySlug
-                return Result.Resolved(
-                    modelId = model.id,
-                    modelSlug = model.modelId,
-                    displayName = model.displayName,
-                    providerName = provider.name,
-                    providerType = provider.providerTypeName,
-                    endpoint = provider.endpointUrl,
-                )
-            }
-        }
+        // Tier 1: Exact UUID match in enabled providers
         if (profile.modelId != null) {
             val byUuid = chatModels.firstOrNull { (_, model) -> model.id == profile.modelId }
             if (byUuid != null) {
@@ -193,6 +182,49 @@ internal object SubAgentModelResolver {
                 )
             }
         }
+
+        // Tier 2: Provider affinity match (resilience against catalog refresh where model UUID changed)
+        if (profile.providerId != null && !profile.modelSlug.isNullOrBlank()) {
+            val provider = enabledProviders.firstOrNull { it.id == profile.providerId }
+            val model = provider?.models?.firstOrNull {
+                it.type == ModelType.CHAT && it.modelId.equals(profile.modelSlug, ignoreCase = true)
+            }
+            if (provider != null && model != null) {
+                return Result.Resolved(
+                    modelId = model.id,
+                    modelSlug = model.modelId,
+                    displayName = model.displayName,
+                    providerName = provider.name,
+                    providerType = provider.providerTypeName,
+                    endpoint = provider.endpointUrl,
+                )
+            }
+        }
+
+        // Tier 3 & 4: Model slug matching across enabled providers
+        if (!profile.modelSlug.isNullOrBlank()) {
+            val bySlug = chatModels.filter { (_, model) -> model.modelId.equals(profile.modelSlug, ignoreCase = true) }
+            if (bySlug.size == 1) {
+                val (provider, model) = bySlug[0]
+                return Result.Resolved(
+                    modelId = model.id,
+                    modelSlug = model.modelId,
+                    displayName = model.displayName,
+                    providerName = provider.name,
+                    providerType = provider.providerTypeName,
+                    endpoint = provider.endpointUrl,
+                )
+            }
+            if (bySlug.size > 1) {
+                return Result.Failed(
+                    "Sub-agent profile '${profile.name}' configured model '${profile.modelSlug}' is ambiguous " +
+                        "across multiple providers (${bySlug.size} matches):\n" +
+                        bySlug.joinToString("\n") { candidateLine(it) } +
+                        "\nSelect a specific provider in Settings → Sub-agents."
+                )
+            }
+        }
+
         return Result.Failed(
             "Sub-agent profile '${profile.name}' configured model (${profile.modelSlug ?: profile.modelId}) " +
                 "is not available or its provider is disabled. Refusing silent fallback."
@@ -582,24 +614,39 @@ class SubAgentEngine(
         )
         val resolvedChatModelId: Uuid? = when (modelResolution) {
             is SubAgentModelResolver.Result.Inherit -> {
-                val defaultModel = settings.getCurrentChatModel()
-                if (defaultModel == null) {
-                    markTerminal(runId, SubAgentStatus.FAILED, "no chat model configured or available")
+                val parentAsst = parentAsstUuid?.let { settings.findAssistantById(it) }
+                val targetModelUuid = parentAsst?.subAgentModelId
+                    ?: parentAsst?.chatModelId
+                    ?: settings.getCurrentChatModel()?.id
+                val inheritedModel = (targetModelUuid?.let { settings.findModelById(it) }?.takeIf { model ->
+                    model.findProvider(settings.providers)?.enabled == true
+                }) ?: settings.getCurrentChatModel()?.takeIf { model ->
+                    model.findProvider(settings.providers)?.enabled == true
+                }
+                if (inheritedModel == null) {
+                    markTerminal(runId, SubAgentStatus.FAILED, "no chat model configured or available from enabled providers")
                     return
                 }
-                val defaultProvider = defaultModel.findProvider(settings.providers)
+                val inheritedProvider = inheritedModel.findProvider(settings.providers)
+                val fallbackReason = if (parentAsst?.subAgentModelId != null && parentAsst.subAgentModelId == inheritedModel.id) {
+                    "inherited from parent assistant sub-agent model"
+                } else if (parentAsst?.chatModelId != null && parentAsst.chatModelId == inheritedModel.id) {
+                    "inherited from parent assistant chat model"
+                } else {
+                    "inherited from default chat model"
+                }
                 registry.update(runId) {
                     it.copy(
                         attemptedModel = attemptedModelStr,
-                        resolvedModelId = defaultModel.id.toString(),
-                        resolvedModelSlug = defaultModel.modelId,
-                        providerName = defaultProvider?.name,
-                        providerType = defaultProvider?.providerTypeName,
-                        endpoint = defaultProvider?.endpointUrl,
-                        fallbackReason = "inherited from default chat model",
+                        resolvedModelId = inheritedModel.id.toString(),
+                        resolvedModelSlug = inheritedModel.modelId,
+                        providerName = inheritedProvider?.name,
+                        providerType = inheritedProvider?.providerTypeName,
+                        endpoint = inheritedProvider?.endpointUrl,
+                        fallbackReason = fallbackReason,
                     )
                 }
-                defaultModel.id
+                inheritedModel.id
             }
             is SubAgentModelResolver.Result.Resolved -> {
                 registry.update(runId) {
@@ -650,19 +697,18 @@ class SubAgentEngine(
             if (dispatchPrompt != null) add(dispatchPrompt)
         }.takeIf { it.isNotEmpty() }?.joinToString("\n\n---\n\n") ?: DEFAULT_SUBAGENT_SYSTEM_PROMPT
 
+        val actualModel = if (resolvedChatModelId != null) settings.findModelById(resolvedChatModelId) else null
         val actualModelName = if (modelResolution is SubAgentModelResolver.Result.Resolved) {
             modelResolution.displayName.ifBlank { modelResolution.modelSlug }
         } else {
-            val defaultModel = settings.getCurrentChatModel()
-            defaultModel?.displayName?.takeIf { it.isNotBlank() }
-                ?: defaultModel?.modelId?.takeIf { it.isNotBlank() }
+            actualModel?.displayName?.takeIf { it.isNotBlank() }
+                ?: actualModel?.modelId?.takeIf { it.isNotBlank() }
                 ?: "default"
         }
         val actualProviderName = if (modelResolution is SubAgentModelResolver.Result.Resolved) {
             modelResolution.providerName
         } else {
-            val defaultModel = settings.getCurrentChatModel()
-            defaultModel?.findProvider(settings.providers)?.name ?: "default"
+            actualModel?.findProvider(settings.providers)?.name ?: "default"
         }
 
         val identityBanner = if (profile != null) {
