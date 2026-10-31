@@ -121,7 +121,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Retain only 10 most recent successful workflow runs and eliminate failed runs
+      - name: Retain only 7 most recent successful workflow runs and eliminate failed runs
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -133,12 +133,12 @@ jobs:
             gh run delete "$RUN_ID" --repo "${{ github.repository }}" || true
           done
 
-          echo "Pruning older successful runs to keep at most 10..."
+          echo "Pruning older successful runs to keep at most 7..."
           SUCCESS_RUN_IDS=$(gh run list --repo "${{ github.repository }}" --limit 100 --json databaseId,status,conclusion --jq '.[] | select(.status == "completed" and .conclusion == "success") | .databaseId')
           INDEX=0
           for RUN_ID in $SUCCESS_RUN_IDS; do
             INDEX=$((INDEX + 1))
-            if [ "$INDEX" -gt 10 ]; then
+            if [ "$INDEX" -gt 7 ]; then
               echo "Deleting old successful run $RUN_ID..."
               gh run delete "$RUN_ID" --repo "${{ github.repository }}" || true
             fi
