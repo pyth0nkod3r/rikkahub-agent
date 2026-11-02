@@ -69,7 +69,6 @@ import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.util.DEFAULT_MAX_TOOLS_SOFT_CAP
 import me.rerere.ai.util.UpstreamContextRegistry
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
@@ -999,7 +998,7 @@ private fun ChatHarnessInspectorSheet(
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(
-                            text = "Tool Soft Cap: ${assistant.maxTools ?: DEFAULT_MAX_TOOLS_SOFT_CAP} tools/turn",
+                            text = "Tool Soft Cap: ${assistant.maxTools ?: 128} tools/turn",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         if (!conversation.workspaceCwd.isNullOrBlank()) {
