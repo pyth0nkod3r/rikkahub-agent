@@ -365,4 +365,38 @@ class ChatServiceTest {
         assertSame(fresh, result)
         assertSame(fresh, recorded)
     }
+
+    @Test
+    fun `resolveAuxiliaryModelCandidates includes enabled on-device AICore model and falls back to remote model`() {
+        val remoteModel = Model(modelId = "gpt-4o")
+        val aicoreProvider = ProviderSetting.AICore(enabled = true)
+        val remoteProvider = ProviderSetting.OpenAI(enabled = true, name = "OpenAI", models = listOf(remoteModel))
+        val settings = Settings(
+            fastModelId = DEFAULT_AUTO_MODEL_ID,
+            chatModelId = remoteModel.id,
+            providers = listOf(aicoreProvider, remoteProvider),
+        )
+
+        val candidates = resolveAuxiliaryModelCandidates(settings, conversationModel = remoteModel)
+
+        assertTrue(candidates.isNotEmpty())
+        assertEquals("nano-fast", candidates.first().modelId)
+        assertTrue(candidates.any { it.id == remoteModel.id })
+    }
+
+    @Test
+    fun `resolveAuxiliaryModelCandidates uses remote model when on-device AICore is disabled`() {
+        val remoteModel = Model(modelId = "gpt-4o")
+        val aicoreProvider = ProviderSetting.AICore(enabled = false)
+        val remoteProvider = ProviderSetting.OpenAI(enabled = true, name = "OpenAI", models = listOf(remoteModel))
+        val settings = Settings(
+            fastModelId = DEFAULT_AUTO_MODEL_ID,
+            chatModelId = remoteModel.id,
+            providers = listOf(aicoreProvider, remoteProvider),
+        )
+
+        val candidates = resolveAuxiliaryModelCandidates(settings, conversationModel = remoteModel)
+
+        assertEquals(listOf(remoteModel), candidates)
+    }
 }

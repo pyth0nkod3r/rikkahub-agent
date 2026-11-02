@@ -118,11 +118,18 @@ enum class SubAgentCapability(
     }
 }
 
+const val DEFAULT_SUBAGENT_MAX_STEPS = 24
+const val DEFAULT_SUBAGENT_TOKEN_BUDGET = 160_000
+
 /**
- * The resolved tool allow-list for one sub-agent run. workspace_ tools are always allowed.
- * Everything else must be a named role tool or belong to a granted capability.
+ * The resolved tool allow-list and execution budget for one sub-agent run. workspace_ tools are
+ * always allowed. Everything else must be a named role tool or belong to a granted capability.
  */
-class SubAgentToolPolicy(private val allowedNames: Set<String>) {
+class SubAgentToolPolicy(
+    private val allowedNames: Set<String>,
+    val maxSteps: Int = DEFAULT_SUBAGENT_MAX_STEPS,
+    val maxTokensBudget: Int = DEFAULT_SUBAGENT_TOKEN_BUDGET,
+) {
     fun allows(toolName: String): Boolean = isWorkspaceToolName(toolName) || toolName == me.rerere.ai.util.MANAGE_ACTIVE_TOOLS_NAME || toolName in allowedNames
 }
 
@@ -139,6 +146,8 @@ sealed class SubAgentPolicyBuild {
 fun buildSubAgentToolPolicy(
     roleTools: Collection<String>,
     capabilities: Collection<String>,
+    maxSteps: Int = DEFAULT_SUBAGENT_MAX_STEPS,
+    maxTokensBudget: Int = DEFAULT_SUBAGENT_TOKEN_BUDGET,
 ): SubAgentPolicyBuild {
     val requested = capabilities.map { it.trim() }.filter { it.isNotEmpty() }
     val unknown = requested.filter { SubAgentCapability.fromWire(it) == null }
@@ -148,7 +157,13 @@ fun buildSubAgentToolPolicy(
     requested.forEach { wire ->
         SubAgentCapability.fromWire(wire)?.let { names += it.toolNames }
     }
-    return SubAgentPolicyBuild.Ok(SubAgentToolPolicy(names))
+    return SubAgentPolicyBuild.Ok(
+        SubAgentToolPolicy(
+            allowedNames = names,
+            maxSteps = maxSteps.coerceIn(1, 100),
+            maxTokensBudget = maxTokensBudget.coerceAtLeast(4_096),
+        )
+    )
 }
 
 /**

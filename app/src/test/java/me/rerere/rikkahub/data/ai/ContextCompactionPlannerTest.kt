@@ -463,6 +463,44 @@ class ContextCompactionPlannerTest {
         assertTrue(widened > rawTailStartIndex)
     }
 
+    @Test
+    fun `compactionRequestMaxTokens provides reasoning-safe headroom`() {
+        assertEquals(4_096, ContextCompactionPlanner.compactionRequestMaxTokens(1_000))
+        assertEquals(8_000, ContextCompactionPlanner.compactionRequestMaxTokens(2_000))
+        assertEquals(16_384, ContextCompactionPlanner.compactionRequestMaxTokens(8_000))
+    }
+
+    @Test
+    fun `extractSummaryText strips inline think tags and falls back to reasoning part`() {
+        val withInlineThink = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(UIMessagePart.Text("<think>internal analysis</think>\nFinal concise summary")),
+        )
+        assertEquals("Final concise summary", ContextCompactionPlanner.extractSummaryText(withInlineThink))
+
+        val reasoningOnly = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.Reasoning(reasoning = "Reasoning model put summary here"),
+                UIMessagePart.Text("   "),
+            ),
+        )
+        assertEquals(
+            "Reasoning model put summary here",
+            ContextCompactionPlanner.extractSummaryText(reasoningOnly),
+        )
+    }
+
+    @Test
+    fun `deterministicFallbackSummary extracts structured summary when LLM calls fail`() {
+        val fallback = ContextCompactionPlanner.deterministicFallbackSummary(
+            sources = listOf("User: Fix npm run qa race condition", "Assistant: Investigating vi.unstubAllGlobals()"),
+            targetTokens = 500,
+        )
+        assertTrue(fallback.contains("Conversation Summary (Extractive Fallback)"))
+        assertTrue(fallback.contains("vi.unstubAllGlobals()"))
+    }
+
     private fun toolMessage(name: String) = UIMessage(
         role = MessageRole.ASSISTANT,
         parts = listOf(

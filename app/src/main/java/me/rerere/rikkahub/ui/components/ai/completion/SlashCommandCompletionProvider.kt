@@ -17,38 +17,45 @@ class SlashCommandCompletionProvider(
         val query = command.query.lowercase()
         val mode = currentMode()
 
-        val items = when (mode) {
-            AgentMode.BUILD -> {
-                // In Build mode, ONLY suggest /plan
-                if ("plan".startsWith(query)) {
-                    listOf(
-                        ChatCompletionItem(
-                            label = "/plan",
-                            insertText = "/plan",
-                            detail = "Switch to Plan mode (analyze and design without modifying files)",
-                            icon = HugeIcons.Edit03,
-                            sortScore = 1000,
+        val items = buildList {
+            when (mode) {
+                AgentMode.BUILD -> {
+                    if ("plan".startsWith(query)) {
+                        add(
+                            ChatCompletionItem(
+                                label = "/plan",
+                                insertText = "/plan",
+                                detail = "Switch to Plan mode (analyze and design without modifying files)",
+                                icon = HugeIcons.Edit03,
+                                sortScore = 1000,
+                            )
                         )
-                    )
-                } else {
-                    emptyList()
+                    }
+                }
+                AgentMode.PLAN -> {
+                    if ("build".startsWith(query)) {
+                        add(
+                            ChatCompletionItem(
+                                label = "/build",
+                                insertText = "/build",
+                                detail = "Switch to Build mode (default agent execution and editing)",
+                                icon = HugeIcons.Tools,
+                                sortScore = 1000,
+                            )
+                        )
+                    }
                 }
             }
-            AgentMode.PLAN -> {
-                // In Plan mode, ONLY suggest /build
-                if ("build".startsWith(query)) {
-                    listOf(
-                        ChatCompletionItem(
-                            label = "/build",
-                            insertText = "/build",
-                            detail = "Switch to Build mode (default agent execution and editing)",
-                            icon = HugeIcons.Tools,
-                            sortScore = 1000,
-                        )
+            if ("compact".startsWith(query)) {
+                add(
+                    ChatCompletionItem(
+                        label = "/compact",
+                        insertText = "/compact",
+                        detail = "Compress older conversation history into a summary to free context tokens",
+                        icon = HugeIcons.Tools,
+                        sortScore = 950,
                     )
-                } else {
-                    emptyList()
-                }
+                )
             }
         }
 

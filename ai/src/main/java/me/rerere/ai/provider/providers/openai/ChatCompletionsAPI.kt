@@ -51,6 +51,7 @@ import me.rerere.ai.ui.metadataAs
 import me.rerere.ai.ui.toMetadata
 import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.UpstreamContextRegistry
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
@@ -115,12 +116,72 @@ class ChatCompletionsAPI(
         }
 
         val response = client.newCall(request).await()
+        UpstreamContextRegistry.recordFromHeaders(
+            modelId = params.model.modelId,
+            headers = response.headers,
+            providerId = providerSetting.id.toString(),
+        )
+        val bodyStr = response.body.string()
         if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+            UpstreamContextRegistry.recordFromError(
+                modelId = params.model.modelId,
+                errorText = bodyStr,
+                providerId = providerSetting.id.toString(),
+            )
+            val parsedError = runCatching {
+                json.parseToJsonElement(bodyStr).parseErrorDetail(statusCode = response.code)
+            }.getOrNull()
+            throw parsedError ?: HttpException(
+                "HTTP ${response.code}: ${bodyStr.take(300).replace(Regex("<[^>]*>"), " ").trim().ifBlank { response.message }}",
+                statusCode = response.code,
+            )
         }
 
-        val bodyStr = response.body.string()
+        val trimmedBody = bodyStr.trim()
+        if (trimmedBody.startsWith("data:")) {
+            val decoder = ChatCompletionsStreamDecoder()
+            val chunks = mutableListOf<StreamChunk>()
+            trimmedBody.lineSequence()
+                .map { it.trim() }
+                .filter { it.startsWith("data:") }
+                .forEach { line ->
+                    val data = line.removePrefix("data:").trim()
+                    if (data.isNotEmpty()) {
+                        chunks += decoder.accept(SseEvent(data = data)).chunks
+                    }
+                }
+            chunks += decoder.onClosed()
+            val textContent = chunks.filterIsInstance<StreamChunk.TextDelta>().joinToString("") { it.text }
+            val reasoningContent = chunks.filterIsInstance<StreamChunk.ReasoningDelta>().joinToString("") { it.reasoning }
+            val finishChunk = chunks.filterIsInstance<StreamChunk.Finish>().lastOrNull()
+            return@withContext TextGenerationResult(
+                id = finishChunk?.responseId ?: "sse_${System.currentTimeMillis()}",
+                model = finishChunk?.model ?: params.model.modelId,
+                message = UIMessage(
+                    role = MessageRole.ASSISTANT,
+                    parts = buildList {
+                        if (reasoningContent.isNotEmpty()) {
+                            add(UIMessagePart.Reasoning(reasoning = reasoningContent, createdAt = Clock.System.now(), finishedAt = Clock.System.now()))
+                        }
+                        if (textContent.isNotEmpty()) {
+                            add(UIMessagePart.Text(textContent))
+                        }
+                    }
+                ),
+                finishReason = finishChunk?.finishReason ?: "stop",
+                usage = finishChunk?.usage,
+            )
+        }
+
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+        bodyJson["error"]?.let {
+            UpstreamContextRegistry.recordFromError(
+                modelId = params.model.modelId,
+                errorText = bodyStr,
+                providerId = providerSetting.id.toString(),
+            )
+            throw it.parseErrorDetail(statusCode = response.code)
+        }
 
         // Handle decision model response if returned (e.g. from Apinex or OpenRouter)
         if (bodyJson["object"]?.jsonPrimitive?.contentOrNull == "decision" || bodyJson["answers"] != null) {
@@ -140,12 +201,13 @@ class ChatCompletionsAPI(
         // 从 JsonObject 中提取必要的信息
         val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
         val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
-        val choice = bodyJson["choices"]?.jsonArray?.get(0)?.jsonObject ?: error("choices is null")
+        val choice = bodyJson["choices"]?.jsonArray?.firstOrNull()?.jsonObject ?: error("choices is null")
 
-        val message = choice["message"]?.jsonObject ?: throw Exception("message is null")
+        val message = (choice["message"]?.jsonObject ?: choice["delta"]?.jsonObject)
+            ?: throw Exception("message is null")
         val finishReason = choice["finish_reason"]
-            ?.jsonPrimitive
-            ?.content
+            ?.jsonPrimitiveOrNull
+            ?.contentOrNull
             ?: "unknown"
         val usage = parseTokenUsage(bodyJson["usage"] as? JsonObject)
 
@@ -198,6 +260,14 @@ class ChatCompletionsAPI(
         }
 
         val listener = object : EventSourceListener() {
+            override fun onOpen(eventSource: EventSource, response: Response) {
+                UpstreamContextRegistry.recordFromHeaders(
+                    modelId = params.model.modelId,
+                    headers = response.headers,
+                    providerId = providerSetting.id.toString(),
+                )
+            }
+
             override fun onEvent(
                 eventSource: EventSource,
                 id: String?,
@@ -226,6 +296,18 @@ class ChatCompletionsAPI(
                 Log.w(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response", t)
 
                 val bodyRaw = response?.body?.stringSafe()
+                if (response != null) {
+                    UpstreamContextRegistry.recordFromHeaders(
+                        modelId = params.model.modelId,
+                        headers = response.headers,
+                        providerId = providerSetting.id.toString(),
+                    )
+                }
+                UpstreamContextRegistry.recordFromError(
+                    modelId = params.model.modelId,
+                    errorText = bodyRaw ?: t?.message,
+                    providerId = providerSetting.id.toString(),
+                )
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)

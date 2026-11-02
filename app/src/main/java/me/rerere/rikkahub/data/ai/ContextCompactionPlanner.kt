@@ -42,6 +42,11 @@ internal object ContextCompactionPlanner {
      * setting is allowed to bypass this ceiling because it is the user's declared model limit.
      */
     private const val MAX_MAP_INPUT_TOKENS = 100_000
+    private const val MIN_REASONING_SAFE_OUTPUT_TOKENS = 4_096
+    private val inlineThinkBlockPattern = Regex(
+        "<think>.*?</think>",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
+    )
 
     fun inputBudgetTokens(
         contextLength: Int?,
@@ -313,6 +318,67 @@ internal object ContextCompactionPlanner {
             .coerceAtMost(Int.MAX_VALUE.toLong())
             .toInt()
         return distributed.coerceAtMost(maxPerRequestTokens).coerceAtLeast(256)
+    }
+
+    /**
+     * Computes the HTTP `max_tokens` ceiling for a single compression request.
+     *
+     * Reasoning-capable models and OpenAI-compatible proxies count internal `reasoning_content`
+     * against `max_tokens`. Passing a small target (e.g. 256-1,000 tokens) directly as `max_tokens`
+     * causes the model to exhaust its entire budget while thinking (`finish_reason = "length"`)
+     * before emitting any visible [UIMessagePart.Text]. The desired summary length is already
+     * enforced in the prompt via `target_tokens`, so `max_tokens` is given reasoning headroom.
+     */
+    fun compactionRequestMaxTokens(
+        requestedTargetTokens: Int,
+        maxPerRequestTokens: Int = 16_384,
+        minReasoningSafeTokens: Int = MIN_REASONING_SAFE_OUTPUT_TOKENS,
+    ): Int {
+        val target = requestedTargetTokens.coerceAtLeast(256)
+        return (target.toLong() * 4L)
+            .coerceAtLeast(minReasoningSafeTokens.toLong())
+            .coerceAtMost(maxPerRequestTokens.coerceAtLeast(target).toLong())
+            .toInt()
+    }
+
+    /**
+     * Extracts usable summary text from a compression model response.
+     *
+     * Prefers visible [UIMessagePart.Text] (with any inline `<think>...</think>` blocks stripped),
+     * and falls back to [UIMessagePart.Reasoning] when a proxy or reasoning model places its entire
+     * response inside `reasoning_content`.
+     */
+    fun extractSummaryText(message: UIMessage): String? {
+        val rawText = message.toText().trim()
+        if (rawText.isNotBlank()) {
+            val stripped = inlineThinkBlockPattern.replace(rawText, "").trim()
+            return stripped.ifBlank {
+                rawText.substringAfterLast("</think>", missingDelimiterValue = rawText).trim()
+            }.takeIf { it.isNotBlank() }
+        }
+        val reasoningText = message.parts
+            .filterIsInstance<UIMessagePart.Reasoning>()
+            .joinToString("\n") { it.reasoning.trim() }
+            .trim()
+        if (reasoningText.isNotBlank()) {
+            val cleaned = inlineThinkBlockPattern.replace(reasoningText, "").trim()
+            return cleaned.takeIf { it.isNotBlank() }
+        }
+        return null
+    }
+
+    /**
+     * Deterministic extractive fallback used when every LLM compression attempt fails or returns
+     * empty output, ensuring context compaction never dead-ends an overflowing conversation.
+     */
+    fun deterministicFallbackSummary(
+        sources: List<String>,
+        targetTokens: Int,
+    ): String {
+        val nonBlank = sources.map { it.trim() }.filter { it.isNotBlank() }
+        if (nonBlank.isEmpty()) return ""
+        val combined = nonBlank.joinToString("\n\n")
+        return truncateToTokenBudget(combined, targetTokens.coerceAtLeast(256))
     }
 
     /**

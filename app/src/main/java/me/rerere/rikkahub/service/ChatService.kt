@@ -50,15 +50,18 @@ import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.appendChunk
 import me.rerere.ai.ui.canResumeToolExecution
 import me.rerere.ai.ui.finishPendingTools
 import me.rerere.ai.ui.finishReasoning
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.ai.ui.limitContext
+import me.rerere.ai.util.UpstreamContextRegistry
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
 import android.app.PendingIntent
@@ -208,33 +211,121 @@ internal fun backgroundTextGenerationParams(
 /**
  * Resolve the compression model's usable context ceiling. The token-threshold setting is an
  * explicit user-controlled limit when that mode is selected, which also covers providers such
- * as Codex whose model list does not publish context metadata.
+ * as Codex whose model list does not publish context metadata. When in percent mode and the
+ * model's static metadata omits `contextLength`, consults [UpstreamContextRegistry] for
+ * dynamically observed upstream context limits.
  */
 internal fun compactionContextLength(settings: Settings, model: Model): Int? =
     settings.getCompactionContextLength(model)
+        ?: UpstreamContextRegistry.resolveContextLength(model)
+
+internal fun isOnDeviceProvider(provider: ProviderSetting): Boolean =
+    provider is ProviderSetting.AICore ||
+        provider is ProviderSetting.LiteRtLocal ||
+        provider is ProviderSetting.LlamaCppLocal
 
 /**
- * Resolve the model to compress against. `settings.compressModelId` defaults to (and is
+ * Returns an ordered list of usable candidate models for context compaction.
+ *
+ * Order:
+ * 1. Explicit `settings.compressModelId` (when not Auto and on an enabled provider)
+ * 2. Active `conversationModel` (when usable)
+ * 3. Global `settings.getCurrentChatModel()`
+ * 4. Enabled remote provider models
+ * 5. Enabled on-device SLM provider models (AICore / LiteRT / llama.cpp)
+ */
+internal fun resolveCompressionModelCandidates(
+    settings: Settings,
+    conversationModel: Model? = null,
+): List<Model> {
+    fun Model.takeIfUsable(): Model? {
+        if (id == DEFAULT_AUTO_MODEL_ID) return null
+        val provider = findProvider(settings.providers) ?: return null
+        if (!provider.enabled) return null
+        if (provider is ProviderSetting.LiteRtLocal && provider.modelPath.isBlank()) return null
+        if (provider is ProviderSetting.LlamaCppLocal && provider.modelPath.isBlank()) return null
+        return this
+    }
+
+    val candidates = mutableListOf<Model>()
+    fun addUnique(model: Model?) {
+        val usable = model?.takeIfUsable() ?: return
+        if (candidates.none { it.id == usable.id }) {
+            candidates.add(usable)
+        }
+    }
+
+    addUnique(settings.findModelById(settings.compressModelId))
+    addUnique(conversationModel)
+    addUnique(settings.getCurrentChatModel())
+    settings.providers
+        .filter { it.enabled && !isOnDeviceProvider(it) }
+        .flatMap { it.models }
+        .forEach { addUnique(it) }
+    settings.providers
+        .filter { it.enabled && isOnDeviceProvider(it) }
+        .flatMap { it.models }
+        .forEach { addUnique(it) }
+    return candidates
+}
+
+/**
+ * Resolve the primary model to compress against. `settings.compressModelId` defaults to (and is
  * user-selectable as) the "Auto" placeholder, a literal [Model] owned by the built-in
  * "RikkaHub" provider, which ships disabled — so resolving it as a real model and then
  * discovering its provider is disabled used to surface as an opaque failure. Falls through, in
  * order: the configured model (unless it's the Auto placeholder or its provider is disabled),
- * the current chat model (same guard), then the first model belonging to any enabled provider.
- * Returns null only when none of those is usable.
+ * the active conversation model, the current chat model, then the first model belonging to any
+ * enabled provider. Returns null only when none of those is usable.
  */
-internal fun resolveCompressionModel(settings: Settings): Model? {
+internal fun resolveCompressionModel(
+    settings: Settings,
+    conversationModel: Model? = null,
+): Model? = resolveCompressionModelCandidates(settings, conversationModel).firstOrNull()
+
+/**
+ * Resolves ordered model candidates for lightweight auxiliary tasks (title generation,
+ * follow-up suggestions, etc.).
+ *
+ * Supports optional on-device SLMs (AICore / Gemini Nano / LiteRT / llama.cpp GGUF) when
+ * enabled, and automatically falls back to remote API models (`conversationModel`,
+ * `getCurrentChatModel()`, or any enabled remote provider) when no local/on-device model is
+ * configured/detected or if local inference fails at runtime.
+ */
+internal fun resolveAuxiliaryModelCandidates(
+    settings: Settings,
+    primaryModelId: Uuid? = settings.fastModelId,
+    conversationModel: Model? = null,
+): List<Model> {
     fun Model.takeIfUsable(): Model? {
         if (id == DEFAULT_AUTO_MODEL_ID) return null
         val provider = findProvider(settings.providers) ?: return null
-        return if (provider.enabled) this else null
+        if (!provider.enabled) return null
+        if (provider is ProviderSetting.LiteRtLocal && provider.modelPath.isBlank()) return null
+        if (provider is ProviderSetting.LlamaCppLocal && provider.modelPath.isBlank()) return null
+        return this
     }
 
-    settings.findModelById(settings.compressModelId)?.takeIfUsable()?.let { return it }
-    settings.getCurrentChatModel()?.takeIfUsable()?.let { return it }
-    return settings.providers
-        .filter { it.enabled }
+    val candidates = mutableListOf<Model>()
+    fun addUnique(model: Model?) {
+        val usable = model?.takeIfUsable() ?: return
+        if (candidates.none { it.id == usable.id }) {
+            candidates.add(usable)
+        }
+    }
+
+    addUnique(settings.findModelById(primaryModelId))
+    settings.providers
+        .filter { it.enabled && isOnDeviceProvider(it) }
         .flatMap { it.models }
-        .firstNotNullOfOrNull { it.takeIfUsable() }
+        .forEach { addUnique(it) }
+    addUnique(conversationModel)
+    addUnique(settings.getCurrentChatModel())
+    settings.providers
+        .filter { it.enabled && !isOnDeviceProvider(it) }
+        .flatMap { it.models }
+        .forEach { addUnique(it) }
+    return candidates
 }
 
 /** Message for the compression failure thrown when [resolveCompressionModel] finds nothing
@@ -2392,34 +2483,55 @@ class ChatService(
         }
 
         runCatching {
-            val model = settings.findModelById(settings.fastModelId)
-                ?: run { applyTitle(fallback); return@runCatching }
-            val provider = model.findProvider(settings.providers)
-                ?: run { applyTitle(fallback); return@runCatching }
-            // Same defence as handleLlmTurn: don't burn tokens on a disabled provider.
-            if (!provider.enabled) {
+            val conversationModel = settings.findModelById(
+                conversation.chatModelId
+                    ?: settings.getAssistantById(conversation.assistantId)?.chatModelId
+                    ?: settings.chatModelId
+            )
+            val candidates = resolveAuxiliaryModelCandidates(
+                settings = settings,
+                primaryModelId = settings.fastModelId,
+                conversationModel = conversationModel,
+            )
+            if (candidates.isEmpty()) {
                 applyTitle(fallback)
                 return@runCatching
             }
 
-            val providerHandler = usageRecorder.wrap(
-                providerManager.getProviderByType(provider),
-                UsageTag(UsageSource.TITLE, assistantId = null, conversationId = conversationId),
+            val promptText = settings.titlePrompt.applyPlaceholders(
+                "locale" to Locale.getDefault().displayName,
+                "content" to conversation.currentMessages
+                    .takeLast(4).joinToString("\n\n") { it.summaryAsText(maxLength = 500) }
             )
-            val result = providerHandler.generateText(
-                providerSetting = provider,
-                messages = listOf(
-                    UIMessage.user(
-                        prompt = settings.titlePrompt.applyPlaceholders(
-                            "locale" to Locale.getDefault().displayName,
-                            "content" to conversation.currentMessages
-                                .takeLast(4).joinToString("\n\n") { it.summaryAsText(maxLength = 500) })
-                    ),
-                ),
-                params = backgroundTextGenerationParams(model, settings.fastModelReasoningLevel),
-            )
+            var generatedTitle: String? = null
+            for (candidateModel in candidates.take(3)) {
+                val provider = candidateModel.findProvider(settings.providers)
+                    ?.takeIf { it.enabled }
+                    ?: continue
+                val attempt = runCatching {
+                    val providerHandler = usageRecorder.wrap(
+                        providerManager.getProviderByType(provider),
+                        UsageTag(UsageSource.TITLE, assistantId = null, conversationId = conversationId),
+                    )
+                    val result = providerHandler.generateText(
+                        providerSetting = provider,
+                        messages = listOf(UIMessage.user(prompt = promptText)),
+                        params = backgroundTextGenerationParams(candidateModel, settings.fastModelReasoningLevel),
+                    )
+                    (ContextCompactionPlanner.extractSummaryText(result.message) ?: result.message.toText())
+                        .lineSequence()
+                        .map { it.trim() }
+                        .firstOrNull { it.isNotBlank() }
+                }.onFailure { err ->
+                    Log.w(TAG, "generateTitle candidate ${candidateModel.modelId} failed, trying fallback", err)
+                }.getOrNull()
+                if (!attempt.isNullOrBlank()) {
+                    generatedTitle = attempt
+                    break
+                }
+            }
 
-            applyTitle(result.message.toText().trim().ifBlank { fallback })
+            applyTitle(generatedTitle?.ifBlank { null } ?: fallback)
         }.onFailure {
             // Title generation is auxiliary — a failure here doesn't block the chat
             // and surfaces visibly as a blank conversation title in the list. Don't
@@ -2442,11 +2554,17 @@ class ChatService(
         runCatching {
             val settings = settingsStore.settingsFlow.first()
             if (!settings.enableSuggestion) return@runCatching
-            val model = settings.findModelById(settings.fastModelId)
-                ?: return@runCatching
-            val provider = model.findProvider(settings.providers) ?: return@runCatching
-            // Same defence as handleLlmTurn: don't burn tokens on a disabled provider.
-            if (!provider.enabled) return@runCatching
+            val conversationModel = settings.findModelById(
+                conversation.chatModelId
+                    ?: settings.getAssistantById(conversation.assistantId)?.chatModelId
+                    ?: settings.chatModelId
+            )
+            val candidates = resolveAuxiliaryModelCandidates(
+                settings = settings,
+                primaryModelId = settings.fastModelId,
+                conversationModel = conversationModel,
+            )
+            if (candidates.isEmpty()) return@runCatching
 
             sessions[conversationId]?.let { session ->
                 updateConversation(
@@ -2455,25 +2573,39 @@ class ChatService(
                 )
             }
 
-            val providerHandler = usageRecorder.wrap(
-                providerManager.getProviderByType(provider),
-                UsageTag(UsageSource.SUGGESTION, assistantId = null, conversationId = conversationId),
+            val promptText = settings.suggestionPrompt.applyPlaceholders(
+                "locale" to Locale.getDefault().displayName,
+                "content" to conversation.currentMessages
+                    .takeLast(8).joinToString("\n\n") { it.summaryAsText(maxLength = 500) }
             )
-            val result = providerHandler.generateText(
-                providerSetting = provider,
-                messages = listOf(
-                    UIMessage.user(
-                        settings.suggestionPrompt.applyPlaceholders(
-                            "locale" to Locale.getDefault().displayName,
-                            "content" to conversation.currentMessages
-                                .takeLast(8).joinToString("\n\n") { it.summaryAsText(maxLength = 500) }),
+            var suggestions: List<String> = emptyList()
+            for (candidateModel in candidates.take(3)) {
+                val provider = candidateModel.findProvider(settings.providers)
+                    ?.takeIf { it.enabled }
+                    ?: continue
+                val attempt = runCatching {
+                    val providerHandler = usageRecorder.wrap(
+                        providerManager.getProviderByType(provider),
+                        UsageTag(UsageSource.SUGGESTION, assistantId = null, conversationId = conversationId),
                     )
-                ),
-                params = backgroundTextGenerationParams(model, settings.fastModelReasoningLevel),
-            )
-            val suggestions =
-                result.message.toText().split("\n").map { it.trim() }
-                    .filter { it.isNotBlank() }
+                    val result = providerHandler.generateText(
+                        providerSetting = provider,
+                        messages = listOf(UIMessage.user(promptText)),
+                        params = backgroundTextGenerationParams(candidateModel, settings.fastModelReasoningLevel),
+                    )
+                    (ContextCompactionPlanner.extractSummaryText(result.message) ?: result.message.toText())
+                        .split("\n")
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                }.onFailure { err ->
+                    Log.w(TAG, "generateSuggestion candidate ${candidateModel.modelId} failed, trying fallback", err)
+                }.getOrNull()
+                if (!attempt.isNullOrEmpty()) {
+                    suggestions = attempt
+                    break
+                }
+            }
+            if (suggestions.isEmpty()) return@runCatching
 
             val latestConversation = conversationRepo.getConversationById(conversationId)
                 ?: sessions[conversationId]?.state?.value
@@ -2521,7 +2653,14 @@ class ChatService(
         // to avoid HTTP 400 / 502 payload-too-large errors.
         val triggerTokens = automaticCompactionTriggerTokens(settings, model)
         val shouldForceForContextLength = if (!force && triggerTokens != null) {
-            val estimatedTokens = ContextBudgetPlanner.estimateContextTokens(view.messages)
+            val estimatedTokens = if (view.compaction == null) {
+                maxOf(
+                    ContextBudgetPlanner.estimateInputTokens(view.messages),
+                    ContextBudgetPlanner.estimateContextTokens(view.messages),
+                )
+            } else {
+                ContextBudgetPlanner.estimateContextTokens(view.messages)
+            }
             estimatedTokens >= triggerTokens
         } else false
 
@@ -2727,7 +2866,7 @@ class ChatService(
 
     private fun automaticCompactionTriggerTokens(settings: Settings, model: Model): Int? =
         when (settings.autoCompactionThresholdMode) {
-            AutoCompactionThresholdMode.PERCENT -> model.contextLength
+            AutoCompactionThresholdMode.PERCENT -> UpstreamContextRegistry.resolveContextLength(model)
                 ?.takeIf { it > 0 }
                 ?.let { length ->
                     (length.toLong() * settings.autoCompactionThresholdPercent
@@ -2794,15 +2933,18 @@ class ChatService(
                 // Existing compactions already cover the raw prefix. Advance their boundary only;
                 // regenerating from all raw history is both needlessly expensive and can overflow
                 // the compression model before it gets a chance to summarize anything.
-                val rawTailStartIndex = maxOf(
-                    currentView.rawTailStartIndex,
-                    requestedTailStart,
-                )
+                // If an existing compaction already covers up to or beyond requestedTailStart,
+                // fold the remaining messages into the summary so manual compression still makes progress.
+                val rawTailStartIndex = if (requestedTailStart > currentView.rawTailStartIndex) {
+                    requestedTailStart
+                } else {
+                    allMessages.size
+                }
                 val messagesToCompress = buildList {
                     currentView.compaction?.let { add(ContextCompactionView.summaryMessage(it)) }
                     addAll(
                         allMessages.subList(
-                            currentView.rawTailStartIndex,
+                            currentView.rawTailStartIndex.coerceAtMost(rawTailStartIndex),
                             rawTailStartIndex,
                         )
                     )
@@ -2876,7 +3018,13 @@ class ChatService(
             "Invalid compaction boundary"
         }
 
-        val model = resolveCompressionModel(settings)
+        val conversationModel = settings.findModelById(
+            conversation.chatModelId
+                ?: settings.getAssistantById(conversation.assistantId)?.chatModelId
+                ?: settings.chatModelId
+        )
+        val candidateModels = resolveCompressionModelCandidates(settings, conversationModel)
+        val model = candidateModels.firstOrNull()
             ?: throw IllegalStateException(compressionModelUnavailableMessage())
         val provider = model.findProvider(settings.providers)
             ?: throw IllegalStateException("Provider not found")
@@ -2890,10 +3038,6 @@ class ChatService(
             )
         }
 
-        val providerHandler = usageRecorder.wrap(
-            providerManager.getProviderByType(provider),
-            UsageTag(UsageSource.COMPRESSION, assistantId = null, conversationId = conversation.id),
-        )
         // In token-threshold mode the user has supplied an explicit request-size ceiling for
         // this model family. Prefer it over missing/stale provider metadata. In percent mode we
         // still use the model's advertised context, falling back to the planner's conservative
@@ -2956,19 +3100,79 @@ class ChatService(
                 )
             }
 
-            val result = withTimeout(COMPACTION_REQUEST_TIMEOUT_MS) {
-                providerHandler.generateText(
-                    providerSetting = provider,
-                    messages = listOf(UIMessage.user(prompt)),
-                    params = backgroundTextGenerationParams(model).copy(
-                        maxTokens = requestedTargetTokens,
-                    ),
+            // Provide reasoning-safe token headroom (4x requestedTargetTokens, min 4096) so
+            // reasoning models do not exhaust max_tokens inside <think> / reasoning_content
+            // before emitting the actual summary text.
+            val requestMaxTokens = ContextCompactionPlanner.compactionRequestMaxTokens(
+                requestedTargetTokens = requestedTargetTokens,
+                maxPerRequestTokens = COMPACTION_MAX_REQUEST_OUTPUT_TOKENS,
+            )
+
+            for (candidateModel in candidateModels.take(3)) {
+                val candidateProvider = candidateModel.findProvider(settings.providers)
+                    ?.takeIf { it.enabled }
+                    ?: continue
+                val candidateHandler = usageRecorder.wrap(
+                    providerManager.getProviderByType(candidateProvider),
+                    UsageTag(UsageSource.COMPRESSION, assistantId = null, conversationId = conversation.id),
                 )
+                val params = backgroundTextGenerationParams(candidateModel).copy(
+                    maxTokens = requestMaxTokens,
+                )
+
+                val directSummary = runCatching {
+                    withTimeout(COMPACTION_REQUEST_TIMEOUT_MS) {
+                        val result = candidateHandler.generateText(
+                            providerSetting = candidateProvider,
+                            messages = listOf(UIMessage.user(prompt)),
+                            params = params,
+                        )
+                        ContextCompactionPlanner.extractSummaryText(result.message)
+                    }
+                }.onFailure { err ->
+                    Log.w(TAG, "Compaction generateText failed on ${candidateModel.modelId}", err)
+                }.getOrNull()
+
+                if (!directSummary.isNullOrBlank()) {
+                    return directSummary
+                }
+
+                // Fallback to streamText for reverse proxies that reject or return empty bodies
+                // on non-streaming requests.
+                if (!isOnDeviceProvider(candidateProvider)) {
+                    val streamedSummary = runCatching {
+                        withTimeout(COMPACTION_REQUEST_TIMEOUT_MS) {
+                            var streamedMessage = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())
+                            candidateHandler.streamText(
+                                providerSetting = candidateProvider,
+                                messages = listOf(UIMessage.user(prompt)),
+                                params = params,
+                            ).collect { chunk ->
+                                streamedMessage = streamedMessage.appendChunk(chunk)
+                            }
+                            ContextCompactionPlanner.extractSummaryText(streamedMessage)
+                        }
+                    }.onFailure { err ->
+                        Log.w(TAG, "Compaction streamText fallback failed on ${candidateModel.modelId}", err)
+                    }.getOrNull()
+
+                    if (!streamedSummary.isNullOrBlank()) {
+                        return streamedSummary
+                    }
+                }
             }
 
-            return result.message.toText().trim()
-                .takeIf { it.isNotBlank() }
-                ?: throw IllegalStateException("Failed to generate compressed summary")
+            // Deterministic extractive fallback so history compression never crashes the turn
+            // when all upstream LLM calls fail or time out.
+            val fallbackSummary = ContextCompactionPlanner.deterministicFallbackSummary(
+                sources = sources,
+                targetTokens = requestedTargetTokens,
+            )
+            if (fallbackSummary.isNotBlank()) {
+                Log.w(TAG, "Using deterministic fallback summary after LLM compaction candidates failed")
+                return fallbackSummary
+            }
+            throw IllegalStateException("Failed to generate compressed summary")
         }
 
         // Ordinary compression is a map pass over a small number of large groups. The full

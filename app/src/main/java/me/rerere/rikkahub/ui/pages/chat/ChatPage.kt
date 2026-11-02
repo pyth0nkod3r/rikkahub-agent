@@ -384,6 +384,23 @@ private fun ChatPageContent(
                             val rawText = textPart?.text?.trim().orEmpty()
 
                             // Check slash commands
+                            if (contents.size == 1 && textPart != null &&
+                                (rawText.equals("/compact", ignoreCase = true) || rawText.startsWith("/compact ", ignoreCase = true))
+                            ) {
+                                val extraInstructions = rawText.removePrefix("/compact").trim()
+                                toaster.show(context.getString(R.string.chat_page_compressing), type = ToastType.Info)
+                                inputState.clearInput()
+                                scope.launch {
+                                    vm.handleCompressContext(
+                                        additionalPrompt = extraInstructions,
+                                        targetTokens = 1000,
+                                        keepRecentMessages = 32,
+                                    ).await().onSuccess {
+                                        toaster.show("Conversation history compressed", type = ToastType.Success)
+                                    }
+                                }
+                                return@ChatInput
+                            }
                             if (contents.size == 1 && textPart != null && rawText.equals("/plan", ignoreCase = true)) {
                                 ConversationAgentMode.set(conversation.id, AgentMode.PLAN)
                                 toaster.show("Switched to Plan mode", type = ToastType.Success)
@@ -436,6 +453,23 @@ private fun ChatPageContent(
                             val rawText = textPart?.text?.trim().orEmpty()
 
                             // Check slash commands
+                            if (contents.size == 1 && textPart != null &&
+                                (rawText.equals("/compact", ignoreCase = true) || rawText.startsWith("/compact ", ignoreCase = true))
+                            ) {
+                                val extraInstructions = rawText.removePrefix("/compact").trim()
+                                toaster.show(context.getString(R.string.chat_page_compressing), type = ToastType.Info)
+                                inputState.clearInput()
+                                scope.launch {
+                                    vm.handleCompressContext(
+                                        additionalPrompt = extraInstructions,
+                                        targetTokens = 1000,
+                                        keepRecentMessages = 32,
+                                    ).await().onSuccess {
+                                        toaster.show("Conversation history compressed", type = ToastType.Success)
+                                    }
+                                }
+                                return@ChatInput
+                            }
                             if (contents.size == 1 && textPart != null && rawText.equals("/plan", ignoreCase = true)) {
                                 ConversationAgentMode.set(conversation.id, AgentMode.PLAN)
                                 toaster.show("Switched to Plan mode", type = ToastType.Success)

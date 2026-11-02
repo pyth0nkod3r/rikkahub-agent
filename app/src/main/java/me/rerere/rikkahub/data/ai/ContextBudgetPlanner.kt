@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.ai
 
+import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 
@@ -20,6 +21,7 @@ object ContextBudgetPlanner {
     private const val CHARS_PER_TOKEN = 3
     private const val MESSAGE_OVERHEAD_TOKENS = 8
     private const val MEDIA_PART_TOKENS = 1_024
+    private const val TOOL_SCHEMA_BASE_OVERHEAD_TOKENS = 24
 
     fun plan(
         messages: List<UIMessage>,
@@ -81,6 +83,42 @@ object ContextBudgetPlanner {
         .sumOf(::estimateMessageTokens)
         .coerceAtMost(Int.MAX_VALUE.toLong())
         .toInt()
+
+    /**
+     * Estimates the token overhead of active tool definitions (names, descriptions, and schemas).
+     */
+    fun estimateToolSchemasTokens(tools: List<Tool>): Int {
+        if (tools.isEmpty()) return 0
+        val total = tools.sumOf { tool ->
+            TOOL_SCHEMA_BASE_OVERHEAD_TOKENS +
+                estimateTextTokens(tool.name) +
+                estimateTextTokens(tool.description)
+        }
+        return total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    /**
+     * Pre-flight token estimator that accounts for message history, system prompt, and active tool
+     * schema overhead before dispatching an HTTP request.
+     */
+    fun estimatePreFlightInputTokens(
+        messages: List<UIMessage>,
+        systemPrompt: String = "",
+        tools: List<Tool> = emptyList(),
+        isCompactedView: Boolean = false,
+    ): Int {
+        val systemOverhead = if (systemPrompt.isNotBlank()) {
+            MESSAGE_OVERHEAD_TOKENS + estimateTextTokens(systemPrompt)
+        } else 0L
+        val toolSchemaOverhead = estimateToolSchemasTokens(tools).toLong()
+        val heuristicTotal = (estimateContextTokens(messages).toLong() + systemOverhead + toolSchemaOverhead)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        if (isCompactedView) {
+            return heuristicTotal
+        }
+        return maxOf(estimateInputTokens(messages), heuristicTotal)
+    }
 
     fun estimateMessageTokens(message: UIMessage): Long {
         val contentTokens = message.parts.sumOf(::estimatePartTokens)

@@ -9,15 +9,21 @@ import android.widget.Toast
 import me.rerere.rikkahub.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.flow.timeout
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.rerere.rikkahub.service.AgentOverlay
@@ -60,8 +66,11 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.limits.ToolRuntimeLimits
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
+import me.rerere.rikkahub.data.datastore.DEFAULT_AUTO_MODEL_ID
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.MemoryFile
@@ -69,6 +78,7 @@ import me.rerere.rikkahub.data.repository.MemoryRepository
 import java.io.File
 import java.io.IOException
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
 
 private const val TAG = "GenerationHandler"
@@ -76,6 +86,77 @@ private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 private const val GENERATION_STREAM_RETRY_INITIAL_DELAY_MS = 750L
 private const val GENERATION_STREAM_RETRY_MAX_DELAY_MS = 4_000L
+/**
+ * Inactivity Stream Watchdog (Heartbeat Timeout): aborts stalled SSE sockets that hold TCP
+ * open without emitting any chunk for 75 seconds so the retry / model fallback policy can fire.
+ */
+internal const val STREAM_IDLE_WATCHDOG_TIMEOUT_MS = 75_000L
+
+internal class StreamIdleTimeoutException(message: String) : IOException(message)
+
+@OptIn(FlowPreview::class)
+internal fun <T> Flow<T>.withStreamIdleTimeout(
+    idleTimeoutMs: Long = STREAM_IDLE_WATCHDOG_TIMEOUT_MS,
+): Flow<T> = if (idleTimeoutMs <= 0L) {
+    this
+} else {
+    this.timeout(idleTimeoutMs.milliseconds).catch { cause ->
+        if (cause is TimeoutCancellationException && currentCoroutineContext().isActive) {
+            throw StreamIdleTimeoutException(
+                "Stream inactivity watchdog triggered: no chunks received for ${idleTimeoutMs / 1000}s"
+            )
+        }
+        throw cause
+    }
+}
+
+internal fun shouldFallbackToBackupModel(
+    failure: Throwable,
+    receivedMeaningfulOutput: Boolean,
+): Boolean {
+    if (receivedMeaningfulOutput) return false
+    if (isCancellationFailure(failure) || isContextLimitFailure(failure)) return false
+    if (failure is StreamIdleTimeoutException || failure is IOException) return true
+    if (isQuotaExhaustedFailure(failure)) return true
+    val statusCode = generateSequence(failure) { it.cause }
+        .take(8)
+        .filterIsInstance<HttpException>()
+        .firstNotNullOfOrNull { ex ->
+            ex.statusCode ?: Regex("""HTTP\s+(\d{3})""", RegexOption.IGNORE_CASE)
+                .find(ex.message.orEmpty())?.groupValues?.get(1)?.toIntOrNull()
+        }
+    return statusCode in RETRYABLE_4XX_STATUS_CODES || (statusCode != null && statusCode in 500..599)
+}
+
+internal fun resolveFallbackModels(
+    settings: Settings,
+    primaryModel: Model,
+): List<Model> {
+    fun Model.takeIfUsableBackup(): Model? {
+        if (id == primaryModel.id || id == DEFAULT_AUTO_MODEL_ID) return null
+        val provider = findProvider(settings.providers) ?: return null
+        if (!provider.enabled) return null
+        if (provider is ProviderSetting.AICore ||
+            provider is ProviderSetting.LiteRtLocal ||
+            provider is ProviderSetting.LlamaCppLocal
+        ) {
+            return null
+        }
+        return this
+    }
+
+    val candidates = mutableListOf<Model>()
+    fun addUnique(model: Model?) {
+        val usable = model?.takeIfUsableBackup() ?: return
+        if (candidates.none { it.id == usable.id }) {
+            candidates.add(usable)
+        }
+    }
+
+    addUnique(settings.getCurrentChatModel())
+    addUnique(settings.findModelById(settings.fastModelId))
+    return candidates
+}
 
 private val USER_CANCELLATION_MARKERS = listOf(
     "canceled by user",
@@ -548,8 +629,14 @@ class GenerationLoop(
 
         val turnStartMs = android.os.SystemClock.elapsedRealtime()
         var loopGuardTripCount = 0
+        val subAgentPolicy = me.rerere.rikkahub.subagent.SubAgentToolPolicies.getPolicy(conversationId)
+        val effectiveMaxSteps = if (subAgentPolicy != null) {
+            minOf(maxSteps, subAgentPolicy.maxSteps)
+        } else {
+            maxSteps
+        }
 
-        for (stepIndex in 0 until maxSteps) {
+        for (stepIndex in 0 until effectiveMaxSteps) {
             // Wall-clock cap: any single user turn that has been running longer than the
             // budget is force-ended, regardless of whether the model wants more steps.
             // This is the second line of defence after maxSteps; without it a model that
@@ -559,6 +646,17 @@ class GenerationLoop(
             if (elapsedMs > ToolRuntimeLimits.turnBudgetMs) {
                 Log.w(TAG, "generateText: wall-clock cap (${ToolRuntimeLimits.turnBudgetMs}ms) hit at step #$stepIndex; force-ending turn")
                 break
+            }
+            if (subAgentPolicy != null && stepIndex > 0) {
+                val estimatedSubAgentTokens = ContextBudgetPlanner.estimateInputTokens(messages)
+                if (estimatedSubAgentTokens >= subAgentPolicy.maxTokensBudget) {
+                    Log.w(
+                        TAG,
+                        "generateText: sub-agent token budget (${subAgentPolicy.maxTokensBudget}) " +
+                            "reached at step #$stepIndex ($estimatedSubAgentTokens tokens); halting cleanly"
+                    )
+                    break
+                }
             }
             // Repeated loop-guard trips mean the model is flailing: it bumps into the
             // guard, picks a different tool, that one also gets guarded, and so on. After
@@ -663,47 +761,120 @@ class GenerationLoop(
                         assistant = assistant,
                         settings = settings,
                     )
-                    generateInternal(
-                        assistant = assistant,
-                        settings = settings,
-                        systemAddendum = systemAddendum,
-                        messages = messages,
-                        onUpdateMessages = {
-                            val tail = it.drop(unchangedPrefixCount).transforms(
-                                transformers = outputTransformers,
-                                context = context,
-                                model = model,
-                                assistant = assistant,
-                                settings = settings
-                            )
-                            messages = if (unchangedPrefixCount == 0) tail else unchangedPrefix + tail
-                            val visualTail = tail.visualTransforms(
-                                transformers = outputTransformers,
-                                context = context,
-                                model = model,
-                                assistant = assistant,
-                                settings = settings
-                            )
-                            emit(
-                                GenerationChunk.Messages(
-                                    if (unchangedPrefixCount == 0) visualTail else visualPrefix + visualTail
+                    val preStepMessages = messages
+                    var emittedStepOutput = false
+                    try {
+                        generateInternal(
+                            assistant = assistant,
+                            settings = settings,
+                            systemAddendum = systemAddendum,
+                            messages = messages,
+                            onUpdateMessages = {
+                                emittedStepOutput = true
+                                val tail = it.drop(unchangedPrefixCount).transforms(
+                                    transformers = outputTransformers,
+                                    context = context,
+                                    model = model,
+                                    assistant = assistant,
+                                    settings = settings
                                 )
+                                messages = if (unchangedPrefixCount == 0) tail else unchangedPrefix + tail
+                                val visualTail = tail.visualTransforms(
+                                    transformers = outputTransformers,
+                                    context = context,
+                                    model = model,
+                                    assistant = assistant,
+                                    settings = settings
+                                )
+                                emit(
+                                    GenerationChunk.Messages(
+                                        if (unchangedPrefixCount == 0) visualTail else visualPrefix + visualTail
+                                    )
+                                )
+                            },
+                            transformers = inputTransformers,
+                            model = effectiveModel,
+                            providerImpl = providerImpl,
+                            provider = provider,
+                            tools = activeToolsForModel,
+                            memories = memories ?: emptyList(),
+                            stream = assistant.streamOutput,
+                            processingStatus = processingStatus,
+                            conversationSystemPrompt = conversationSystemPrompt,
+                            conversationId = conversationId,
+                            conversationModeInjectionIds = conversationModeInjectionIds,
+                            conversationLorebookIds = conversationLorebookIds,
+                            workspaceCwd = workspaceCwd,
+                        )
+                    } catch (primaryErr: Throwable) {
+                        val fallbackCandidates = if (shouldFallbackToBackupModel(primaryErr, emittedStepOutput)) {
+                            resolveFallbackModels(settings, effectiveModel)
+                        } else emptyList()
+                        val backupModel = fallbackCandidates.firstOrNull()
+                        val backupProvider = backupModel?.findProvider(settings.providers)?.takeIf { it.enabled }
+                        if (backupModel != null && backupProvider != null) {
+                            Log.w(
+                                TAG,
+                                "Primary model ${effectiveModel.modelId} failed; cascading to backup model ${backupModel.modelId}",
+                                primaryErr,
                             )
-                        },
-                        transformers = inputTransformers,
-                        model = effectiveModel,
-                        providerImpl = providerImpl,
-                        provider = provider,
-                        tools = activeToolsForModel,
-                        memories = memories ?: emptyList(),
-                        stream = assistant.streamOutput,
-                        processingStatus = processingStatus,
-                        conversationSystemPrompt = conversationSystemPrompt,
-                        conversationId = conversationId,
-                        conversationModeInjectionIds = conversationModeInjectionIds,
-                        conversationLorebookIds = conversationLorebookIds,
-                        workspaceCwd = workspaceCwd,
-                    )
+                            messages = preStepMessages
+                            val backupProviderImpl = usageRecorder.wrap(
+                                providerManager.getProviderByType(backupProvider),
+                                UsageTag(UsageSource.CHAT, assistant.id, conversationId),
+                            )
+                            val effectiveBackupModel = backupModel.copy(
+                                abilities = if (activeToolsForModel.isNotEmpty() && me.rerere.ai.provider.ModelAbility.TOOL !in backupModel.abilities) {
+                                    backupModel.abilities + me.rerere.ai.provider.ModelAbility.TOOL
+                                } else {
+                                    backupModel.abilities
+                                }
+                            )
+                            generateInternal(
+                                assistant = assistant,
+                                settings = settings,
+                                systemAddendum = systemAddendum,
+                                messages = messages,
+                                onUpdateMessages = {
+                                    val tail = it.drop(unchangedPrefixCount).transforms(
+                                        transformers = outputTransformers,
+                                        context = context,
+                                        model = effectiveBackupModel,
+                                        assistant = assistant,
+                                        settings = settings
+                                    )
+                                    messages = if (unchangedPrefixCount == 0) tail else unchangedPrefix + tail
+                                    val visualTail = tail.visualTransforms(
+                                        transformers = outputTransformers,
+                                        context = context,
+                                        model = effectiveBackupModel,
+                                        assistant = assistant,
+                                        settings = settings
+                                    )
+                                    emit(
+                                        GenerationChunk.Messages(
+                                            if (unchangedPrefixCount == 0) visualTail else visualPrefix + visualTail
+                                        )
+                                    )
+                                },
+                                transformers = inputTransformers,
+                                model = effectiveBackupModel,
+                                providerImpl = backupProviderImpl,
+                                provider = backupProvider,
+                                tools = activeToolsForModel,
+                                memories = memories ?: emptyList(),
+                                stream = assistant.streamOutput,
+                                processingStatus = processingStatus,
+                                conversationSystemPrompt = conversationSystemPrompt,
+                                conversationId = conversationId,
+                                conversationModeInjectionIds = conversationModeInjectionIds,
+                                conversationLorebookIds = conversationLorebookIds,
+                                workspaceCwd = workspaceCwd,
+                            )
+                        } else {
+                            throw primaryErr
+                        }
+                    }
                 } catch (t: Throwable) {
                     // CancellationException is honoured verbatim — stopGeneration has its
                     // own cancelToolByUser path that marks tools cancelled. We only need
@@ -1385,11 +1556,15 @@ class GenerationLoop(
             if (systemParts.isNotEmpty()) {
                 add(UIMessage(role = MessageRole.SYSTEM, parts = systemParts, isSynthetic = true))
             }
-            // Keeps the fork's multi-part system assembly and tool-image ageing, on top of
-            // upstream's isSynthetic marker (keeps this built-up system prompt out of
-            // TemplateTransformer) and its stepped truncation (which now preserves
-            // prompt caching instead of trimming one message at a time).
-            addAll(messages.limitContext(assistant.contextMessageLimit).ageOldToolImages())
+            // Keeps the fork's multi-part system assembly, tool-image ageing, and aged
+            // tool-output decay, on top of upstream's isSynthetic marker (keeps this built-up
+            // system prompt out of TemplateTransformer) and its stepped truncation (which now
+            // preserves prompt caching instead of trimming one message at a time).
+            addAll(
+                ToolOutputTruncator.decayAgedToolOutputs(
+                    messages.limitContext(assistant.contextMessageLimit).ageOldToolImages()
+                )
+            )
         }.transforms(
             transformers = transformers,
             context = context,
@@ -1439,7 +1614,7 @@ class GenerationLoop(
                     providerSetting = provider,
                     messages = internalMessages,
                     params = params
-                ).onCompletion { cause ->
+                ).withStreamIdleTimeout(STREAM_IDLE_WATCHDOG_TIMEOUT_MS).onCompletion { cause ->
                     // Some SSE implementations report an abruptly closed socket through onClosed
                     // without an exception. Treat a clean close with no chunks at all as a transport
                     // failure so the retry policy can recover a background continuation. A clean
@@ -1536,12 +1711,24 @@ class GenerationLoop(
         val nonTextParts = output.filter { it !is UIMessagePart.Text }
         val totalChars = textParts.sumOf { it.text.length }
 
-        if (totalChars <= MAX_TOOL_OUTPUT_CHARS || !hasShellAccess) return output
+        if (totalChars <= MAX_TOOL_OUTPUT_CHARS) {
+            return ToolOutputTruncator.truncateToolOutputParts(output)
+        }
 
-        Log.i(TAG, "maybeTruncateToolOutput: truncating tool $toolCallId output ($totalChars chars)")
+        if (!hasShellAccess) {
+            Log.i(TAG, "maybeTruncateToolOutput: structured head+tail truncation for $toolCallId ($totalChars chars)")
+            return ToolOutputTruncator.truncateToolOutputParts(output)
+        }
+
+        Log.i(TAG, "maybeTruncateToolOutput: truncating tool $toolCallId output ($totalChars chars) and spilling to file")
 
         val fullText = textParts.joinToString("\n") { it.text }
-        val preview = fullText.take(TOOL_OUTPUT_PREVIEW_CHARS)
+        val structuredPreview = ToolOutputTruncator.truncateStructured(
+            text = fullText,
+            headLines = 100,
+            tailLines = 150,
+            maxChars = 16_000,
+        )
 
         val fileName = "${toolCallId}.txt"
         val outputDir = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() }
@@ -1555,7 +1742,7 @@ class GenerationLoop(
                     appendLine("Use shell to read: `cat /tool_outputs/$fileName`")
                     appendLine("Use shell to search: `grep \"pattern\" /tool_outputs/$fileName`")
                     appendLine()
-                    append(preview)
+                    append(structuredPreview)
                 }
             )
         ) + nonTextParts
