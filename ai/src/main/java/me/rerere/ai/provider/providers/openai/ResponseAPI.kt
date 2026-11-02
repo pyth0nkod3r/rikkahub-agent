@@ -59,6 +59,7 @@ import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.stringSafe
+import me.rerere.ai.util.resolveEffectiveMaxTools
 import me.rerere.ai.util.sanitizeAndCapTools
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonObjectOrNull
@@ -324,7 +325,7 @@ class ResponseAPI(
             if (useFunctionTools || params.model.tools.isNotEmpty()) {
                 putJsonArray("tools") {
                     if (useFunctionTools) {
-                        val toolsToSend = params.tools.sanitizeAndCapTools()
+                        val toolsToSend = params.tools.sanitizeAndCapTools(resolveEffectiveMaxTools(params.model.maxTools))
                         toolsToSend.forEach { tool ->
                             add(buildJsonObject {
                                 put("type", "function")

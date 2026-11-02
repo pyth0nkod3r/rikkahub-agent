@@ -1594,7 +1594,7 @@ class ChatService(
         model: Model,
         settings: Settings,
     ): List<Tool> = buildList {
-        if (assistant.enableWebSearch || me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "search_web")) {
+        if (assistant.enableWebSearch || (me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId) && me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "search_web"))) {
             addAll(createSearchTools(settings))
         }
         val invocationCtx = me.rerere.rikkahub.data.ai.tools.ToolInvocationContext(
@@ -1614,7 +1614,7 @@ class ChatService(
                 )
             )
         }
-        mcpManager.getAllAvailableTools(assistant).forEach { (serverId, serverName, mcpTool) ->
+        mcpManager.getAllAvailableTools(if (me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId)) null else assistant).forEach { (serverId, serverName, mcpTool) ->
             val mcpToolName = me.rerere.rikkahub.data.ai.mcp.buildMcpToolName(serverId, serverName, mcpTool.name)
             add(
                 Tool(
@@ -1693,6 +1693,9 @@ class ChatService(
                     "Re-enable it in Settings → Providers, or pick a different model with /model."
             )
         }
+        if (isSubAgent && !model.abilities.contains(ModelAbility.TOOL)) {
+            model = model.copy(abilities = model.abilities + ModelAbility.TOOL)
+        }
         val senderName = if (isSubAgent) {
             "Sub-agent"
         } else if (assistant.useAssistantAvatar) {
@@ -1744,7 +1747,7 @@ class ChatService(
             val conversation = getConversationFlow(conversationId).value
 
             try {
-                chatToolFactory.validateMcpServerNames()
+                chatToolFactory.validateMcpServerNames(if (isSubAgent) null else assistant)
             } catch (error: InvalidMcpServerNamesException) {
                 sessions[conversationId]?.messageQueue?.pause()
                 addError(
@@ -1919,7 +1922,7 @@ class ChatService(
                 conversationModeInjectionIds = conversation.modeInjectionIds,
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = conversation.workspaceCwd,
-                memories = if (me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "memory_tool")) {
+                memories = if ((assistant.enableMemory || me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId)) && me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "memory_tool")) {
                     memoryRepository.getFiles(
                         if (assistant.useGlobalMemory) MemoryRepository.GLOBAL_MEMORY_ID
                         else assistant.id.toString()
@@ -1932,7 +1935,7 @@ class ChatService(
                 },
                 outputTransformers = outputTransformers,
                 tools = buildList {
-                    if (useExternalWebSearch || me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "search_web")) {
+                    if (useExternalWebSearch || (me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId) && me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "search_web"))) {
                         addAll(createSearchTools(settings))
                     }
                     // Pass the caller context so context-aware tools (subagent_dispatch
@@ -1960,7 +1963,7 @@ class ChatService(
                             )
                         )
                     }
-                    mcpManager.getAllAvailableTools(assistant).also { allTools ->
+                    mcpManager.getAllAvailableTools(if (me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId)) null else assistant).also { allTools ->
                         // Upstream name validation: a server name that isn't pure
                         // English+digits would produce an invalid `mcp__<name>__tool`
                         // surface, so surface it as an error rather than emit a tool the

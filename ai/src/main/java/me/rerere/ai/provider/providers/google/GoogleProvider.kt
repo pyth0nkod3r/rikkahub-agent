@@ -68,6 +68,7 @@ import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
+import me.rerere.ai.util.sanitizeAndCapTools
 import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.ai.util.redactSecrets
 import me.rerere.ai.util.sanitizeForGeminiSchema
@@ -512,7 +513,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 if (useFunctionTools) {
                     add(buildJsonObject {
                         put("functionDeclarations", buildJsonArray {
-                            params.tools.forEach { tool ->
+                            params.tools.sanitizeAndCapTools(params.model.maxTools ?: Int.MAX_VALUE).forEach { tool ->
                                 add(buildJsonObject {
                                     put("name", JsonPrimitive(tool.name))
                                     put("description", JsonPrimitive(tool.description))

@@ -106,7 +106,7 @@ enum class SubAgentCapability(
             "keyboard_press_key", "keyboard_delete", "keyboard_clear", "keyboard_editor_info",
             "keyboard_set_cursor", "keyboard_select_range", "create_calendar_event",
             "create_contact", "send_email_intent", "send_sms_intent", "open_wifi_settings",
-            "show_location_on_map", "chart_display",
+            "show_location_on_map", "chart_display", "eval_javascript", "get_time_info", "clipboard_tool", "text_to_speech",
         ),
     );
 
@@ -123,7 +123,7 @@ enum class SubAgentCapability(
  * Everything else must be a named role tool or belong to a granted capability.
  */
 class SubAgentToolPolicy(private val allowedNames: Set<String>) {
-    fun allows(toolName: String): Boolean = isWorkspaceToolName(toolName) || toolName in allowedNames
+    fun allows(toolName: String): Boolean = isWorkspaceToolName(toolName) || toolName == me.rerere.ai.util.MANAGE_ACTIVE_TOOLS_NAME || toolName in allowedNames
 }
 
 sealed class SubAgentPolicyBuild {

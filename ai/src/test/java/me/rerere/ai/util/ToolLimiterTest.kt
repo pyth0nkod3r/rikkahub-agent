@@ -1,5 +1,7 @@
 package me.rerere.ai.util
 
+import kotlinx.serialization.json.JsonObject
+import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -7,58 +9,92 @@ import org.junit.Test
 
 class ToolLimiterTest {
 
-    private fun createDummyTool(name: String) = Tool(
+    private fun dummyTool(name: String): Tool = Tool(
         name = name,
-        description = "Dummy tool $name",
+        description = "Tool $name",
+        parameters = { InputSchema.Obj(properties = JsonObject(emptyMap())) },
         execute = { emptyList() },
     )
 
     @Test
-    fun `tools within limit are deduplicated and preserved in order`() {
+    fun `deduplicates tools with identical names`() {
         val tools = listOf(
-            createDummyTool("search_web"),
-            createDummyTool("search_web"),
-            createDummyTool("propose_plan"),
-            createDummyTool("custom_tool"),
+            dummyTool("read_file"),
+            dummyTool("read_file"),
+            dummyTool("search_web"),
         )
         val capped = tools.sanitizeAndCapTools(maxTools = 10)
-        assertEquals(3, capped.size)
-        assertEquals("search_web", capped[0].name)
-        assertEquals("propose_plan", capped[1].name)
-        assertEquals("custom_tool", capped[2].name)
+        assertEquals(2, capped.size)
+        assertEquals(listOf("read_file", "search_web"), capped.map { it.name })
     }
 
     @Test
-    fun `tools exceeding limit are prioritized and capped to maxTools`() {
-        val tools = mutableListOf<Tool>()
-        // 100 low priority sensor/hardware tools
-        for (i in 1..100) {
-            tools.add(createDummyTool("sensor_$i"))
-        }
-        // 30 MCP tools
-        for (i in 1..30) {
-            tools.add(createDummyTool("mcp__server__tool_$i"))
-        }
-        // 5 workspace and core tools
-        tools.add(createDummyTool("run_command"))
-        tools.add(createDummyTool("read_file"))
-        tools.add(createDummyTool("propose_plan"))
-        tools.add(createDummyTool("search_web"))
-        tools.add(createDummyTool("save_memory"))
+    fun `prioritizes subagent, workspace, and mcp tools when capping`() {
+        val lowPriority = (1..150).map { dummyTool("sensor_tool_$it") }
+        val subAgentTools = listOf(
+            dummyTool("subagent_dispatch"),
+            dummyTool("subagent_list"),
+            dummyTool("subagent_get"),
+        )
+        val mcpTools = (1..10).map { dummyTool("mcp__github__issue_$it") }
+        val workspaceTools = listOf(
+            dummyTool("workspace_read_file"),
+            dummyTool("workspace_shell"),
+            dummyTool("search_web"),
+            dummyTool("use_skill"),
+        )
 
+        val tools = lowPriority + mcpTools + subAgentTools + workspaceTools
         val capped = tools.sanitizeAndCapTools(maxTools = 32)
+
         assertEquals(32, capped.size)
+        val names = capped.map { it.name }.toSet()
+        assertTrue(names.contains("subagent_dispatch"))
+        assertTrue(names.contains("subagent_list"))
+        assertTrue(names.contains("subagent_get"))
+        assertTrue(names.contains("workspace_read_file"))
+        assertTrue(names.contains("workspace_shell"))
+        assertTrue(names.contains("search_web"))
+        assertTrue(names.contains("use_skill"))
+        mcpTools.forEach { mcp ->
+            assertTrue("Expected ${mcp.name} to be retained", names.contains(mcp.name))
+        }
+    }
 
-        // Verify highest priority tools survived
-        val cappedNames = capped.map { it.name }.toSet()
-        assertTrue("propose_plan survived", cappedNames.contains("propose_plan"))
-        assertTrue("run_command survived", cappedNames.contains("run_command"))
-        assertTrue("read_file survived", cappedNames.contains("read_file"))
-        assertTrue("search_web survived", cappedNames.contains("search_web"))
-        assertTrue("save_memory survived", cappedNames.contains("save_memory"))
+    @Test
+    fun `resolveEffectiveMaxTools supports default, custom, and unlimited`() {
+        assertEquals(MAX_OPENAI_TOOLS, resolveEffectiveMaxTools(null, null))
+        assertEquals(64, resolveEffectiveMaxTools(64, null))
+        assertEquals(256, resolveEffectiveMaxTools(null, 256))
+        assertEquals(32, resolveEffectiveMaxTools(32, 256))
+        assertEquals(Int.MAX_VALUE, resolveEffectiveMaxTools(0, 128))
+        assertEquals(Int.MAX_VALUE, resolveEffectiveMaxTools(null, 0))
+    }
 
-        // Verify MCP tools survived before lower priority sensors
-        val mcpCount = capped.count { it.name.startsWith("mcp__") }
-        assertTrue("MCP tools prioritized over generic sensors", mcpCount > 0)
+    @Test
+    fun `unlimited cap retains all 264 plus tools without dropping`() {
+        val tools = (1..270).map { dummyTool("tool_$it") }
+        val unlimited = tools.sanitizeAndCapTools(maxTools = resolveEffectiveMaxTools(0))
+        assertEquals(270, unlimited.size)
+    }
+
+    @Test
+    fun `partitionBySoftCap reserves selector slot and preserves all standby tools`() {
+        val tools = (1..264).map { dummyTool("tool_$it") }
+        val partition = tools.partitionBySoftCap(
+            maxTools = 64,
+            pinnedToolNames = setOf("tool_200", "tool_250"),
+            demotedToolNames = setOf("tool_1"),
+        )
+        // 63 active tools + 1 slot reserved for manage_active_tools = 64 soft cap
+        assertEquals(63, partition.activeTools.size)
+        assertEquals(201, partition.standbyTools.size)
+        assertEquals(264, partition.activeTools.size + partition.standbyTools.size)
+
+        val activeNames = partition.activeTools.map { it.name }.toSet()
+        val standbyNames = partition.standbyTools.map { it.name }.toSet()
+        assertTrue(activeNames.contains("tool_200"))
+        assertTrue(activeNames.contains("tool_250"))
+        assertTrue(standbyNames.contains("tool_1"))
     }
 }

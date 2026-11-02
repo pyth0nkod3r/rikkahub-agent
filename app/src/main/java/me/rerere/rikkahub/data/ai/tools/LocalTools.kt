@@ -783,6 +783,14 @@ class LocalTools(
         val isSubAgent = me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(callerUuid)
         val options = if (isSubAgent) {
             (options + listOf(
+                LocalToolOption.JavascriptEngine,
+                LocalToolOption.TimeInfo,
+                LocalToolOption.Clipboard,
+                LocalToolOption.Tts,
+                LocalToolOption.TelegramBot,
+                LocalToolOption.McpControl,
+                LocalToolOption.SkillImport,
+                LocalToolOption.JsSkills,
                 LocalToolOption.Browser,
                 LocalToolOption.Ssh,
                 LocalToolOption.Keystore,

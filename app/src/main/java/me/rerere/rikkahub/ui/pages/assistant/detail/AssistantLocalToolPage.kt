@@ -41,6 +41,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ui.toast.ToastType
+import me.rerere.ai.util.partitionBySoftCap
+import me.rerere.ai.util.resolveEffectiveMaxTools
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.local.PermissionHelper
@@ -242,6 +244,127 @@ private fun AssistantLocalToolContent(
         )
     }
 
+    val localToolsInstance = koinInject<me.rerere.rikkahub.data.ai.tools.LocalTools>()
+    val mcpManagerInstance = koinInject<me.rerere.rikkahub.data.ai.mcp.McpManager>()
+    val allConfiguredTools = remember(assistant.localTools, assistant.mcpServers) {
+        val localList = runCatching { localToolsInstance.getTools(assistant.localTools) }.getOrDefault(emptyList())
+        val mcpList = runCatching {
+            mcpManagerInstance.getAllAvailableTools(assistant).map { (serverId, serverName, mcpTool) ->
+                me.rerere.ai.core.Tool(
+                    name = me.rerere.rikkahub.data.ai.mcp.buildMcpToolName(serverId, serverName, mcpTool.name),
+                    description = mcpTool.description ?: "",
+                    parameters = { mcpTool.inputSchema },
+                    execute = { emptyList() },
+                )
+            }
+        }.getOrDefault(emptyList())
+        (localList + mcpList).distinctBy { it.name }
+    }
+    val enabledCandidateTools = remember(allConfiguredTools, assistant.disabledToolNames) {
+        allConfiguredTools.filter { it.name !in assistant.disabledToolNames }
+    }
+    val effectiveSoftCap = remember(assistant.maxTools) {
+        resolveEffectiveMaxTools(null, assistant.maxTools)
+    }
+    val previewPartition = remember(enabledCandidateTools, effectiveSoftCap, assistant.pinnedToolNames) {
+        enabledCandidateTools.partitionBySoftCap(
+            maxTools = effectiveSoftCap,
+            pinnedToolNames = assistant.pinnedToolNames,
+        )
+    }
+
+    var showCustomMaxToolsDialog by remember { mutableStateOf(false) }
+    var showIndividualToolSelectionDialog by remember { mutableStateOf(false) }
+
+    if (showCustomMaxToolsDialog) {
+        var customCapInput by remember(assistant.maxTools) {
+            mutableStateOf(
+                when {
+                    assistant.maxTools == null -> "128"
+                    assistant.maxTools <= 0 -> "0"
+                    else -> assistant.maxTools.toString()
+                }
+            )
+        }
+        AlertDialog(
+            onDismissRequest = { showCustomMaxToolsDialog = false },
+            title = { Text("Custom Max Tools (Soft Cap)") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter the soft cap for active tool schemas sent per request (e.g., 32, 64, 128, 256). Enter 0 for Unlimited (sends all 264+ tools directly). Overflow tools remain selectable and invocable on demand.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    androidx.compose.material3.OutlinedTextField(
+                        value = customCapInput,
+                        onValueChange = { text -> customCapInput = text.filter { it.isDigit() } },
+                        label = { Text("Max Tools (0 = Unlimited)") },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val parsed = customCapInput.toIntOrNull()
+                        onUpdateAssistant { current -> current.copy(maxTools = parsed) }
+                        showCustomMaxToolsDialog = false
+                    }
+                ) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomMaxToolsDialog = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
+
+    if (showIndividualToolSelectionDialog) {
+        IndividualToolSelectionDialog(
+            allTools = allConfiguredTools,
+            activeToolNames = previewPartition.activeTools.map { it.name }.toSet(),
+            standbyToolNames = previewPartition.standbyTools.map { it.name }.toSet(),
+            disabledToolNames = assistant.disabledToolNames,
+            pinnedToolNames = assistant.pinnedToolNames,
+            softCapLabel = when {
+                assistant.maxTools == null -> "Default (128)"
+                assistant.maxTools <= 0 -> "Unlimited"
+                else -> assistant.maxTools.toString()
+            },
+            onToggleToolEnabled = { toolName, enabled ->
+                onUpdateAssistant { current ->
+                    current.copy(
+                        disabledToolNames = if (enabled) current.disabledToolNames - toolName
+                        else current.disabledToolNames + toolName
+                    )
+                }
+            },
+            onToggleToolPinned = { toolName, pinned ->
+                onUpdateAssistant { current ->
+                    current.copy(
+                        pinnedToolNames = if (pinned) current.pinnedToolNames + toolName
+                        else current.pinnedToolNames - toolName,
+                        disabledToolNames = if (pinned) current.disabledToolNames - toolName
+                        else current.disabledToolNames,
+                    )
+                }
+            },
+            onEnableAll = {
+                onUpdateAssistant { current -> current.copy(disabledToolNames = emptySet()) }
+            },
+            onClearPins = {
+                onUpdateAssistant { current -> current.copy(pinnedToolNames = emptySet()) }
+            },
+            onDismiss = { showIndividualToolSelectionDialog = false },
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -250,6 +373,78 @@ private fun AssistantLocalToolContent(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Tool Soft Cap & Dynamic Selection section
+        Text(
+            text = "Tool Soft Cap & Selection",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp)
+        )
+        CardGroup {
+            item(
+                headlineContent = {
+                    val capDisplay = when {
+                        assistant.maxTools == null -> "Default (128)"
+                        assistant.maxTools <= 0 -> "Unlimited"
+                        else -> "${assistant.maxTools}"
+                    }
+                    Text("Max Tools Soft Cap: $capDisplay")
+                },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val statusLine = if (previewPartition.standbyTools.isEmpty()) {
+                            "${enabledCandidateTools.size} active tools (all within cap)"
+                        } else {
+                            "${previewPartition.activeTools.size} active + ${previewPartition.standbyTools.size} standby (selectable & invocable via manage_active_tools)"
+                        }
+                        Text(
+                            "Overflow tools beyond the soft cap are never dropped — the agent and sub-agents can dynamically enable or invoke them on demand. Set Unlimited for models that support all 264+ tools.\nCurrent: $statusLine"
+                        )
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            val presets: List<Pair<String, Int?>> = listOf(
+                                "Default (128)" to null,
+                                "32" to 32,
+                                "64" to 64,
+                                "256" to 256,
+                                "Unlimited" to 0,
+                            )
+                            presets.forEach { (label, value) ->
+                                val isSelected = (value == null && assistant.maxTools == null) ||
+                                    (value == 0 && assistant.maxTools != null && assistant.maxTools <= 0) ||
+                                    (value != null && value > 0 && assistant.maxTools == value)
+                                androidx.compose.material3.FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        onUpdateAssistant { current -> current.copy(maxTools = value) }
+                                    },
+                                    label = { Text(label) },
+                                )
+                            }
+                            androidx.compose.material3.AssistChip(
+                                onClick = { showCustomMaxToolsDialog = true },
+                                label = { Text("Custom...") },
+                            )
+                        }
+                    }
+                },
+            )
+            item(
+                headlineContent = {
+                    Text("Select / Enable / Pin Individual Tools")
+                },
+                supportingContent = {
+                    Text(
+                        "${enabledCandidateTools.size}/${allConfiguredTools.size} tools enabled • " +
+                            "${assistant.pinnedToolNames.size} pinned to active window • " +
+                            "${assistant.disabledToolNames.size} individually disabled. Tap to customize."
+                    )
+                },
+                modifier = Modifier.clickable { showIndividualToolSelectionDialog = true },
+            )
+        }
+
         // Built-in tools section
         Text(
             text = stringResource(R.string.assistant_page_local_tools_section_existing),
@@ -1656,4 +1851,162 @@ private fun TermuxStatusRowSubtitle(enabled: Boolean) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+@Composable
+private fun IndividualToolSelectionDialog(
+    allTools: List<me.rerere.ai.core.Tool>,
+    activeToolNames: Set<String>,
+    standbyToolNames: Set<String>,
+    disabledToolNames: Set<String>,
+    pinnedToolNames: Set<String>,
+    softCapLabel: String,
+    onToggleToolEnabled: (String, Boolean) -> Unit,
+    onToggleToolPinned: (String, Boolean) -> Unit,
+    onEnableAll: () -> Unit,
+    onClearPins: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    var filterTab by remember { mutableStateOf(0) } // 0=All, 1=Active, 2=Standby, 3=Pinned, 4=Disabled
+
+    val filteredTools = remember(allTools, searchQuery, filterTab, activeToolNames, standbyToolNames, disabledToolNames, pinnedToolNames) {
+        allTools.filter { tool ->
+            val matchesSearch = searchQuery.isBlank() ||
+                tool.name.contains(searchQuery, ignoreCase = true) ||
+                tool.description.contains(searchQuery, ignoreCase = true)
+            val matchesTab = when (filterTab) {
+                1 -> tool.name in activeToolNames && tool.name !in disabledToolNames
+                2 -> tool.name in standbyToolNames && tool.name !in disabledToolNames
+                3 -> tool.name in pinnedToolNames
+                4 -> tool.name in disabledToolNames
+                else -> true
+            }
+            matchesSearch && matchesTab
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Select & Prioritize Tools")
+                Text(
+                    text = "Soft Cap: $softCapLabel • Active: ${activeToolNames.size} • Standby: ${standbyToolNames.size} • Disabled: ${disabledToolNames.size}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.size(width = 420.dp, height = 460.dp)
+            ) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search tools (${allTools.size} total)") },
+                    singleLine = true,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    val tabs = listOf(
+                        "All (${allTools.size})",
+                        "Active (${activeToolNames.size})",
+                        "Standby (${standbyToolNames.size})",
+                        "Pinned (${pinnedToolNames.size})",
+                        "Disabled (${disabledToolNames.size})",
+                    )
+                    tabs.forEachIndexed { idx, label ->
+                        androidx.compose.material3.FilterChip(
+                            selected = filterTab == idx,
+                            onClick = { filterTab = idx },
+                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                        )
+                    }
+                }
+                androidx.compose.foundation.layout.Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (disabledToolNames.isNotEmpty()) {
+                        TextButton(onClick = onEnableAll) {
+                            Text("Enable All (${disabledToolNames.size})")
+                        }
+                    }
+                    if (pinnedToolNames.isNotEmpty()) {
+                        TextButton(onClick = onClearPins) {
+                            Text("Clear Pins (${pinnedToolNames.size})")
+                        }
+                    }
+                }
+                androidx.compose.foundation.lazy.LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    items(filteredTools.size, key = { filteredTools[it].name }) { index ->
+                        val tool = filteredTools[index]
+                        val isDisabled = tool.name in disabledToolNames
+                        val isPinned = tool.name in pinnedToolNames
+                        val statusBadge = when {
+                            isDisabled -> "Disabled"
+                            isPinned -> "Pinned (Active)"
+                            tool.name in activeToolNames -> "Active"
+                            else -> "Standby (On-Demand)"
+                        }
+                        androidx.compose.material3.Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            androidx.compose.foundation.layout.Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(
+                                        text = tool.name,
+                                        style = MaterialTheme.typography.labelLarge,
+                                    )
+                                    Text(
+                                        text = statusBadge,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                    if (tool.description.isNotBlank()) {
+                                        Text(
+                                            text = tool.description.take(100),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                        )
+                                    }
+                                }
+                                androidx.compose.material3.FilterChip(
+                                    selected = isPinned,
+                                    onClick = { onToggleToolPinned(tool.name, !isPinned) },
+                                    label = { Text("Pin", style = MaterialTheme.typography.labelSmall) },
+                                )
+                                Switch(
+                                    checked = !isDisabled,
+                                    onCheckedChange = { onToggleToolEnabled(tool.name, it) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.ok))
+            }
+        },
+    )
 }

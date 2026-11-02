@@ -665,6 +665,12 @@ private fun ModelSettingsForm(
                                     onModelChange(model.copy(abilities = it))
                                 }
                             )
+                            ModelMaxToolsSelector(
+                                maxTools = model.maxTools,
+                                onUpdateMaxTools = {
+                                    onModelChange(model.copy(maxTools = it))
+                                }
+                            )
                         }
                     }
                 }
@@ -1183,6 +1189,72 @@ fun ModalAbilitySelector(
             )
         }
     }
+}
+
+@Composable
+fun ModelMaxToolsSelector(
+    maxTools: Int?,
+    onUpdateMaxTools: (Int?) -> Unit
+) {
+    val presets: List<Pair<String, Int?>> = listOf(
+        "Default (128)" to null,
+        "32" to 32,
+        "64" to 64,
+        "128" to 128,
+        "256" to 256,
+        "Unlimited" to 0,
+    )
+    var customText by remember(maxTools) {
+        mutableStateOf(
+            when {
+                maxTools == null -> ""
+                maxTools <= 0 -> "0"
+                else -> maxTools.toString()
+            }
+        )
+    }
+
+    Text(
+        text = "Max Tools (Soft Cap)",
+        style = MaterialTheme.typography.titleSmall
+    )
+    Text(
+        text = "Caps active tool schemas sent per request while keeping overflow tools selectable & invocable on demand. Set Unlimited (0) for models that support all 264+ tools.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        presets.forEach { (label, presetValue) ->
+            val selected = (presetValue == null && maxTools == null) ||
+                (presetValue == 0 && maxTools != null && maxTools <= 0) ||
+                (presetValue != null && presetValue > 0 && maxTools == presetValue)
+            androidx.compose.material3.FilterChip(
+                selected = selected,
+                onClick = { onUpdateMaxTools(presetValue) },
+                label = { Text(label) },
+            )
+        }
+    }
+    OutlinedTextField(
+        value = customText,
+        onValueChange = { text ->
+            val digits = text.filter { it.isDigit() }
+            customText = digits
+            if (digits.isBlank()) {
+                onUpdateMaxTools(null)
+            } else {
+                digits.toIntOrNull()?.let { onUpdateMaxTools(it) }
+            }
+        },
+        label = { Text("Custom Max Tools (blank = Default 128, 0 = Unlimited)") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable

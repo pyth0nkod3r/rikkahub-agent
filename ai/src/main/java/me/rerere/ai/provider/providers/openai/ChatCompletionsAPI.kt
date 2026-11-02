@@ -58,6 +58,7 @@ import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.redactSecrets
+import me.rerere.ai.util.resolveEffectiveMaxTools
 import me.rerere.ai.util.sanitizeAndCapTools
 import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.toHeaders
@@ -524,7 +525,7 @@ class ChatCompletionsAPI(
             }
 
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
-                val toolsToSend = params.tools.sanitizeAndCapTools()
+                val toolsToSend = params.tools.sanitizeAndCapTools(resolveEffectiveMaxTools(params.model.maxTools))
                 putJsonArray("tools") {
                     toolsToSend.forEach { tool ->
                         add(buildJsonObject {

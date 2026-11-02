@@ -46,7 +46,10 @@ import me.rerere.ai.ui.StreamChunkHandler
 import me.rerere.ai.ui.handleTextGenerationResult
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.util.HttpException
+import me.rerere.ai.util.MANAGE_ACTIVE_TOOLS_NAME
+import me.rerere.ai.util.partitionBySoftCap
 import me.rerere.ai.util.redactSecrets
+import me.rerere.ai.util.resolveEffectiveMaxTools
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
@@ -568,9 +571,11 @@ class GenerationLoop(
 
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
 
-            val toolsInternal = buildList<Tool> {
+            val isSubAgent = me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId)
+            val selectionState = me.rerere.rikkahub.data.ai.tools.ConversationToolSelectionState.get(conversationId)
+            val candidateTools = buildList<Tool> {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
-                if (assistant.enableMemory && me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "memory_tool")) {
+                if ((assistant.enableMemory || isSubAgent) && me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, "memory_tool")) {
                     val memoryAssistantId = if (assistant.useGlobalMemory) {
                         MemoryRepository.GLOBAL_MEMORY_ID
                     } else {
@@ -583,7 +588,41 @@ class GenerationLoop(
                      .let(this::addAll)
                 }
                 addAll(tools.filter { me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, it.name) })
+            }.distinctBy { it.name }.filter { tool ->
+                isSubAgent || tool.name !in assistant.disabledToolNames || tool.name in selectionState.enabled
             }
+
+            val effectiveMaxTools = resolveEffectiveMaxTools(model.maxTools, assistant.maxTools)
+            val softCapPartition = candidateTools.partitionBySoftCap(
+                maxTools = effectiveMaxTools,
+                pinnedToolNames = assistant.pinnedToolNames + selectionState.enabled,
+                demotedToolNames = selectionState.disabled,
+            )
+            val manageActiveToolsDef = if (softCapPartition.standbyTools.isNotEmpty() || selectionState.hasOverrides()) {
+                me.rerere.rikkahub.data.ai.tools.createManageActiveToolsTool(
+                    conversationId = conversationId,
+                    allTools = candidateTools,
+                    partition = softCapPartition,
+                )
+            } else null
+            val activeToolsForModel = if (manageActiveToolsDef != null) {
+                softCapPartition.activeTools + manageActiveToolsDef
+            } else {
+                softCapPartition.activeTools
+            }
+            val toolsInternal = if (manageActiveToolsDef != null) {
+                candidateTools + manageActiveToolsDef
+            } else {
+                candidateTools
+            }
+            val effectiveModel = model.copy(
+                abilities = if (isSubAgent && me.rerere.ai.provider.ModelAbility.TOOL !in model.abilities) {
+                    model.abilities + me.rerere.ai.provider.ModelAbility.TOOL
+                } else {
+                    model.abilities
+                },
+                maxTools = if (effectiveMaxTools == Int.MAX_VALUE) 0 else effectiveMaxTools,
+            )
 
             // Check if we have tool calls ready to continue after user interaction.
             val pendingTools = messages.lastOrNull()?.getTools()?.filter {
@@ -652,10 +691,10 @@ class GenerationLoop(
                             )
                         },
                         transformers = inputTransformers,
-                        model = model,
+                        model = effectiveModel,
                         providerImpl = providerImpl,
                         provider = provider,
-                        tools = toolsInternal,
+                        tools = activeToolsForModel,
                         memories = memories ?: emptyList(),
                         stream = assistant.streamOutput,
                         processingStatus = processingStatus,
@@ -791,12 +830,19 @@ class GenerationLoop(
                     // these through. Result: tool is marked Denied with the hardline
                     // reason, the regular Denied branch downstream emits an error
                     // envelope to the model without executing.
+                    val delegatedInvoke = if (tool.toolName == me.rerere.ai.util.MANAGE_ACTIVE_TOOLS_NAME) {
+                        me.rerere.rikkahub.data.ai.tools.parseManageActiveToolsInvocationFromRaw(tool.input)
+                    } else null
+                    val effectiveToolName = delegatedInvoke?.toolName ?: tool.toolName
                     val hardlineReason = me.rerere.rikkahub.data.ai.tools
                         .HardlineCommandGuard.checkTool(tool.toolName, tool.input)
-                    val subAgentBlocked = !me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, tool.toolName)
+                        ?: delegatedInvoke?.let {
+                            me.rerere.rikkahub.data.ai.tools.HardlineCommandGuard.checkTool(it.toolName, it.arguments.toString())
+                        }
+                    val subAgentBlocked = !me.rerere.rikkahub.subagent.SubAgentToolPolicies.permits(conversationId, effectiveToolName)
                     val transformed = when {
                         hardlineReason != null && tool.approvalState is ToolApprovalState.Auto -> {
-                            Log.w(TAG, "hardline-blocked ${tool.toolName}: $hardlineReason")
+                            Log.w(TAG, "hardline-blocked ${effectiveToolName}: $hardlineReason")
                             tool.copy(approvalState = ToolApprovalState.Denied(
                                 "blocked by safety floor (hardline): $hardlineReason. " +
                                     "This command cannot run via the agent under any " +
@@ -805,9 +851,9 @@ class GenerationLoop(
                             ))
                         }
                         subAgentBlocked -> {
-                            Log.w(TAG, "subagent-policy-blocked ${tool.toolName} for conversation $conversationId")
+                            Log.w(TAG, "subagent-policy-blocked ${effectiveToolName} for conversation $conversationId")
                             tool.copy(approvalState = ToolApprovalState.Denied(
-                                "blocked by sub-agent security policy: tool '${tool.toolName}' is not allowed for this sub-agent run."
+                                "blocked by sub-agent security policy: tool '${effectiveToolName}' is not allowed for this sub-agent run."
                             ))
                         }
                         // Tool needs approval and state is Auto:
@@ -817,7 +863,7 @@ class GenerationLoop(
                             // resolved set). Costs a DataStore.first() per tool but tools
                             // are typically <5 per turn so the latency is negligible, and
                             // freshness matters for the YOLO toggle / mid-iteration grants.
-                            if (isToolAutoApproved(tool.toolName)) {
+                            if (isToolAutoApproved(effectiveToolName)) {
                                 tool  // leave as Auto so the executor runs it without prompting
                             } else {
                                 hasPendingApproval = true
@@ -913,6 +959,11 @@ class GenerationLoop(
                         // never execute via the resume path.
                         val resumeHardlineReason = me.rerere.rikkahub.data.ai.tools
                             .HardlineCommandGuard.checkTool(tool.toolName, tool.input)
+                            ?: if (tool.toolName == me.rerere.ai.util.MANAGE_ACTIVE_TOOLS_NAME) {
+                                me.rerere.rikkahub.data.ai.tools.parseManageActiveToolsInvocationFromRaw(tool.input)?.let {
+                                    me.rerere.rikkahub.data.ai.tools.HardlineCommandGuard.checkTool(it.toolName, it.arguments.toString())
+                                }
+                            } else null
                         if (resumeHardlineReason != null) {
                             Log.w(TAG, "generateText: resume-path hardline re-check blocked ${tool.toolName}: $resumeHardlineReason")
                             executedTools += tool.copy(

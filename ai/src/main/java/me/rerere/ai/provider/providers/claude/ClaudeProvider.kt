@@ -67,6 +67,7 @@ import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
+import me.rerere.ai.util.sanitizeAndCapTools
 import me.rerere.ai.util.redactSecrets
 import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.toHeaders
@@ -564,7 +565,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()
             val toolDefinitions = buildList {
                 if (useFunctionTools) {
-                    params.tools.forEach { tool ->
+                    params.tools.sanitizeAndCapTools(params.model.maxTools ?: Int.MAX_VALUE).forEach { tool ->
                         add(buildJsonObject {
                             put("name", tool.name)
                             put("description", tool.description)

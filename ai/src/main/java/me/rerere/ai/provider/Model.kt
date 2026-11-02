@@ -22,6 +22,7 @@ data class Model(
     val supportedParameters: List<String> = emptyList(),
     val pricePromptPerToken: Double? = null,
     val priceCompletionPerToken: Double? = null,
+    val maxTools: Int? = null,
 )
 
 @Serializable
