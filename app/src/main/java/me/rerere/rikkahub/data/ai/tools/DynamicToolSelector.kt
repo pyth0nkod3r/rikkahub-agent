@@ -16,7 +16,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.util.MANAGE_ACTIVE_TOOLS_NAME
 import me.rerere.ai.util.ToolSoftCapPartition
-import me.rerere.ai.util.json
+import kotlinx.serialization.json.Json
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.subagent.SubAgentToolPolicies
 import java.util.concurrent.ConcurrentHashMap
@@ -27,6 +27,12 @@ import kotlin.uuid.Uuid
  * promote standby tools into the active window or demote active tools to standby when the
  * total tool count exceeds the configured soft cap.
  */
+private val selectorJson = Json {
+    ignoreUnknownKeys = true
+    encodeDefaults = true
+    explicitNulls = false
+}
+
 object ConversationToolSelectionState {
     data class Selection(
         val enabled: Set<String> = emptySet(),
@@ -90,7 +96,7 @@ internal fun parseManageActiveToolsInvocation(input: JsonElement): DelegatedTool
 }
 
 internal fun parseManageActiveToolsInvocationFromRaw(rawInput: String): DelegatedToolInvocation? {
-    val parsed = runCatching { json.parseToJsonElement(rawInput.ifBlank { "{}" }) }.getOrNull() ?: return null
+    val parsed = runCatching { selectorJson.parseToJsonElement(rawInput.ifBlank { "{}" }) }.getOrNull() ?: return null
     return parseManageActiveToolsInvocation(parsed)
 }
 
@@ -243,7 +249,7 @@ fun createManageActiveToolsTool(
                                 put("description", JsonPrimitive(tool.description))
                                 val schema = tool.parameters()
                                 if (schema != null) {
-                                    put("parameters", json.encodeToJsonElement(schema))
+                                    put("parameters", selectorJson.encodeToJsonElement(schema))
                                 }
                             })
                         }
@@ -303,7 +309,7 @@ fun createManageActiveToolsTool(
                                 put("description", JsonPrimitive(tool.description))
                                 val schema = tool.parameters()
                                 if (schema != null) {
-                                    put("parameters", json.encodeToJsonElement(schema))
+                                    put("parameters", selectorJson.encodeToJsonElement(schema))
                                 }
                             })
                         }
