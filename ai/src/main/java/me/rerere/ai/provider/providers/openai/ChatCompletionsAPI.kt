@@ -152,8 +152,9 @@ class ChatCompletionsAPI(
                 }
             chunks += decoder.onClosed()
             val textContent = chunks.filterIsInstance<StreamChunk.TextDelta>().joinToString("") { it.text }
-            val reasoningContent = chunks.filterIsInstance<StreamChunk.ReasoningDelta>().joinToString("") { it.reasoning }
+            val reasoningContent = chunks.filterIsInstance<StreamChunk.ReasoningDelta>().joinToString("") { it.text }
             val finishChunk = chunks.filterIsInstance<StreamChunk.Finish>().lastOrNull()
+            val usageChunk = chunks.filterIsInstance<StreamChunk.Usage>().lastOrNull()
             return@withContext TextGenerationResult(
                 id = finishChunk?.responseId ?: "sse_${System.currentTimeMillis()}",
                 model = finishChunk?.model ?: params.model.modelId,
@@ -169,7 +170,7 @@ class ChatCompletionsAPI(
                     }
                 ),
                 finishReason = finishChunk?.finishReason ?: "stop",
-                usage = finishChunk?.usage,
+                usage = usageChunk?.usage,
             )
         }
 

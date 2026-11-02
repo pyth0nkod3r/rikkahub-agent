@@ -52,10 +52,10 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.ui.appendChunk
 import me.rerere.ai.ui.canResumeToolExecution
 import me.rerere.ai.ui.finishPendingTools
 import me.rerere.ai.ui.finishReasoning
@@ -3142,14 +3142,30 @@ class ChatService(
                 if (!isOnDeviceProvider(candidateProvider)) {
                     val streamedSummary = runCatching {
                         withTimeout(COMPACTION_REQUEST_TIMEOUT_MS) {
-                            var streamedMessage = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())
+                            val textBuilder = StringBuilder()
+                            val reasoningBuilder = StringBuilder()
                             candidateHandler.streamText(
                                 providerSetting = candidateProvider,
                                 messages = listOf(UIMessage.user(prompt)),
                                 params = params,
                             ).collect { chunk ->
-                                streamedMessage = streamedMessage.appendChunk(chunk)
+                                when (chunk) {
+                                    is StreamChunk.TextDelta -> textBuilder.append(chunk.text)
+                                    is StreamChunk.ReasoningDelta -> reasoningBuilder.append(chunk.text)
+                                    else -> {}
+                                }
                             }
+                            val streamedMessage = UIMessage(
+                                role = MessageRole.ASSISTANT,
+                                parts = buildList {
+                                    if (reasoningBuilder.isNotEmpty()) {
+                                        add(UIMessagePart.Reasoning(reasoning = reasoningBuilder.toString()))
+                                    }
+                                    if (textBuilder.isNotEmpty()) {
+                                        add(UIMessagePart.Text(textBuilder.toString()))
+                                    }
+                                },
+                            )
                             ContextCompactionPlanner.extractSummaryText(streamedMessage)
                         }
                     }.onFailure { err ->
