@@ -64,11 +64,12 @@ import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
-import me.rerere.ai.ui.MessageRole
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.util.DEFAULT_MAX_TOOLS_SOFT_CAP
 import me.rerere.ai.util.UpstreamContextRegistry
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
@@ -937,10 +938,8 @@ private fun ChatHarnessInspectorSheet(
             UpstreamContextRegistry.getDiscoveredContextLength(chatModel.modelId, provider?.id?.toString())
         } else null
     }
-    val historyTokensEstimate = remember(conversation.messageNodes, conversation.truncateIndex, conversation.compactionState) {
-        val visibleNodes = ContextCompactionPlanner.visibleContextNodes(conversation)
-        visibleNodes.sumOf { ContextBudgetPlanner.estimateNodeTokens(it) } +
-            (conversation.compactionState.summaryTokens ?: ContextBudgetPlanner.estimateTokens(conversation.compactionState.summary))
+    val historyTokensEstimate = remember(conversation.messageNodes) {
+        ContextBudgetPlanner.estimateInputTokens(conversation.currentMessages)
     }
 
     ModalBottomSheet(
@@ -1000,15 +999,7 @@ private fun ChatHarnessInspectorSheet(
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(
-                            text = "Compaction Summary: " + if (conversation.compactionState.hasSummary) {
-                                "${conversation.compactionState.summaryTokens ?: ContextBudgetPlanner.estimateTokens(conversation.compactionState.summary)} tokens (${conversation.compactionState.compressedMessageCount} messages compacted)"
-                            } else {
-                                "None"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Text(
-                            text = "Tool Soft Cap: ${assistant.maxToolsPerTurn ?: setting.maxToolsPerTurn} tools/turn",
+                            text = "Tool Soft Cap: ${assistant.maxTools ?: DEFAULT_MAX_TOOLS_SOFT_CAP} tools/turn",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         if (!conversation.workspaceCwd.isNullOrBlank()) {

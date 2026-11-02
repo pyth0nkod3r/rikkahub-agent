@@ -125,8 +125,8 @@ const val DEFAULT_SUBAGENT_TOKEN_BUDGET = 160_000
  * The resolved tool allow-list and execution budget for one sub-agent run. workspace_ tools are
  * always allowed. Everything else must be a named role tool or belong to a granted capability.
  */
-class SubAgentToolPolicy(
-    private val allowedNames: Set<String>,
+data class SubAgentToolPolicy(
+    val allowedNames: Set<String>,
     val maxSteps: Int = DEFAULT_SUBAGENT_MAX_STEPS,
     val maxTokensBudget: Int = DEFAULT_SUBAGENT_TOKEN_BUDGET,
 ) {
