@@ -18,8 +18,9 @@ class SlashCommandCompletionProviderTest {
         // Typing "/"
         val result = provider.complete(ChatCompletionContext("/", TextRange(1)))
         assertNotNull(result)
-        assertEquals(1, result!!.items.size)
+        assertEquals(2, result!!.items.size)
         assertEquals("/plan", result.items[0].label)
+        assertEquals("/compact", result.items[1].label)
 
         // Typing "/p"
         val pResult = provider.complete(ChatCompletionContext("/p", TextRange(2)))
@@ -29,6 +30,11 @@ class SlashCommandCompletionProviderTest {
         // Typing "/b" in Build mode returns nothing (/build is never offered)
         val bResult = provider.complete(ChatCompletionContext("/b", TextRange(2)))
         assertNull(bResult)
+
+        // Typing "/c" suggests /compact
+        val cResult = provider.complete(ChatCompletionContext("/c", TextRange(2)))
+        assertNotNull(cResult)
+        assertEquals("/compact", cResult!!.items[0].label)
     }
 
     @Test
@@ -39,8 +45,9 @@ class SlashCommandCompletionProviderTest {
         // Typing "/"
         val result = provider.complete(ChatCompletionContext("/", TextRange(1)))
         assertNotNull(result)
-        assertEquals(1, result!!.items.size)
+        assertEquals(2, result!!.items.size)
         assertEquals("/build", result.items[0].label)
+        assertEquals("/compact", result.items[1].label)
 
         // Typing "/b"
         val bResult = provider.complete(ChatCompletionContext("/b", TextRange(2)))
@@ -50,6 +57,11 @@ class SlashCommandCompletionProviderTest {
         // Typing "/p" in Plan mode returns nothing (/plan is never offered)
         val pResult = provider.complete(ChatCompletionContext("/p", TextRange(2)))
         assertNull(pResult)
+
+        // Typing "/c" suggests /compact
+        val cResult = provider.complete(ChatCompletionContext("/c", TextRange(2)))
+        assertNotNull(cResult)
+        assertEquals("/compact", cResult!!.items[0].label)
     }
 
     @Test

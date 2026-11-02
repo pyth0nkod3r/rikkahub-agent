@@ -377,8 +377,10 @@ internal object ContextCompactionPlanner {
     ): String {
         val nonBlank = sources.map { it.trim() }.filter { it.isNotBlank() }
         if (nonBlank.isEmpty()) return ""
+        val header = "### Conversation Summary (Extractive Fallback)\n\n"
+        val remainingBudget = (targetTokens.coerceAtLeast(256) - estimateTokens(header)).coerceAtLeast(64)
         val combined = nonBlank.joinToString("\n\n")
-        return truncateToTokenBudget(combined, targetTokens.coerceAtLeast(256))
+        return header + truncateToTokenBudget(combined, remainingBudget)
     }
 
     /**
