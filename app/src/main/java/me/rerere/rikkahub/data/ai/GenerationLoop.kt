@@ -137,8 +137,10 @@ private fun isNonRetryableClientError(failure: Throwable): Boolean {
     val statusCode = generateSequence(failure) { it.cause }
         .take(8)
         .filterIsInstance<HttpException>()
-        .firstOrNull()
-        ?.statusCode
+        .firstNotNullOfOrNull { ex ->
+            ex.statusCode ?: Regex("""HTTP\s+(\d{3})""", RegexOption.IGNORE_CASE)
+                .find(ex.message.orEmpty())?.groupValues?.get(1)?.toIntOrNull()
+        }
         ?: return false
     return statusCode in 400..499 && statusCode !in RETRYABLE_4XX_STATUS_CODES
 }
@@ -156,8 +158,10 @@ private fun isQuotaExhaustedFailure(failure: Throwable): Boolean {
     val statusCode = generateSequence(failure) { it.cause }
         .take(8)
         .filterIsInstance<HttpException>()
-        .firstOrNull()
-        ?.statusCode
+        .firstNotNullOfOrNull { ex ->
+            ex.statusCode ?: Regex("""HTTP\s+(\d{3})""", RegexOption.IGNORE_CASE)
+                .find(ex.message.orEmpty())?.groupValues?.get(1)?.toIntOrNull()
+        }
     if (statusCode != 429) {
         return false
     }

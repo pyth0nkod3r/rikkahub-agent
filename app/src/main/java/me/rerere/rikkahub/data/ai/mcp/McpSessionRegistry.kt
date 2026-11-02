@@ -544,6 +544,3 @@ private fun mergeTools(storedTools: List<McpTool>, serverTools: List<Tool>): Lis
         )
     }
 }
-
-private fun ToolSchema.toSchema(): InputSchema =
-    InputSchema.Obj(properties = properties ?: JsonObject(emptyMap()), required = required)

@@ -94,7 +94,7 @@ class ChatToolFactory(
             }
         }
         // 过长的输出存成文件让模型用 shell 按需读取；没有 shell 时模型读不到文件，只能原样返回
-        return if (workspaceTools.isEmpty()) tools else tools.map(::withOutputTruncation)
+        return (if (workspaceTools.isEmpty()) tools else tools.map(::withOutputTruncation)).distinctBy { it.name }
     }
 
     private fun withOutputTruncation(tool: Tool): Tool {
@@ -133,8 +133,8 @@ class ChatToolFactory(
      * surface, throwing [InvalidMcpServerNamesException] otherwise. Returns the available
      * tools so callers that need them (like [createTools]) don't have to re-fetch them.
      */
-    suspend fun validateMcpServerNames(): List<Triple<Uuid, String, McpTool>> {
-        val mcpTools = mcpManager.getAllAvailableTools()
+    suspend fun validateMcpServerNames(assistant: Assistant? = null): List<Triple<Uuid, String, McpTool>> {
+        val mcpTools = assistant?.let { mcpManager.getAllAvailableTools(it) } ?: mcpManager.getAllAvailableTools()
         val invalidNames = mcpTools
             .map { it.second }
             .distinct()

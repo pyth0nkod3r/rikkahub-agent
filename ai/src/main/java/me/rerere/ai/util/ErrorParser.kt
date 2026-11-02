@@ -13,11 +13,17 @@ class HttpException(
     val statusCode: Int? = null,
 ) : RuntimeException(message)
 
-fun JsonElement.parseErrorDetail(): HttpException {
+fun JsonElement.parseErrorDetail(statusCode: Int? = null): HttpException {
     return when (this) {
         is JsonObject -> {
             // Check for OpenRouter / API gateway metadata containing raw error details
             val errorObj = this["error"] as? JsonObject ?: this
+            val resolvedStatusCode = statusCode
+                ?: (errorObj["code"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+                ?: (errorObj["status"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+                ?: (this["code"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+                ?: (this["status"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+
             val metadata = (errorObj["metadata"] ?: this["metadata"]) as? JsonObject
             val providerName = (metadata?.get("provider_name") as? JsonPrimitive)?.contentOrNull
             val raw = (metadata?.get("raw") as? JsonPrimitive)?.contentOrNull
@@ -41,13 +47,13 @@ fun JsonElement.parseErrorDetail(): HttpException {
             if (directMessage == "Provider returned error" && (rawDetail != null || providerName != null)) {
                 val detail = rawDetail ?: "unknown upstream error"
                 val prov = if (providerName != null) " ($providerName)" else ""
-                return HttpException("Provider returned error$prov: $detail")
+                return HttpException("Provider returned error$prov: $detail", statusCode = resolvedStatusCode)
             }
 
-            // 尝试获取常见的错误字段
+            // 优先检查常见错误字段
             val errorFields = listOf("error", "detail", "message", "description")
 
-            // 查找第一个存在的错误字段
+            // 找到第一个匹配的错误字段
             val foundField = errorFields.firstOrNull { this[it] != null }
 
             if (foundField != null) {
@@ -57,36 +63,34 @@ fun JsonElement.parseErrorDetail(): HttpException {
                     if (msg == "Provider returned error" && (rawDetail != null || providerName != null)) {
                         val detail = rawDetail ?: "unknown upstream error"
                         val prov = if (providerName != null) " ($providerName)" else ""
-                        return HttpException("Provider returned error$prov: $detail")
+                        return HttpException("Provider returned error$prov: $detail", statusCode = resolvedStatusCode)
                     }
-                    HttpException(msg)
+                    HttpException(msg, statusCode = resolvedStatusCode)
                 } else {
-                    fieldVal.parseErrorDetail()
+                    fieldVal.parseErrorDetail(statusCode = resolvedStatusCode)
                 }
             } else {
-                // 如果没有找到任何错误字段，检查是否是误传入的非错误对象 (例如决策结果对象)
+                // 处理非预期返回决策结果（例如未按约定流式输出）
                 if (this["object"]?.jsonPrimitive?.contentOrNull == "decision" || this["answers"] != null) {
                     val modelName = this["model"]?.jsonPrimitive?.contentOrNull ?: "decision model"
-                    HttpException("Endpoint returned decision result instead of streaming events for model '$modelName'")
+                    HttpException("Endpoint returned decision result instead of streaming events for model '$modelName'", statusCode = resolvedStatusCode)
                 } else {
-                    // 如果没有找到任何错误字段，序列化整个对象
-                    HttpException(Json.encodeToString(JsonElement.serializer(), this))
+                    // 没有命中任何字段兜底输出完整 JSON
+                    HttpException(Json.encodeToString(JsonElement.serializer(), this), statusCode = resolvedStatusCode)
                 }
             }
         }
 
         is JsonArray -> {
             if (this.isEmpty()) {
-                HttpException("Unknown error: Empty JSON array")
+                HttpException("Unknown error: Empty JSON array", statusCode = statusCode)
             } else {
-                // 递归解析数组的第一个元素
-                this.first().parseErrorDetail()
+                this.first().parseErrorDetail(statusCode = statusCode)
             }
         }
 
         is JsonPrimitive -> {
-            // 对于基本类型，直接使用其内容 (covers JsonNull too — it's a JsonPrimitive subclass)
-            HttpException(this.jsonPrimitive.content)
+            HttpException(this.jsonPrimitive.content, statusCode = statusCode)
         }
     }
 }

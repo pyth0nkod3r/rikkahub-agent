@@ -1614,7 +1614,7 @@ class ChatService(
                 )
             )
         }
-        mcpManager.getAllAvailableTools().forEach { (serverId, serverName, mcpTool) ->
+        mcpManager.getAllAvailableTools(assistant).forEach { (serverId, serverName, mcpTool) ->
             val mcpToolName = me.rerere.rikkahub.data.ai.mcp.buildMcpToolName(serverId, serverName, mcpTool.name)
             add(
                 Tool(
@@ -1730,7 +1730,7 @@ class ChatService(
 
             // memory tool
             if (!model.abilities.contains(ModelAbility.TOOL)) {
-                if (useExternalWebSearch || mcpManager.getAllAvailableTools().isNotEmpty()) {
+                if (useExternalWebSearch || mcpManager.getAllAvailableTools(assistant).isNotEmpty()) {
                     addError(
                         IllegalStateException(context.getString(R.string.tools_warning)),
                         conversationId,
@@ -1960,7 +1960,7 @@ class ChatService(
                             )
                         )
                     }
-                    mcpManager.getAllAvailableTools().also { allTools ->
+                    mcpManager.getAllAvailableTools(assistant).also { allTools ->
                         // Upstream name validation: a server name that isn't pure
                         // English+digits would produce an invalid `mcp__<name>__tool`
                         // surface, so surface it as an error rather than emit a tool the
@@ -2021,7 +2021,7 @@ class ChatService(
                     } else {
                         permittedTools
                     }
-                },
+                }.distinctBy { it.name },
             ).onCompletion { completionCause ->
                 // 取消 Live Update 通知
                 cancelLiveUpdateNotification(conversationId)

@@ -463,7 +463,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         Log.i(TAG, "Error response: $bodyElement")
-                        exception = bodyElement.parseErrorDetail()
+                        exception = bodyElement.parseErrorDetail(statusCode = response?.code)
                     }
                 } catch (e: Throwable) {
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw", e)

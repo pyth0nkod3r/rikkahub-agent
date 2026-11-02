@@ -59,6 +59,7 @@ import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.stringSafe
+import me.rerere.ai.util.sanitizeAndCapTools
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.common.http.jsonPrimitiveOrNull
@@ -151,7 +152,7 @@ class ResponseAPI(
                 val bodyStr = response.body.stringSafe()
                 val parsedException = try {
                     if (!bodyStr.isNullOrBlank()) {
-                        json.parseToJsonElement(bodyStr).parseErrorDetail()
+                        json.parseToJsonElement(bodyStr).parseErrorDetail(statusCode = response.code)
                     } else null
                 } catch (_: Throwable) { null }
                 throw parsedException ?: me.rerere.ai.util.HttpException(
@@ -224,7 +225,7 @@ class ResponseAPI(
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         println(bodyElement)
-                        exception = bodyElement.parseErrorDetail()
+                        exception = bodyElement.parseErrorDetail(statusCode = response?.code)
                         Log.i(TAG, "onFailure: $exception")
                     } else if (response != null && !response.isSuccessful) {
                         exception = me.rerere.ai.util.HttpException("HTTP ${response.code}: ${response.message}", statusCode = response.code)
@@ -323,7 +324,8 @@ class ResponseAPI(
             if (useFunctionTools || params.model.tools.isNotEmpty()) {
                 putJsonArray("tools") {
                     if (useFunctionTools) {
-                        params.tools.forEach { tool ->
+                        val toolsToSend = params.tools.sanitizeAndCapTools()
+                        toolsToSend.forEach { tool ->
                             add(buildJsonObject {
                                 put("type", "function")
                                 put("name", tool.name)

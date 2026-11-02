@@ -58,6 +58,7 @@ import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.redactSecrets
+import me.rerere.ai.util.sanitizeAndCapTools
 import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.toHeaders
 import me.rerere.common.android.Logging
@@ -271,7 +272,7 @@ class ChatCompletionsAPI(
                             }
                         }
 
-                        exception = bodyElement.parseErrorDetail()
+                        exception = bodyElement.parseErrorDetail(statusCode = response?.code)
                         Log.i(TAG, "onFailure: $exception")
                     } else if (response != null && !response.isSuccessful) {
                         exception = me.rerere.ai.util.HttpException("HTTP ${response.code}: ${response.message}", statusCode = response.code)
@@ -523,8 +524,9 @@ class ChatCompletionsAPI(
             }
 
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
+                val toolsToSend = params.tools.sanitizeAndCapTools()
                 putJsonArray("tools") {
-                    params.tools.forEach { tool ->
+                    toolsToSend.forEach { tool ->
                         add(buildJsonObject {
                             put("type", "function")
                             put("function", buildJsonObject {

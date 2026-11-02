@@ -76,7 +76,7 @@ class DecisionsAPI(
         if (!response.isSuccessful) {
             val bodyElement = runCatching { json.parseToJsonElement(bodyStr) }.getOrNull()
             if (bodyElement != null) {
-                throw bodyElement.parseErrorDetail()
+                throw bodyElement.parseErrorDetail(statusCode = response.code)
             } else {
                 throw HttpException("HTTP ${response.code}: $bodyStr", statusCode = response.code)
             }
@@ -89,7 +89,7 @@ class DecisionsAPI(
 
         // If the endpoint returned an error payload even with HTTP 200
         if (bodyElement["error"] != null) {
-            throw bodyElement.parseErrorDetail()
+            throw bodyElement.parseErrorDetail(statusCode = response.code)
         }
 
         val answersElement = bodyElement["answers"]
