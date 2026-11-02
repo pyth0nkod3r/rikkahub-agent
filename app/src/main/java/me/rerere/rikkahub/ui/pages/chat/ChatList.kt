@@ -122,6 +122,8 @@ fun ChatList(
     errors: List<ChatError> = emptyList(),
     onDismissError: (Uuid) -> Unit = {},
     onClearAllErrors: () -> Unit = {},
+    onCompactAndRetryError: ((Uuid) -> Unit)? = null,
+    onRetryLastTurnError: ((Uuid) -> Unit)? = null,
     onRegenerate: (UIMessage) -> Unit = {},
     onEdit: (UIMessage) -> Unit = {},
     onForkMessage: (UIMessage) -> Unit = {},
@@ -165,6 +167,8 @@ fun ChatList(
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
+                onCompactAndRetryError = onCompactAndRetryError,
+                onRetryLastTurnError = onRetryLastTurnError,
                 onRegenerate = onRegenerate,
                 onEdit = onEdit,
                 onForkMessage = onForkMessage,
@@ -196,6 +200,8 @@ private fun ChatListNormal(
     errors: List<ChatError>,
     onDismissError: (Uuid) -> Unit,
     onClearAllErrors: () -> Unit,
+    onCompactAndRetryError: ((Uuid) -> Unit)? = null,
+    onRetryLastTurnError: ((Uuid) -> Unit)? = null,
     onRegenerate: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
     onForkMessage: (UIMessage) -> Unit,
@@ -439,6 +445,8 @@ private fun ChatListNormal(
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
+                onCompactAndRetry = onCompactAndRetryError,
+                onRetryLastTurn = onRetryLastTurnError,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .zIndex(5f)

@@ -92,7 +92,7 @@ private object DefaultToolUIRenderer : ToolUIRenderer {
  * 工具 UI 渲染器注册表, 为新工具定制渲染时在 [renderers] 中注册即可
  */
 object ToolUIRegistry {
-    private val renderers: Map<String, ToolUIRenderer> = listOf(
+    private val baseRenderers: List<ToolUIRenderer> = listOf(
         ContextCompactionToolUI,
         SearchWebToolUI,
         ScrapeWebToolUI,
@@ -117,7 +117,23 @@ object ToolUIRegistry {
         SendEmailIntentToolUI,
         OpenWifiSettingsToolUI,
         ShowLocationOnMapToolUI,
-    ).plus(MemoryFileToolUI.all).associateBy { it.toolName }
+    ).plus(MemoryFileToolUI.all)
+
+    private val aliasMap: Map<String, ToolUIRenderer> = mapOf(
+        "edit_file" to EditFileToolUI,
+        "str_replace" to EditFileToolUI,
+        "write_file" to WriteFileToolUI,
+        "write_text_file" to WriteFileToolUI,
+        "read_file" to ReadFileToolUI,
+        "read_text_file" to ReadFileToolUI,
+        "termux_run_command" to ShellToolUI,
+        "shizuku_exec" to ShellToolUI,
+        "ssh_exec" to ShellToolUI,
+        "ssh_exec_saved" to ShellToolUI,
+    )
+
+    private val renderers: Map<String, ToolUIRenderer> =
+        baseRenderers.associateBy { it.toolName } + aliasMap
 
     /** 查找工具对应的渲染器, 未注册时返回默认渲染器 */
     fun resolve(toolName: String): ToolUIRenderer = renderers[toolName] ?: DefaultToolUIRenderer

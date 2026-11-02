@@ -718,17 +718,6 @@ class SubAgentEngine(
         }
         val subAgentSystemPrompt = "$identityBanner\n\n$combinedPrompt"
 
-        val parentConv = parentChatId?.let { runCatching { Uuid.parse(it) }.getOrNull() }?.let { conversationRepo.getConversationById(it) }
-        val conv = Conversation.ofId(
-            id = convId,
-            assistantId = parentAsstUuid,
-            newConversation = true,
-        ).copy(
-            title = "[Sub-agent] ${request.label?.take(40) ?: request.task.take(40)}",
-            chatModelId = resolvedChatModelId,
-            customSystemPrompt = subAgentSystemPrompt,
-            workspaceCwd = parentConv?.workspaceCwd,
-        )
         val toolPolicy = when (val built = buildSubAgentToolPolicy(
             roleTools = request.tools.orEmpty() + profile?.tools.orEmpty(),
             capabilities = request.capabilities.orEmpty() + profile?.capabilities.orEmpty(),
@@ -738,7 +727,25 @@ class SubAgentEngine(
                 markTerminal(runId, SubAgentStatus.FAILED, "unknown capability: ${built.names.joinToString()}")
                 return
             }
-        }
+        }.copy(
+            maxSteps = request.maxTrips.coerceIn(1, SubAgentDefaults.MAX_MAX_TRIPS),
+        )
+
+        val parentConv = parentChatId?.let { runCatching { Uuid.parse(it) }.getOrNull() }?.let { conversationRepo.getConversationById(it) }
+        val baseWorkspaceCwd = parentConv?.workspaceCwd
+        val isolatedWorktreeDir = prepareIsolatedGitWorktreeIfEligible(baseWorkspaceCwd, runId, toolPolicy)
+        val effectiveWorkspaceCwd = isolatedWorktreeDir ?: baseWorkspaceCwd
+
+        val conv = Conversation.ofId(
+            id = convId,
+            assistantId = parentAsstUuid,
+            newConversation = true,
+        ).copy(
+            title = "[Sub-agent] ${request.label?.take(40) ?: request.task.take(40)}",
+            chatModelId = resolvedChatModelId,
+            customSystemPrompt = subAgentSystemPrompt,
+            workspaceCwd = effectiveWorkspaceCwd,
+        )
         conversationRepo.insertConversation(conv)
         chatService.initializeConversation(conv.id)
         HeadlessConversations.mark(conv.id)
@@ -784,9 +791,81 @@ class SubAgentEngine(
             harvestMetricsAndFinish(runId, conv.id, terminal, error = "${t::class.simpleName}: ${t.message.orEmpty()}")
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } finally {
+            if (baseWorkspaceCwd != null && isolatedWorktreeDir != null) {
+                cleanupIsolatedGitWorktreeIfClean(baseWorkspaceCwd, isolatedWorktreeDir)
+            }
             SubAgentToolPolicies.unregister(conv.id)
             HeadlessConversations.unmark(conv.id)
             registry.clearJob(runId)
+        }
+    }
+
+    /**
+     * Creates an isolated git worktree (`<baseCwd>/.rikkahub-worktrees/<runId>`) when a parallel
+     * sub-agent with file-mutating capabilities runs inside a Git repository. Falls back cleanly
+     * to null (shared workspaceCwd) when git is unavailable or the workspace is not a git repo.
+     */
+    private fun prepareIsolatedGitWorktreeIfEligible(
+        baseCwd: String?,
+        runId: String,
+        policy: SubAgentToolPolicy,
+    ): String? {
+        if (baseCwd.isNullOrBlank()) return null
+        val mutatingTools = setOf(
+            "workspace_write_file",
+            "workspace_edit_file",
+            "workspace_shell",
+            "write_file",
+            "edit_file",
+            "write_text_file",
+        )
+        if (policy.allowedNames.none { it in mutatingTools }) return null
+        return runCatching {
+            val repoDir = java.io.File(baseCwd)
+            if (!repoDir.isDirectory || !java.io.File(repoDir, ".git").exists()) return null
+            val worktreesRoot = java.io.File(repoDir, ".rikkahub-worktrees")
+            worktreesRoot.mkdirs()
+            val safeId = runId.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(32)
+            val targetDir = java.io.File(worktreesRoot, safeId)
+            if (targetDir.exists()) return targetDir.absolutePath
+            val proc = ProcessBuilder("git", "worktree", "add", "--detach", targetDir.absolutePath, "HEAD")
+                .directory(repoDir)
+                .redirectErrorStream(true)
+                .start()
+            val finished = proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            if (finished && proc.exitValue() == 0 && targetDir.isDirectory) {
+                targetDir.absolutePath
+            } else {
+                if (!finished) proc.destroyForcibly()
+                null
+            }
+        }.getOrNull()
+    }
+
+    private fun cleanupIsolatedGitWorktreeIfClean(baseCwd: String, worktreePath: String) {
+        runCatching {
+            val repoDir = java.io.File(baseCwd)
+            val wtDir = java.io.File(worktreePath)
+            if (!wtDir.isDirectory) return
+            val statusProc = ProcessBuilder("git", "status", "--porcelain")
+                .directory(wtDir)
+                .redirectErrorStream(true)
+                .start()
+            val finished = statusProc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+            if (!finished) {
+                statusProc.destroyForcibly()
+                return
+            }
+            val output = statusProc.inputStream.bufferedReader().readText().trim()
+            if (statusProc.exitValue() == 0 && output.isEmpty()) {
+                val rmProc = ProcessBuilder("git", "worktree", "remove", "--force", wtDir.absolutePath)
+                    .directory(repoDir)
+                    .redirectErrorStream(true)
+                    .start()
+                if (!rmProc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                    rmProc.destroyForcibly()
+                }
+            }
         }
     }
 

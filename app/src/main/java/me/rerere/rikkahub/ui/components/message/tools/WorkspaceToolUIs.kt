@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.components.message.tools
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +14,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,11 +72,19 @@ object EditFileToolUI : ToolUIRenderer {
      */
     private fun diffOf(context: ToolUIContext): String? {
         if (context.tool.isExecuted) {
-            return context.tool.output.firstOrNull()?.metadataAs<DiffMetadata>()?.diff
+            context.tool.output.firstOrNull()?.metadataAs<DiffMetadata>()?.diff?.let { return it }
         }
-        val path = context.arguments.getStringContent("path") ?: return null
-        val oldText = context.arguments.getStringContent("old_text") ?: return null
-        val newText = context.arguments.getStringContent("new_text") ?: return null
+        val path = context.arguments.getStringContent("path")
+            ?: context.arguments.getStringContent("file_path")
+            ?: "file"
+        val oldText = context.arguments.getStringContent("old_text")
+            ?: context.arguments.getStringContent("old_string")
+            ?: context.arguments.getStringContent("target")
+            ?: return null
+        val newText = context.arguments.getStringContent("new_text")
+            ?: context.arguments.getStringContent("new_string")
+            ?: context.arguments.getStringContent("replacement")
+            ?: return null
         return generateUnifiedDiff(oldText, newText, path)
     }
 
@@ -208,17 +220,26 @@ object WriteFileToolUI : ToolUIRenderer {
 
     private fun textOf(context: ToolUIContext): String? =
         context.arguments.getStringContent("text")
+            ?: context.arguments.getStringContent("content")
 
     override fun hasSummary(context: ToolUIContext): Boolean = textOf(context) != null
 
     @Composable
     override fun Summary(context: ToolUIContext) {
         val text = remember(context) { textOf(context) } ?: return
-        FileContentSummary(
-            text = text,
-            path = context.arguments.getStringContent("path"),
-            loading = context.loading,
-        )
+        val lineCount = remember(text) { text.lines().size }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "+$lineCount lines",
+                style = MaterialTheme.typography.labelSmall,
+                color = DiffAddedColor,
+            )
+            FileContentSummary(
+                text = text,
+                path = context.arguments.getStringContent("path") ?: context.arguments.getStringContent("file_path"),
+                loading = context.loading,
+            )
+        }
     }
 
     @Composable
@@ -288,7 +309,7 @@ private fun FileContentPreview(path: String?, code: String) {
  */
 object ShellToolUI : ToolUIRenderer {
     private const val TITLE_MAX_CHARS = 40
-    private const val SUMMARY_MAX_LINES = 8
+    private const val SUMMARY_MAX_LINES = 25
 
     override val toolName: String = "workspace_shell"
 
@@ -296,42 +317,80 @@ object ShellToolUI : ToolUIRenderer {
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        val command = context.arguments.getStringContent("command") ?: return stringResource(R.string.tool_ui_shell_default)
+        val command = context.arguments.getStringContent("command")
+            ?: context.arguments.getStringContent("cmd")
+            ?: return stringResource(R.string.tool_ui_shell_default)
         val preview = command.replace("\n", " ").trim()
         val truncated = if (preview.length > TITLE_MAX_CHARS) preview.take(TITLE_MAX_CHARS) + "…" else preview
         return stringResource(R.string.tool_ui_shell, truncated)
     }
 
-    override fun hasSummary(context: ToolUIContext): Boolean = context.content != null
+    private fun extractRawOutput(context: ToolUIContext): String {
+        val content = context.content
+        if (content != null) {
+            val structured = listOf(
+                content.getStringContent("stdout"),
+                content.getStringContent("stderr"),
+                content.getStringContent("output"),
+            ).filterNot { it.isNullOrBlank() }.joinToString("\n").trim()
+            if (structured.isNotEmpty()) return structured
+        }
+        return context.tool.output
+            .filterIsInstance<me.rerere.ai.ui.UIMessagePart.Text>()
+            .joinToString("\n") { it.text }
+            .trim()
+    }
+
+    override fun hasSummary(context: ToolUIContext): Boolean =
+        context.content != null || context.tool.output.any { it is me.rerere.ai.ui.UIMessagePart.Text }
 
     @Composable
     override fun Summary(context: ToolUIContext) {
-        val content = context.content ?: return
-        val combined = remember(content) {
-            listOf(content.getStringContent("stdout"), content.getStringContent("stderr"))
-                .filterNot { it.isNullOrBlank() }
-                .joinToString("\n")
-                .trim()
-        }
+        val content = context.content
+        val combined = remember(context) { extractRawOutput(context) }
+        val lines = remember(combined) { if (combined.isEmpty()) emptyList() else combined.lines() }
+        var showAllLines by remember(context.tool.toolCallId) { mutableStateOf(false) }
+
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            ShellExitStatus(content, MaterialTheme.typography.labelSmall)
-            if (combined.isNotEmpty()) {
-                Box(
+            if (content != null && (content.int("exitCode") != null || content.boolean("timedOut") != null)) {
+                ShellExitStatus(content, MaterialTheme.typography.labelSmall)
+            }
+            if (lines.isNotEmpty()) {
+                val displayedText = remember(lines, showAllLines) {
+                    if (showAllLines || lines.size <= SUMMARY_MAX_LINES) {
+                        combined
+                    } else {
+                        lines.take(SUMMARY_MAX_LINES).joinToString("\n")
+                    }
+                }
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(MaterialTheme.shapes.small)
                         .background(MaterialTheme.colorScheme.surfaceContainer)
                         .padding(horizontal = 8.dp, vertical = 6.dp)
                         .shimmer(isLoading = context.loading),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = combined.lineSequence().take(SUMMARY_MAX_LINES).joinToString("\n"),
+                        text = displayedText,
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                         fontSize = 11.sp,
                         lineHeight = 14.sp,
-                        maxLines = SUMMARY_MAX_LINES,
+                        maxLines = if (showAllLines) 200 else SUMMARY_MAX_LINES,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (lines.size > SUMMARY_MAX_LINES) {
+                        val remaining = lines.size - SUMMARY_MAX_LINES
+                        Text(
+                            text = if (showAllLines) "▼ Collapse terminal output" else "▶ Show $remaining more lines",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .clickable { showAllLines = !showAllLines }
+                                .padding(top = 2.dp),
+                        )
+                    }
                 }
             }
         }

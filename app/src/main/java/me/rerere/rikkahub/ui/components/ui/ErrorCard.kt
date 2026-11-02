@@ -53,6 +53,8 @@ fun ErrorCardsDisplay(
     onDismissError: (Uuid) -> Unit,
     onClearAllErrors: () -> Unit,
     modifier: Modifier = Modifier,
+    onCompactAndRetry: ((Uuid) -> Unit)? = null,
+    onRetryLastTurn: ((Uuid) -> Unit)? = null,
 ) {
     AnimatedVisibility(
         visible = errors.isNotEmpty(),
@@ -96,6 +98,8 @@ fun ErrorCardsDisplay(
                 ErrorCard(
                     error = error,
                     onDismiss = { onDismissError(error.id) },
+                    onCompactAndRetry = onCompactAndRetry?.let { action -> { action(error.id) } },
+                    onRetryLastTurn = onRetryLastTurn?.let { action -> { action(error.id) } },
                 )
             }
         }
@@ -107,16 +111,26 @@ fun ErrorCard(
     error: ChatError,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    onCompactAndRetry: (() -> Unit)? = null,
+    onRetryLastTurn: (() -> Unit)? = null,
 ) {
     val clipboard = LocalClipboard.current
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
     val checkFastModelSettings = stringResource(R.string.chat_page_check_fast_model_settings)
     val linkColor = MaterialTheme.colorScheme.primary
+    val rawMessage = error.error.message ?: "Unknown error"
+    val isContextOrCompressionError = rawMessage.contains("ContextWindowExceeded", ignoreCase = true) ||
+        rawMessage.contains("context length", ignoreCase = true) ||
+        rawMessage.contains("longer than the model", ignoreCase = true) ||
+        rawMessage.contains("maximum context", ignoreCase = true) ||
+        rawMessage.contains("compressed summary", ignoreCase = true) ||
+        (error.title?.contains("compression", ignoreCase = true) == true)
+    val hasActionChips = (isContextOrCompressionError && onCompactAndRetry != null) || onRetryLastTurn != null
 
-    // 5 秒后自动消失
-    LaunchedEffect(error.id) {
-        delay(5000)
+    // Actionable errors stay visible longer (12s) so the user can tap recovery chips
+    LaunchedEffect(error.id, hasActionChips) {
+        delay(if (hasActionChips) 12_000L else 5_000L)
         onDismiss()
     }
 
@@ -126,87 +140,130 @@ fun ErrorCard(
         color = MaterialTheme.colorScheme.errorContainer,
         shadowElevation = 4.dp,
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (error.title != null) {
-                    Text(
-                        text = error.title,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Text(
-                    text = error.error.message ?: "Unknown error",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (error.solution == ChatErrorSolution.CheckFastModelSettings) {
-                    Text(
-                        text = buildAnnotatedString {
-                            withLink(
-                                LinkAnnotation.Clickable(
-                                    tag = "check_fast_model_settings",
-                                    styles = TextLinkStyles(
-                                        style = SpanStyle(
-                                            color = linkColor,
-                                            textDecoration = TextDecoration.Underline,
-                                        )
-                                    ),
-                                    linkInteractionListener = {
-                                        navController.navigate(Screen.SettingModels)
-                                    },
-                                )
-                            ) {
-                                append(checkFastModelSettings)
-                            }
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            IconButton(
-                onClick = {
-                    scope.launch {
-                        clipboard.setClipEntry(
-                            ClipEntry(
-                                clipData = ClipData.newPlainText("Error", error.error.message ?: "Unknown error")
-                            )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (error.title != null) {
+                        Text(
+                            text = error.title,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
-                },
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    imageVector = HugeIcons.Copy01,
-                    contentDescription = stringResource(R.string.accessibility_copy_error_message),
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.size(18.dp),
-                )
+                    Text(
+                        text = rawMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (error.solution == ChatErrorSolution.CheckFastModelSettings) {
+                        Text(
+                            text = buildAnnotatedString {
+                                withLink(
+                                    LinkAnnotation.Clickable(
+                                        tag = "check_fast_model_settings",
+                                        styles = TextLinkStyles(
+                                            style = SpanStyle(
+                                                color = linkColor,
+                                                textDecoration = TextDecoration.Underline,
+                                            )
+                                        ),
+                                        linkInteractionListener = {
+                                            navController.navigate(Screen.SettingModels)
+                                        },
+                                    )
+                                ) {
+                                    append(checkFastModelSettings)
+                                }
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            clipboard.setClipEntry(
+                                ClipEntry(
+                                    clipData = ClipData.newPlainText("Error", rawMessage)
+                                )
+                            )
+                        }
+                    },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.Copy01,
+                        contentDescription = stringResource(R.string.accessibility_copy_error_message),
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.Cancel01,
+                        contentDescription = stringResource(R.string.chat_page_dismiss_error),
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    imageVector = HugeIcons.Cancel01,
-                    contentDescription = stringResource(R.string.chat_page_dismiss_error),
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.size(18.dp),
-                )
+
+            if (hasActionChips) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (onCompactAndRetry != null) {
+                        Surface(
+                            onClick = onCompactAndRetry,
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        ) {
+                            Text(
+                                text = "⚡ Compact & Continue",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                    if (onRetryLastTurn != null) {
+                        Surface(
+                            onClick = onRetryLastTurn,
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                        ) {
+                            Text(
+                                text = "🔄 Retry",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

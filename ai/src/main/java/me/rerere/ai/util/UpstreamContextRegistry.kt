@@ -98,7 +98,11 @@ object UpstreamContextRegistry {
         }
     }
 
-    internal fun clearForTesting() {
+    fun clearForTesting() {
+        discoveredLimits.clear()
+    }
+
+    fun clearForTest() {
         discoveredLimits.clear()
     }
 }

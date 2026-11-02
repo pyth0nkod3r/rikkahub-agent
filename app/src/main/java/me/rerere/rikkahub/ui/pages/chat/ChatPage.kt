@@ -3,19 +3,31 @@ package me.rerere.rikkahub.ui.pages.chat
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetValue
@@ -29,11 +41,13 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -53,13 +67,17 @@ import kotlinx.coroutines.launch
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.ui.MessageRole
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.util.UpstreamContextRegistry
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.LeftToRightListBullet
 import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.ContextBudgetPlanner
+import me.rerere.rikkahub.data.ai.ContextCompactionPlanner
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -73,6 +91,9 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
+import me.rerere.rikkahub.subagent.SubAgentRegistry
+import me.rerere.rikkahub.subagent.SubAgentRun
+import me.rerere.rikkahub.subagent.SubAgentStatus
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
@@ -290,6 +311,16 @@ private fun ChatPageContent(
     val hazeState = rememberHazeState()
     val assistant = setting.getAssistantById(conversation.assistantId) ?: setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }
+    var showInspectorSheet by remember { mutableStateOf(false) }
+    val subAgentRegistry: SubAgentRegistry = koinInject()
+    val allSubAgentRuns by subAgentRegistry.runs.collectAsStateWithLifecycle()
+    val conversationSubAgentRuns = remember(allSubAgentRuns, conversation.id, assistant.id) {
+        val convIdStr = conversation.id.toString()
+        val asstIdStr = assistant.id.toString()
+        allSubAgentRuns.values
+            .filter { it.parentChatId == convIdStr || (it.parentChatId == null && it.parentAssistantId == asstIdStr) }
+            .sortedByDescending { it.startedAtMs }
+    }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
         inputState = inputState,
         setting = setting,
@@ -336,6 +367,10 @@ private fun ChatPageContent(
                     bigScreen = bigScreen,
                     drawerState = drawerState,
                     previewMode = previewMode,
+                    subAgentRuns = conversationSubAgentRuns,
+                    onClickInspector = {
+                        showInspectorSheet = true
+                    },
                     onNewChat = {
                         navigateToChatPage(navController)
                     },
@@ -538,6 +573,34 @@ private fun ChatPageContent(
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
+                onCompactAndRetryError = { errorId ->
+                    onDismissError(errorId)
+                    toaster.show(context.getString(R.string.chat_page_compressing), type = ToastType.Info)
+                    scope.launch {
+                        vm.handleCompressContext(
+                            additionalPrompt = "",
+                            targetTokens = 1000,
+                            keepRecentMessages = 32,
+                        ).await().onSuccess {
+                            toaster.show("Conversation history compressed", type = ToastType.Success)
+                            val lastMsg = conversation.currentMessages.lastOrNull()
+                            if (lastMsg != null && lastMsg.role == MessageRole.USER) {
+                                vm.regenerateAtMessage(lastMsg)
+                            } else {
+                                vm.handleMessageSend(listOf(UIMessagePart.Text("Continue")))
+                            }
+                        }
+                    }
+                },
+                onRetryLastTurnError = { errorId ->
+                    onDismissError(errorId)
+                    val lastMsg = conversation.currentMessages.lastOrNull()
+                    if (lastMsg != null && lastMsg.role == MessageRole.USER) {
+                        vm.regenerateAtMessage(lastMsg)
+                    } else {
+                        vm.handleMessageSend(listOf(UIMessagePart.Text("Continue")))
+                    }
+                },
                 onRegenerate = {
                     vm.regenerateAtMessage(it)
                 },
@@ -617,6 +680,29 @@ private fun ChatPageContent(
                 attachmentPickerActions = attachmentPickerActions,
                 onStartVoiceMode = onStartVoiceMode,
                 onDismiss = { showFilesSheet = false },
+            )
+        }
+
+        if (showInspectorSheet) {
+            ChatHarnessInspectorSheet(
+                conversation = conversation,
+                assistant = assistant,
+                chatModel = activeChatModel,
+                setting = setting,
+                subAgentRuns = conversationSubAgentRuns,
+                onCancelSubAgent = { runId ->
+                    subAgentRegistry.requestCancel(runId)
+                },
+                onCompactContext = {
+                    showInspectorSheet = false
+                    toaster.show(context.getString(R.string.chat_page_compressing), type = ToastType.Info)
+                    scope.launch {
+                        vm.handleCompressContext("", 1000, 32).await().onSuccess {
+                            toaster.show("Conversation history compressed", type = ToastType.Success)
+                        }
+                    }
+                },
+                onDismiss = { showInspectorSheet = false },
             )
         }
     }
@@ -705,6 +791,8 @@ private fun TopBar(
     drawerState: DrawerState,
     bigScreen: Boolean,
     previewMode: Boolean,
+    subAgentRuns: List<SubAgentRun> = emptyList(),
+    onClickInspector: () -> Unit = {},
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
 ) {
@@ -713,6 +801,12 @@ private fun TopBar(
     // 与抽屉的 Rename 菜单项共享同一个重命名对话框状态，见 ChatDrawerVM.conversationToRename
     val activity = LocalContext.current as ComponentActivity
     val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = activity)
+    val runningCount = remember(subAgentRuns) {
+        subAgentRuns.count { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }
+    }
+    val doneCount = remember(subAgentRuns) {
+        subAgentRuns.size - runningCount
+    }
 
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
@@ -766,6 +860,32 @@ private fun TopBar(
             }
         },
         actions = {
+            Surface(
+                onClick = onClickInspector,
+                shape = RoundedCornerShape(16.dp),
+                color = if (runningCount > 0) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                },
+                modifier = Modifier.padding(end = 4.dp),
+            ) {
+                Text(
+                    text = when {
+                        runningCount > 0 -> "🤖 $runningCount · $doneCount ▼"
+                        subAgentRuns.isNotEmpty() -> "🤖 ${subAgentRuns.size} ▼"
+                        else -> "🧠"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (runningCount > 0) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+
             IconButton(
                 onClick = {
                     onClickMenu()
@@ -783,4 +903,206 @@ private fun TopBar(
             }
         },
     )
+}
+
+@Composable
+private fun ChatHarnessInspectorSheet(
+    conversation: Conversation,
+    assistant: Assistant,
+    chatModel: Model?,
+    setting: Settings,
+    subAgentRuns: List<SubAgentRun>,
+    onCancelSubAgent: (String) -> Unit,
+    onCompactContext: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
+    var selectedTab by remember {
+        mutableIntStateOf(if (subAgentRuns.any { it.status == SubAgentStatus.RUNNING }) 1 else 0)
+    }
+
+    val provider = remember(chatModel, setting.providers) {
+        chatModel?.findProvider(setting.providers, checkOverwrite = false)
+    }
+    val effectiveContextLimit = remember(chatModel, provider) {
+        if (chatModel != null) {
+            UpstreamContextRegistry.resolveContextLength(chatModel, provider?.id?.toString())
+        } else null
+    }
+    val discoveredContextLimit = remember(chatModel, provider) {
+        if (chatModel != null) {
+            UpstreamContextRegistry.getDiscoveredContextLength(chatModel.modelId, provider?.id?.toString())
+        } else null
+    }
+    val historyTokensEstimate = remember(conversation.messageNodes, conversation.truncateIndex, conversation.compactionState) {
+        val visibleNodes = ContextCompactionPlanner.visibleContextNodes(conversation)
+        visibleNodes.sumOf { ContextBudgetPlanner.estimateNodeTokens(it) } +
+            (conversation.compactionState.summaryTokens ?: ContextBudgetPlanner.estimateTokens(conversation.compactionState.summary))
+    }
+
+    ModalBottomSheet(
+        sheetState = sheetState,
+        onDismissRequest = onDismiss,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.75f)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilterChip(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    label = { Text("🧠 Context & Memory") },
+                )
+                FilterChip(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    label = { Text("🤖 Sub-Agents (${subAgentRuns.size})") },
+                )
+            }
+
+            if (selectedTab == 0) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "Context Budget & Model Telemetry",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = "Model: ${chatModel?.displayName ?: "None"} (${provider?.name ?: "-"})",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            text = "Context Ceiling: ${effectiveContextLimit?.let { "${it / 1000}k ($it tok)" } ?: "Unknown"}" +
+                                (if (discoveredContextLimit != null) " [Auto-discovered]" else ""),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            text = "Active Context Estimate: ~${historyTokensEstimate} tokens (${conversation.messageNodes.size} total turns)",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            text = "Compaction Summary: " + if (conversation.compactionState.hasSummary) {
+                                "${conversation.compactionState.summaryTokens ?: ContextBudgetPlanner.estimateTokens(conversation.compactionState.summary)} tokens (${conversation.compactionState.compressedMessageCount} messages compacted)"
+                            } else {
+                                "None"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            text = "Tool Soft Cap: ${assistant.maxToolsPerTurn ?: setting.maxToolsPerTurn} tools/turn",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (!conversation.workspaceCwd.isNullOrBlank()) {
+                            Text(
+                                text = "Workspace CWD: ${conversation.workspaceCwd}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        FilledTonalButton(
+                            onClick = onCompactContext,
+                            enabled = conversation.messageNodes.size >= 2,
+                        ) {
+                            Text("⚡ Compact Conversation History Now")
+                        }
+                    }
+                }
+            } else {
+                if (subAgentRuns.isEmpty()) {
+                    Text(
+                        text = "No sub-agents have been dispatched in this session yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    subAgentRuns.forEach { run ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = run.label.ifBlank { run.agentName ?: run.id },
+                                        style = MaterialTheme.typography.titleSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        text = run.status.name,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = when (run.status) {
+                                            SubAgentStatus.RUNNING, SubAgentStatus.PENDING -> MaterialTheme.colorScheme.primary
+                                            SubAgentStatus.SUCCEEDED -> MaterialTheme.colorScheme.tertiary
+                                            else -> MaterialTheme.colorScheme.error
+                                        },
+                                    )
+                                }
+                                Text(
+                                    text = "Model: ${run.resolvedModelSlug ?: run.attemptedModel ?: "inherited"} (${run.providerName ?: "default"})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = "Tokens: ${run.tokensIn + run.tokensOut} (in=${run.tokensIn}, out=${run.tokensOut}) · Steps: ${run.tripCount}/${run.maxTrips}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = run.task,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (!run.error.isNullOrBlank()) {
+                                    Text(
+                                        text = "Error: ${run.error}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                if (run.status == SubAgentStatus.RUNNING || run.status == SubAgentStatus.PENDING) {
+                                    OutlinedButton(
+                                        onClick = { onCancelSubAgent(run.id) },
+                                    ) {
+                                        Text("Cancel Sub-Agent")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
