@@ -278,11 +278,12 @@ private fun AssistantLocalToolContent(
 
     if (showCustomMaxToolsDialog) {
         var customCapInput by remember(assistant.maxTools) {
+            val currentCap = assistant.maxTools
             mutableStateOf(
                 when {
-                    assistant.maxTools == null -> "128"
-                    assistant.maxTools <= 0 -> "0"
-                    else -> assistant.maxTools.toString()
+                    currentCap == null -> "128"
+                    currentCap <= 0 -> "0"
+                    else -> currentCap.toString()
                 }
             )
         }
@@ -332,10 +333,13 @@ private fun AssistantLocalToolContent(
             standbyToolNames = previewPartition.standbyTools.map { it.name }.toSet(),
             disabledToolNames = assistant.disabledToolNames,
             pinnedToolNames = assistant.pinnedToolNames,
-            softCapLabel = when {
-                assistant.maxTools == null -> "Default (128)"
-                assistant.maxTools <= 0 -> "Unlimited"
-                else -> assistant.maxTools.toString()
+            softCapLabel = run {
+                val currentCap = assistant.maxTools
+                when {
+                    currentCap == null -> "Default (128)"
+                    currentCap <= 0 -> "Unlimited"
+                    else -> currentCap.toString()
+                }
             },
             onToggleToolEnabled = { toolName, enabled ->
                 onUpdateAssistant { current ->
@@ -382,10 +386,11 @@ private fun AssistantLocalToolContent(
         CardGroup {
             item(
                 headlineContent = {
+                    val currentCap = assistant.maxTools
                     val capDisplay = when {
-                        assistant.maxTools == null -> "Default (128)"
-                        assistant.maxTools <= 0 -> "Unlimited"
-                        else -> "${assistant.maxTools}"
+                        currentCap == null -> "Default (128)"
+                        currentCap <= 0 -> "Unlimited"
+                        else -> "$currentCap"
                     }
                     Text("Max Tools Soft Cap: $capDisplay")
                 },
@@ -410,10 +415,11 @@ private fun AssistantLocalToolContent(
                                 "256" to 256,
                                 "Unlimited" to 0,
                             )
+                            val currentCap = assistant.maxTools
                             presets.forEach { (label, value) ->
-                                val isSelected = (value == null && assistant.maxTools == null) ||
-                                    (value == 0 && assistant.maxTools != null && assistant.maxTools <= 0) ||
-                                    (value != null && value > 0 && assistant.maxTools == value)
+                                val isSelected = (value == null && currentCap == null) ||
+                                    (value == 0 && currentCap != null && currentCap <= 0) ||
+                                    (value != null && value > 0 && currentCap == value)
                                 androidx.compose.material3.FilterChip(
                                     selected = isSelected,
                                     onClick = {
@@ -431,6 +437,7 @@ private fun AssistantLocalToolContent(
                 },
             )
             item(
+                onClick = { showIndividualToolSelectionDialog = true },
                 headlineContent = {
                     Text("Select / Enable / Pin Individual Tools")
                 },
@@ -441,7 +448,6 @@ private fun AssistantLocalToolContent(
                             "${assistant.disabledToolNames.size} individually disabled. Tap to customize."
                     )
                 },
-                modifier = Modifier.clickable { showIndividualToolSelectionDialog = true },
             )
         }
 
