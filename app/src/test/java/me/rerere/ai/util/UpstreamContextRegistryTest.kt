@@ -18,8 +18,7 @@ class UpstreamContextRegistryTest {
         val model = Model(modelId = "agnes-3.0-flash", contextLength = null)
 
         val extracted = UpstreamContextRegistry.recordFromError(
-            modelUuid = model.id.toString(),
-            modelSlug = model.modelId,
+            modelId = model.modelId,
             errorText = errorBody,
         )
 
@@ -30,7 +29,10 @@ class UpstreamContextRegistryTest {
     @Test
     fun `explicit model contextLength takes precedence over discovered value`() {
         val model = Model(modelId = "agnes-3.0-flash", contextLength = 128_000)
-        UpstreamContextRegistry.record(model.id.toString(), model.modelId, 524_288)
+        UpstreamContextRegistry.record(
+            modelId = model.modelId,
+            contextLength = 524_288,
+        )
 
         assertEquals(128_000, UpstreamContextRegistry.resolveContextLength(model))
     }

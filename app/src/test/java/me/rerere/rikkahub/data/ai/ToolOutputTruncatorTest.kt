@@ -47,8 +47,8 @@ class ToolOutputTruncatorTest {
 
         val decayed = ToolOutputTruncator.decayAgedToolOutputs(
             messages = messages,
-            keepLatestToolResults = 4,
-            agedCharThreshold = 500,
+            keepRecentToolCalls = 4,
+            maxAgedChars = 500,
         )
 
         val firstToolText = (decayed[0].parts.single() as UIMessagePart.Tool)
@@ -60,8 +60,8 @@ class ToolOutputTruncatorTest {
         val sixthToolText = (decayed[5].parts.single() as UIMessagePart.Tool)
             .output.filterIsInstance<UIMessagePart.Text>().single().text
 
-        assertTrue(firstToolText.contains("aged tool output decayed"))
-        assertTrue(secondToolText.contains("aged tool output decayed"))
+        assertTrue(firstToolText.contains("omitted"))
+        assertTrue(secondToolText.contains("omitted"))
         assertEquals(longOutput, thirdToolText)
         assertEquals(longOutput, sixthToolText)
     }
