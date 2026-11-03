@@ -2231,6 +2231,11 @@ class ChatService(
             generationFailure.isContextLimitError() &&
             canRetryAfterContextLimit
         ) {
+            UpstreamContextRegistry.recordFromError(
+                modelId = model.modelId,
+                errorText = generationFailure.message,
+                providerId = model.findProvider(settings.providers)?.id?.toString(),
+            )
             // Some providers omit context_length metadata or reject requests because their
             // system/tool schema overhead is larger than the local estimate. Force one
             // compaction pass and retry the same user turn once before surfacing the provider
@@ -2277,6 +2282,13 @@ class ChatService(
 
         generationResult.onFailure {
             if (it is CancellationException) throw it
+            if (it.isContextLimitError()) {
+                UpstreamContextRegistry.recordFromError(
+                    modelId = model.modelId,
+                    errorText = it.message,
+                    providerId = model.findProvider(settings.providers)?.id?.toString(),
+                )
+            }
             sessions[conversationId]?.messageQueue?.pause()
 
             // 取消 Live Update 通知
