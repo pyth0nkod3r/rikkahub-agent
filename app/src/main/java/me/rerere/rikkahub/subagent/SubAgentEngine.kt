@@ -382,7 +382,9 @@ class SubAgentEngine(
         val run = registry.get(runId) ?: return false
         val convId = run.conversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
         if (convId != null) {
-            runCatching { chatService.stopGeneration(convId) }
+            appScope.launch {
+                runCatching { chatService.stopGeneration(convId) }
+            }
         }
         val jobCancelled = registry.requestCancel(runId)
         registry.update(runId) {
@@ -392,7 +394,12 @@ class SubAgentEngine(
                 error = "Cancelled by user"
             )
         }
-        ledgerIds[runId]?.let { agentRunRepo.setStatus(it, AgentRunStatus.cancelled) }
+        val ledgerId = ledgerIds[runId]
+        if (ledgerId != null) {
+            appScope.launch(Dispatchers.IO) {
+                runCatching { agentRunRepo.setStatus(ledgerId, AgentRunStatus.cancelled) }
+            }
+        }
         return true
     }
 
