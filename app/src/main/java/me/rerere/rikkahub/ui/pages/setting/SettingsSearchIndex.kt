@@ -212,6 +212,12 @@ fun settingsSearchIndex(developerMode: Boolean): List<SettingsSearchEntry> {
             groupRes = R.string.setting_page_preferences,
             route = Screen.SettingPreferencesUI,
         ),
+        SettingsSearchEntry(
+            titleRes = R.string.setting_page_preferences_harness,
+            descriptionRes = R.string.setting_page_preferences_harness_desc,
+            groupRes = R.string.setting_page_preferences,
+            route = Screen.SettingHarness,
+        ),
     )
 
     if (developerMode) {

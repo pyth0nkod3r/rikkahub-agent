@@ -153,6 +153,7 @@ internal fun resolveFallbackModels(
         }
     }
 
+    addUnique(settings.findModelById(settings.fallbackModelId))
     addUnique(settings.getCurrentChatModel())
     addUnique(settings.findModelById(settings.fastModelId))
     return candidates
@@ -690,7 +691,7 @@ class GenerationLoop(
                 isSubAgent || tool.name !in assistant.disabledToolNames || tool.name in selectionState.enabled
             }
 
-            val effectiveMaxTools = resolveEffectiveMaxTools(model.maxTools, assistant.maxTools)
+            val effectiveMaxTools = resolveEffectiveMaxTools(model.maxTools, assistant.maxTools, settings.maxToolsSoftCap)
             val softCapPartition = candidateTools.partitionBySoftCap(
                 maxTools = effectiveMaxTools,
                 pinnedToolNames = assistant.pinnedToolNames + selectionState.enabled,
@@ -1614,7 +1615,7 @@ class GenerationLoop(
                     providerSetting = provider,
                     messages = internalMessages,
                     params = params
-                ).withStreamIdleTimeout(STREAM_IDLE_WATCHDOG_TIMEOUT_MS).onCompletion { cause ->
+                ).withStreamIdleTimeout((settings.streamIdleTimeoutSeconds * 1000L).coerceAtLeast(10_000L)).onCompletion { cause ->
                     // Some SSE implementations report an abruptly closed socket through onClosed
                     // without an exception. Treat a clean close with no chunks at all as a transport
                     // failure so the retry policy can recover a background continuation. A clean

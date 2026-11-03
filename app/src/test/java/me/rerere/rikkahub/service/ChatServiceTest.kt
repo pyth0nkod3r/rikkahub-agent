@@ -399,4 +399,21 @@ class ChatServiceTest {
 
         assertEquals(listOf(remoteModel), candidates)
     }
+
+    @Test
+    fun `resolveAuxiliaryModelCandidates skips on-device AICore when enableLocalSlmAuxWorker is false`() {
+        val remoteModel = Model(modelId = "gpt-4o")
+        val aicoreProvider = ProviderSetting.AICore(enabled = true)
+        val remoteProvider = ProviderSetting.OpenAI(enabled = true, name = "OpenAI", models = listOf(remoteModel))
+        val settings = Settings(
+            fastModelId = DEFAULT_AUTO_MODEL_ID,
+            chatModelId = remoteModel.id,
+            providers = listOf(aicoreProvider, remoteProvider),
+            enableLocalSlmAuxWorker = false,
+        )
+
+        val candidates = resolveAuxiliaryModelCandidates(settings, conversationModel = remoteModel)
+
+        assertEquals(listOf(remoteModel), candidates)
+    }
 }

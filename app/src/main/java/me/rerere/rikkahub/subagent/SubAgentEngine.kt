@@ -374,6 +374,28 @@ class SubAgentEngine(
 
     private val ledgerIds = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    /**
+     * Cancel a sub-agent run by [runId]: terminates active chat generation, marks the registry
+     * run as CANCELLED, cancels the coroutine job, and updates the persistent ledger.
+     */
+    fun cancel(runId: String): Boolean {
+        val run = registry.get(runId) ?: return false
+        val convId = run.conversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+        if (convId != null) {
+            runCatching { chatService.stopGeneration(convId) }
+        }
+        val jobCancelled = registry.requestCancel(runId)
+        registry.update(runId) {
+            it.copy(
+                status = SubAgentStatus.CANCELLED,
+                finishedAtMs = System.currentTimeMillis(),
+                error = "Cancelled by user"
+            )
+        }
+        ledgerIds[runId]?.let { agentRunRepo.setStatus(it, AgentRunStatus.cancelled) }
+        return true
+    }
+
     init {
         appScope.launch(Dispatchers.IO) {
             runCatching {
@@ -733,7 +755,7 @@ class SubAgentEngine(
 
         val parentConv = parentChatId?.let { runCatching { Uuid.parse(it) }.getOrNull() }?.let { conversationRepo.getConversationById(it) }
         val baseWorkspaceCwd = parentConv?.workspaceCwd
-        val isolatedWorktreeDir = prepareIsolatedGitWorktreeIfEligible(baseWorkspaceCwd, runId, toolPolicy)
+        val isolatedWorktreeDir = if (settings.subAgentWorktreeIsolation) prepareIsolatedGitWorktreeIfEligible(baseWorkspaceCwd, runId, toolPolicy) else null
         val effectiveWorkspaceCwd = isolatedWorktreeDir ?: baseWorkspaceCwd
 
         val conv = Conversation.ofId(

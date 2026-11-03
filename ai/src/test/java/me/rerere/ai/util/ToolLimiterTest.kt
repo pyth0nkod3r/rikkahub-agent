@@ -69,6 +69,7 @@ class ToolLimiterTest {
         assertEquals(32, resolveEffectiveMaxTools(32, 256))
         assertEquals(Int.MAX_VALUE, resolveEffectiveMaxTools(0, 128))
         assertEquals(Int.MAX_VALUE, resolveEffectiveMaxTools(null, 0))
+        assertEquals(96, resolveEffectiveMaxTools(null, null, defaultCap = 96))
     }
 
     @Test

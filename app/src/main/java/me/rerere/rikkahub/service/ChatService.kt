@@ -61,6 +61,7 @@ import me.rerere.ai.ui.finishPendingTools
 import me.rerere.ai.ui.finishReasoning
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.ai.ui.limitContext
+import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.UpstreamContextRegistry
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
@@ -130,6 +131,7 @@ import me.rerere.rikkahub.data.model.localFileUrls
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.toMessageNode
 import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
+import me.rerere.rikkahub.data.ai.withStreamIdleTimeout
 import me.rerere.rikkahub.data.model.fork
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
@@ -147,10 +149,11 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
-private const val COMPACTION_REQUEST_TIMEOUT_MS = 3 * 60_000L
-private const val COMPACTION_TOTAL_TIMEOUT_MS = 8 * 60_000L
+private const val COMPACTION_REQUEST_TIMEOUT_MS = 35_000L
+private const val COMPACTION_STREAM_IDLE_TIMEOUT_MS = 12_000L
+private const val COMPACTION_TOTAL_TIMEOUT_MS = 90_000L
 private const val COMPACTION_MAX_REQUEST_OUTPUT_TOKENS = 16_384
-private const val MAX_PARALLEL_COMPACTION_REQUESTS = 4
+private const val MAX_PARALLEL_COMPACTION_REQUESTS = 2
 private const val MAX_FULL_CONTEXT_MAP_GROUPS = 8
 /**
  * Cap the automatic-compaction raw tail at half of the trigger threshold (after reserving room
@@ -315,10 +318,12 @@ internal fun resolveAuxiliaryModelCandidates(
     }
 
     addUnique(settings.findModelById(primaryModelId))
-    settings.providers
-        .filter { it.enabled && isOnDeviceProvider(it) }
-        .flatMap { it.models }
-        .forEach { addUnique(it) }
+    if (settings.enableLocalSlmAuxWorker) {
+        settings.providers
+            .filter { it.enabled && isOnDeviceProvider(it) }
+            .flatMap { it.models }
+            .forEach { addUnique(it) }
+    }
     addUnique(conversationModel)
     addUnique(settings.getCurrentChatModel())
     settings.providers
@@ -3120,6 +3125,7 @@ class ChatService(
                     maxTokens = requestMaxTokens,
                 )
 
+                var generateError: Throwable? = null
                 val directSummary = runCatching {
                     withTimeout(COMPACTION_REQUEST_TIMEOUT_MS) {
                         val result = candidateHandler.generateText(
@@ -3130,6 +3136,7 @@ class ChatService(
                         ContextCompactionPlanner.extractSummaryText(result.message)
                     }
                 }.onFailure { err ->
+                    generateError = err
                     Log.w(TAG, "Compaction generateText failed on ${candidateModel.modelId}", err)
                 }.getOrNull()
 
@@ -3137,9 +3144,16 @@ class ChatService(
                     return directSummary
                 }
 
+                val isFatalError = generateError?.let { err ->
+                    err.isContextLimitError() ||
+                        (err as? HttpException)?.statusCode?.let { it in 400..429 } == true ||
+                        err.message?.contains("ContextWindowExceeded", ignoreCase = true) == true ||
+                        err.message?.contains("longer than the model", ignoreCase = true) == true
+                } ?: false
+
                 // Fallback to streamText for reverse proxies that reject or return empty bodies
-                // on non-streaming requests.
-                if (!isOnDeviceProvider(candidateProvider)) {
+                // on non-streaming requests, unless generateText failed with a permanent client/context error.
+                if (!isFatalError && !isOnDeviceProvider(candidateProvider)) {
                     val streamedSummary = runCatching {
                         withTimeout(COMPACTION_REQUEST_TIMEOUT_MS) {
                             val textBuilder = StringBuilder()
@@ -3148,7 +3162,8 @@ class ChatService(
                                 providerSetting = candidateProvider,
                                 messages = listOf(UIMessage.user(prompt)),
                                 params = params,
-                            ).collect { chunk ->
+                            ).withStreamIdleTimeout(COMPACTION_STREAM_IDLE_TIMEOUT_MS)
+                            .collect { chunk ->
                                 when (chunk) {
                                     is StreamChunk.TextDelta -> textBuilder.append(chunk.text)
                                     is StreamChunk.ReasoningDelta -> reasoningBuilder.append(chunk.text)
@@ -3188,7 +3203,7 @@ class ChatService(
                 Log.w(TAG, "Using deterministic fallback summary after LLM compaction candidates failed")
                 return fallbackSummary
             }
-            throw IllegalStateException("Failed to generate compressed summary")
+            return "### Conversation Summary (Compacted)\n\n*(Previous messages compacted)*" 
         }
 
         // Ordinary compression is a map pass over a small number of large groups. The full
@@ -3274,8 +3289,12 @@ class ChatService(
                 maxInputTokens = mapInputBudgetTokens,
             )
             reductionPasses++
-            check(reductionPasses <= 12) {
-                "Compression model did not reduce the conversation enough to merge its summaries"
+            if (reductionPasses >= 3) {
+                finalSummary = ContextCompactionPlanner.deterministicFallbackSummary(
+                    sources = summaries,
+                    targetTokens = modelSummaryTargetTokens,
+                ).ifBlank { combinedSummary }
+                break
             }
         }
 

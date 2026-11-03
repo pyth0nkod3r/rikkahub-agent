@@ -99,6 +99,12 @@ data class Settings(
     val aiLogLevel: AiLogLevel = AiLogLevel.INFO,
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
     val sponsorAlertDismissedAt: Int = 0,
+    val fallbackModelId: Uuid? = null,
+    val streamIdleTimeoutSeconds: Int = 75,
+    val subAgentWorktreeIsolation: Boolean = true,
+    val maxToolsSoftCap: Int = 128,
+    val enableExtractiveCompactionFallback: Boolean = true,
+    val enableLocalSlmAuxWorker: Boolean = true,
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

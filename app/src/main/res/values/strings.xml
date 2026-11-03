@@ -2994,4 +2994,27 @@
   <string name="setting_model_page_memory_model">Memory Consolidation Model</string>
   <string name="setting_model_page_memory_model_desc">Model used to organize conversations into long-term memory in the background; uses the fast model when not set</string>
   <string name="setting_model_page_memory_model_follow_fast">Same as fast model</string>
+  <string name="setting_page_preferences_harness">Agent Harness &amp; Resiliency</string>
+  <string name="setting_page_preferences_harness_desc">Watchdog timeout, fallback model cascade, git worktree isolation, and tool budgets</string>
+  <string name="setting_harness_section_resiliency">Resiliency &amp; Model Layer</string>
+  <string name="setting_harness_fallback_model">Secondary Backup Model</string>
+  <string name="setting_harness_fallback_model_desc">Cascades to this model automatically on persistent 400 Context Limit, 429, or network timeouts</string>
+  <string name="setting_harness_watchdog_timeout">Inactivity Stream Watchdog</string>
+  <string name="setting_harness_watchdog_timeout_desc">Stream Inactivity Watchdog (%1$ds)</string>
+  <string name="setting_harness_upstream_context_title">Upstream Context Auto-Discovery</string>
+  <string name="setting_harness_upstream_context_desc">Active: extracts limits from x-context-length and 400 ContextWindowExceeded headers</string>
+  <string name="setting_harness_section_sandboxing">Sandboxing &amp; Safety</string>
+  <string name="setting_harness_worktree_isolation">Git Worktree Isolation</string>
+  <string name="setting_harness_worktree_isolation_desc">Runs parallel sub-agents in dedicated git worktrees (.rikkahub-worktrees/) to avoid file collisions</string>
+  <string name="setting_harness_section_tools">Tools &amp; Context Budget</string>
+  <string name="setting_harness_tool_cap">Dynamic Tool Soft Cap</string>
+  <string name="setting_harness_tool_cap_desc">Dynamic Tool Soft Cap (%1$d tools/turn)</string>
+  <string name="setting_harness_tool_truncation_title">Structured Tool Output Truncation</string>
+  <string name="setting_harness_tool_truncation_desc">Active: preserves first 100 + last 150 lines of oversized terminal and file outputs</string>
+  <string name="setting_harness_section_compaction">Context Compaction &amp; SLM</string>
+  <string name="setting_harness_extractive_fallback">Deterministic Compaction Fallback</string>
+  <string name="setting_harness_extractive_fallback_desc">Guarantees compression never fails by using deterministic extractive summary when LLMs reject prompt</string>
+  <string name="setting_harness_local_slm_worker">On-Device SLM Aux Worker</string>
+  <string name="setting_harness_local_slm_worker_desc">Use local AICore / LiteRT for aux tasks when available; gracefully falls back to remote API</string>
+
 </resources>

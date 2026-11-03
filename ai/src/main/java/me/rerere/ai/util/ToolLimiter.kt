@@ -59,8 +59,9 @@ data class ToolSoftCapPartition(
 fun resolveEffectiveMaxTools(
     modelMaxTools: Int?,
     assistantMaxTools: Int? = null,
+    defaultCap: Int = MAX_OPENAI_TOOLS,
 ): Int {
-    val configured = modelMaxTools ?: assistantMaxTools ?: MAX_OPENAI_TOOLS
+    val configured = modelMaxTools ?: assistantMaxTools ?: defaultCap
     return if (configured <= 0) Int.MAX_VALUE else configured
 }
 

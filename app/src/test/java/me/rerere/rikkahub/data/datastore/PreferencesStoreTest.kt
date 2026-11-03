@@ -84,4 +84,29 @@ class PreferencesStoreTest {
 
         assertEquals(ReasoningLevel.MAX, decoded.reasoningLevel)
     }
+
+    @Test
+    fun `settings decodes when harness fields are absent, as in a pre-existing install`() {
+        val fullJson = JsonInstant.encodeToString(Settings())
+        val harnessKeys = setOf(
+            "fallbackModelId",
+            "streamIdleTimeoutSeconds",
+            "subAgentWorktreeIsolation",
+            "maxToolsSoftCap",
+            "enableExtractiveCompactionFallback",
+            "enableLocalSlmAuxWorker",
+        )
+        val withoutHarness = JsonObject(
+            JsonInstant.parseToJsonElement(fullJson).jsonObject.filterKeys { it !in harnessKeys }
+        )
+
+        val decoded = JsonInstant.decodeFromString<Settings>(withoutHarness.toString())
+
+        assertNull(decoded.fallbackModelId)
+        assertEquals(75, decoded.streamIdleTimeoutSeconds)
+        assertTrue(decoded.subAgentWorktreeIsolation)
+        assertEquals(128, decoded.maxToolsSoftCap)
+        assertTrue(decoded.enableExtractiveCompactionFallback)
+        assertTrue(decoded.enableLocalSlmAuxWorker)
+    }
 }

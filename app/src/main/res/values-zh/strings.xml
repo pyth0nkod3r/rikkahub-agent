@@ -2686,4 +2686,27 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_model_page_memory_model">记忆整理模型</string>
   <string name="setting_model_page_memory_model_desc">用于在后台将对话整理为长期记忆的模型；未设置时使用快速模型</string>
   <string name="setting_model_page_memory_model_follow_fast">跟随快速模型</string>
+  <string name="setting_page_preferences_harness">Agent 运行底座与弹性防护</string>
+  <string name="setting_page_preferences_harness_desc">流式超时看门狗、备用模型级联、Git Worktree 隔离与工具预算</string>
+  <string name="setting_harness_section_resiliency">稳定性与模型层</string>
+  <string name="setting_harness_fallback_model">第二备用模型</string>
+  <string name="setting_harness_fallback_model_desc">当主模型遇到持续 400 上下文超限、429 限流或超时时自动级联至此模型</string>
+  <string name="setting_harness_watchdog_timeout">流式空闲看门狗</string>
+  <string name="setting_harness_watchdog_timeout_desc">流式传输空闲看门狗 (%1$d秒)</string>
+  <string name="setting_harness_upstream_context_title">上游上下文自动探测</string>
+  <string name="setting_harness_upstream_context_desc">已激活：自动从 x-context-length 与 400 报错头中提取并记录实际模型上下文</string>
+  <string name="setting_harness_section_sandboxing">沙箱与安全隔离</string>
+  <string name="setting_harness_worktree_isolation">Git Worktree 隔离</string>
+  <string name="setting_harness_worktree_isolation_desc">为并行子代理分配独立的 Git 工作树，防止在同一工作区冲突修改文件</string>
+  <string name="setting_harness_section_tools">工具预算与截断</string>
+  <string name="setting_harness_tool_cap">动态工具软上限</string>
+  <string name="setting_harness_tool_cap_desc">动态工具软上限 (%1$d 个/轮)</string>
+  <string name="setting_harness_tool_truncation_title">结构化工具输出截断</string>
+  <string name="setting_harness_tool_truncation_desc">已激活：超大终端与文件读取自动保留前 100 行与后 150 行</string>
+  <string name="setting_harness_section_compaction">上下文压缩与本地 SLM</string>
+  <string name="setting_harness_extractive_fallback">确定性抽取式压缩回退</string>
+  <string name="setting_harness_extractive_fallback_desc">在上游大模型超时或拒绝大输入时，自动采用确定性抽取式摘要，永不卡死</string>
+  <string name="setting_harness_local_slm_worker">端侧 SLM 辅助引擎</string>
+  <string name="setting_harness_local_slm_worker_desc">在可用时优先使用 AICore / LiteRT 进行轻量辅助任务，不可用时无缝回退至云端</string>
+
 </resources>

@@ -71,6 +71,7 @@ import me.rerere.hugeicons.stroke.ServerStack01
 import me.rerere.hugeicons.stroke.Shield01
 import me.rerere.hugeicons.stroke.Telegram
 import me.rerere.hugeicons.stroke.Settings03
+import me.rerere.hugeicons.stroke.Brain02
 import me.rerere.hugeicons.stroke.Share04
 import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.Sun01
@@ -283,6 +284,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { Icon(HugeIcons.Robot01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_sub_agents_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_sub_agents)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingHarness) },
+                        leadingContent = { Icon(HugeIcons.Brain02, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_preferences_harness_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_preferences_harness)) },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingWeb) },

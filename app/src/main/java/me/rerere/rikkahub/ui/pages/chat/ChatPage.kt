@@ -91,6 +91,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
+import me.rerere.rikkahub.subagent.SubAgentEngine
 import me.rerere.rikkahub.subagent.SubAgentRegistry
 import me.rerere.rikkahub.subagent.SubAgentRun
 import me.rerere.rikkahub.subagent.SubAgentStatus
@@ -313,6 +314,7 @@ private fun ChatPageContent(
     var showFilesSheet by remember { mutableStateOf(false) }
     var showInspectorSheet by remember { mutableStateOf(false) }
     val subAgentRegistry: SubAgentRegistry = koinInject()
+    val subAgentEngine: SubAgentEngine = koinInject()
     val allSubAgentRuns by subAgentRegistry.runs.collectAsStateWithLifecycle()
     val conversationSubAgentRuns = remember(allSubAgentRuns, conversation.id, assistant.id) {
         val convIdStr = conversation.id.toString()
@@ -430,9 +432,10 @@ private fun ChatPageContent(
                                         additionalPrompt = extraInstructions,
                                         targetTokens = 1000,
                                         keepRecentMessages = 32,
-                                    ).await().onSuccess {
-                                        toaster.show("Conversation history compressed", type = ToastType.Success)
-                                    }
+                                    ).await().fold(
+                                        onSuccess = { toaster.show("Conversation history compressed", type = ToastType.Success) },
+                                        onFailure = { err -> toaster.show("Compaction failed: ${err.message ?: "Unknown error"}", type = ToastType.Error) },
+                                    )
                                 }
                                 return@ChatInput
                             }
@@ -499,9 +502,10 @@ private fun ChatPageContent(
                                         additionalPrompt = extraInstructions,
                                         targetTokens = 1000,
                                         keepRecentMessages = 32,
-                                    ).await().onSuccess {
-                                        toaster.show("Conversation history compressed", type = ToastType.Success)
-                                    }
+                                    ).await().fold(
+                                        onSuccess = { toaster.show("Conversation history compressed", type = ToastType.Success) },
+                                        onFailure = { err -> toaster.show("Compaction failed: ${err.message ?: "Unknown error"}", type = ToastType.Error) },
+                                    )
                                 }
                                 return@ChatInput
                             }
@@ -581,15 +585,20 @@ private fun ChatPageContent(
                             additionalPrompt = "",
                             targetTokens = 1000,
                             keepRecentMessages = 32,
-                        ).await().onSuccess {
-                            toaster.show("Conversation history compressed", type = ToastType.Success)
-                            val lastMsg = conversation.currentMessages.lastOrNull()
-                            if (lastMsg != null && lastMsg.role == MessageRole.USER) {
-                                vm.regenerateAtMessage(lastMsg)
-                            } else {
-                                vm.handleMessageSend(listOf(UIMessagePart.Text("Continue")))
-                            }
-                        }
+                        ).await().fold(
+                            onSuccess = {
+                                toaster.show("Conversation history compressed", type = ToastType.Success)
+                                val lastMsg = conversation.currentMessages.lastOrNull()
+                                if (lastMsg != null && lastMsg.role == MessageRole.USER) {
+                                    vm.regenerateAtMessage(lastMsg)
+                                } else {
+                                    vm.handleMessageSend(listOf(UIMessagePart.Text("Continue")))
+                                }
+                            },
+                            onFailure = { err ->
+                                toaster.show("Compaction failed: ${err.message ?: "Unknown error"}", type = ToastType.Error)
+                            },
+                        )
                     }
                 },
                 onRetryLastTurnError = { errorId ->
@@ -691,16 +700,21 @@ private fun ChatPageContent(
                 setting = setting,
                 subAgentRuns = conversationSubAgentRuns,
                 onCancelSubAgent = { runId ->
-                    subAgentRegistry.requestCancel(runId)
+                    subAgentEngine.cancel(runId)
                 },
                 onCompactContext = {
                     showInspectorSheet = false
                     toaster.show(context.getString(R.string.chat_page_compressing), type = ToastType.Info)
                     scope.launch {
-                        vm.handleCompressContext("", 1000, 32).await().onSuccess {
-                            toaster.show("Conversation history compressed", type = ToastType.Success)
-                        }
+                        vm.handleCompressContext("", 1000, 32).await().fold(
+                            onSuccess = { toaster.show("Conversation history compressed", type = ToastType.Success) },
+                            onFailure = { err -> toaster.show("Compaction failed: ${err.message ?: "Unknown error"}", type = ToastType.Error) },
+                        )
                     }
+                },
+                onOpenHarnessSettings = {
+                    showInspectorSheet = false
+                    navController.navigate(Screen.SettingHarness)
                 },
                 onDismiss = { showInspectorSheet = false },
             )
@@ -914,6 +928,7 @@ private fun ChatHarnessInspectorSheet(
     subAgentRuns: List<SubAgentRun>,
     onCancelSubAgent: (String) -> Unit,
     onCompactContext: () -> Unit,
+    onOpenHarnessSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberBottomSheetState(
@@ -968,6 +983,17 @@ private fun ChatHarnessInspectorSheet(
                     onClick = { selectedTab = 1 },
                     label = { Text("🤖 Sub-Agents (${subAgentRuns.size})") },
                 )
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(
+                    onClick = onOpenHarnessSettings,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.Settings03,
+                        contentDescription = "Harness Settings",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             if (selectedTab == 0) {
@@ -998,7 +1024,7 @@ private fun ChatHarnessInspectorSheet(
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(
-                            text = "Tool Soft Cap: ${assistant.maxTools ?: 128} tools/turn",
+                            text = "Tool Soft Cap: ${assistant.maxTools ?: setting.maxToolsSoftCap} tools/turn",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         if (!conversation.workspaceCwd.isNullOrBlank()) {

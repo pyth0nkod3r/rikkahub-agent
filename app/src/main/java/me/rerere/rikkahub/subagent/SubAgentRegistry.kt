@@ -84,9 +84,11 @@ class SubAgentRegistry {
      * fires) so we don't double-write.
      */
     fun requestCancel(id: String): Boolean {
-        val job = activeJobs.remove(id) ?: return false
-        job.cancel()
-        return true
+        val run = _runs.value[id]
+        update(id) { it.copy(status = SubAgentStatus.CANCELLED, finishedAtMs = System.currentTimeMillis()) }
+        val job = activeJobs.remove(id)
+        job?.cancel()
+        return job != null || run != null
     }
 
     /**
