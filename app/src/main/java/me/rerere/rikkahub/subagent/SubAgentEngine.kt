@@ -110,7 +110,11 @@ internal object SubAgentModelResolver {
      * candidates as "displayName (providerName) -> uuid" so the caller can retry unambiguously.
      */
     fun resolve(modelIdInput: String?, providers: List<ProviderSetting>): Result {
-        if (modelIdInput.isNullOrBlank()) return Result.Inherit
+        if (modelIdInput.isNullOrBlank() ||
+            modelIdInput.equals("default", ignoreCase = true) ||
+            modelIdInput.equals("inherit", ignoreCase = true) ||
+            modelIdInput.equals("parent", ignoreCase = true)
+        ) return Result.Inherit
 
         val chatModels: List<Pair<ProviderSetting, Model>> = providers
             .filter { it.enabled }
@@ -318,19 +322,16 @@ internal fun resolveSubAgentModel(
     modelResolution: SubAgentModelResolver.Result,
     profile: SubAgentProfile?,
     providers: List<ProviderSetting>? = null,
-): SubAgentModelResolver.Result = when (modelResolution) {
-    is SubAgentModelResolver.Result.Inherit -> {
-        if (profile != null && (profile.modelId != null || !profile.modelSlug.isNullOrBlank())) {
-            if (providers != null) {
-                SubAgentModelResolver.resolveProfileModel(profile, providers)
-            } else {
-                profile.modelId?.let { SubAgentModelResolver.Result.Resolved(it) } ?: modelResolution
-            }
+): SubAgentModelResolver.Result {
+    // When a named sub-agent profile has a configured model, that profile's model is authoritative
+    if (profile != null && (profile.modelId != null || !profile.modelSlug.isNullOrBlank())) {
+        return if (providers != null) {
+            SubAgentModelResolver.resolveProfileModel(profile, providers)
         } else {
-            modelResolution
+            profile.modelId?.let { SubAgentModelResolver.Result.Resolved(it) } ?: modelResolution
         }
     }
-    else -> modelResolution
+    return modelResolution
 }
 
 /**
@@ -386,21 +387,14 @@ class SubAgentEngine(
                 runCatching { chatService.stopGeneration(convId) }
             }
         }
-        val jobCancelled = registry.requestCancel(runId)
-        registry.update(runId) {
-            it.copy(
-                status = SubAgentStatus.CANCELLED,
-                finishedAtMs = System.currentTimeMillis(),
-                error = "Cancelled by user"
-            )
-        }
+        val reapedOrCancelled = registry.cancelOrReap(runId)
         val ledgerId = ledgerIds[runId]
         if (ledgerId != null) {
             appScope.launch(Dispatchers.IO) {
                 runCatching { agentRunRepo.setStatus(ledgerId, AgentRunStatus.cancelled) }
             }
         }
-        return true
+        return reapedOrCancelled
     }
 
     init {

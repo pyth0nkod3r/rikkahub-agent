@@ -75,6 +75,19 @@ class SubAgentRegistryTest {
         assertFalse(r.requestCancel("a"))
     }
 
+    @Test fun `cancelOrReap cancels active run even when no job registered`() {
+        val r = SubAgentRegistry()
+        r.addPending(makeRun("a", status = SubAgentStatus.RUNNING)) // no Job
+        assertTrue(r.cancelOrReap("a"))
+        assertEquals(SubAgentStatus.CANCELLED, r.get("a")?.status)
+    }
+
+    @Test fun `cancelOrReap returns false for already terminal run with no job`() {
+        val r = SubAgentRegistry()
+        r.addPending(makeRun("done", status = SubAgentStatus.SUCCEEDED))
+        assertFalse(r.cancelOrReap("done"))
+    }
+
     @Test fun `cancelAllForParent returns count of cancellable jobs`() {
         val r = SubAgentRegistry()
         // Three runs from same parent chat, with mock Jobs (we fake them via SupervisorJob)

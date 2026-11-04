@@ -95,7 +95,7 @@ class SubAgentProfileResolverTest {
 
     // resolveSubAgentModel: the model_id vs agent precedence rule.
 
-    @Test fun `resolveSubAgentModel - model_id wins over the profile's model when both resolve`() {
+    @Test fun `resolveSubAgentModel - profile's configured model takes precedence over caller model_id`() {
         val explicitModelId = Uuid.random()
         val profileModelId = Uuid.random()
         val profile = researcher.copy(modelId = profileModelId)
@@ -105,16 +105,32 @@ class SubAgentProfileResolverTest {
             profile,
         )
 
-        assertEquals(SubAgentModelResolver.Result.Resolved(explicitModelId), combined)
+        assertEquals(SubAgentModelResolver.Result.Resolved(profileModelId), combined)
     }
 
-    @Test fun `resolveSubAgentModel - a failed model_id is not papered over by the profile's model`() {
-        val profile = researcher.copy(modelId = Uuid.random())
+    @Test fun `resolveSubAgentModel - profile's configured model takes precedence even if model_id failed`() {
+        val profileModelId = Uuid.random()
+        val profile = researcher.copy(modelId = profileModelId)
         val failure = SubAgentModelResolver.Result.Failed("model_id \"bogus\" did not match any model")
 
         val combined = resolveSubAgentModel(failure, profile)
 
+        assertEquals(SubAgentModelResolver.Result.Resolved(profileModelId), combined)
+    }
+
+    @Test fun `resolveSubAgentModel - a failed model_id fails when profile has no configured model`() {
+        val profileWithNoModel = researcher.copy(modelId = null, modelSlug = null)
+        val failure = SubAgentModelResolver.Result.Failed("model_id \"bogus\" did not match any model")
+
+        val combined = resolveSubAgentModel(failure, profileWithNoModel)
+
         assertEquals(failure, combined)
+    }
+
+    @Test fun `SubAgentModelResolver resolves default and inherit sentinels to Inherit`() {
+        assertEquals(SubAgentModelResolver.Result.Inherit, SubAgentModelResolver.resolve("default", emptyList()))
+        assertEquals(SubAgentModelResolver.Result.Inherit, SubAgentModelResolver.resolve("inherit", emptyList()))
+        assertEquals(SubAgentModelResolver.Result.Inherit, SubAgentModelResolver.resolve("parent", emptyList()))
     }
 
     @Test fun `resolveSubAgentModel - falls back to the profile's model when model_id was not given`() {

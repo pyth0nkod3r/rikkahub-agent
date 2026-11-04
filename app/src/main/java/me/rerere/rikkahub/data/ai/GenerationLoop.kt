@@ -1611,11 +1611,12 @@ class GenerationLoop(
                 var receivedMeaningfulOutput = false
                 var receivedAnyChunk = false
                 val streamChunkHandler = StreamChunkHandler(model)
+                val idleTimeoutMs = if (settings.streamIdleTimeoutSeconds <= 0) 0L else (settings.streamIdleTimeoutSeconds * 1000L).coerceAtLeast(15_000L)
                 providerImpl.streamText(
                     providerSetting = provider,
                     messages = internalMessages,
                     params = params
-                ).withStreamIdleTimeout((settings.streamIdleTimeoutSeconds * 1000L).coerceAtLeast(10_000L)).onCompletion { cause ->
+                ).withStreamIdleTimeout(idleTimeoutMs).onCompletion { cause ->
                     // Some SSE implementations report an abruptly closed socket through onClosed
                     // without an exception. Treat a clean close with no chunks at all as a transport
                     // failure so the retry policy can recover a background continuation. A clean

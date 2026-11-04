@@ -1745,7 +1745,9 @@ class ChatService(
             ?: settings.getCurrentAssistant()
 
         val isSubAgent = me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId) ||
-            me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId)
+            me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId) ||
+            initialConversation.title.startsWith("[Sub-agent]") ||
+            initialConversation.parentChatId != null
 
         // For sub-agents / headless runs, prioritize the conversation's own chatModelId directly
         // and fall back to the global default model before inspecting assistant.chatModelId.
@@ -1760,11 +1762,16 @@ class ChatService(
         }
         var model = settings.findModelById(modelTargetId)
         var resolvedProvider = model?.findProvider(settings.providers)
-        if (isSubAgent && (model == null || resolvedProvider == null || !resolvedProvider.enabled)) {
+        if (model == null || resolvedProvider == null || !resolvedProvider.enabled) {
             val fallbackModel = settings.getCurrentChatModel()
+                ?.takeIf { it.findProvider(settings.providers)?.enabled == true }
+                ?: settings.providers.firstOrNull { it.enabled }?.models?.firstOrNull { it.type == ModelType.CHAT }
             if (fallbackModel != null) {
                 model = fallbackModel
                 resolvedProvider = fallbackModel.findProvider(settings.providers)
+                if (initialConversation.chatModelId != fallbackModel.id) {
+                    saveConversation(conversationId, initialConversation.copy(chatModelId = fallbackModel.id))
+                }
             }
         }
         if (model == null) {

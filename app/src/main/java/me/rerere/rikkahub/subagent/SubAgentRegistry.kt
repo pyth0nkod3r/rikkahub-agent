@@ -84,11 +84,31 @@ class SubAgentRegistry {
      * fires) so we don't double-write.
      */
     fun requestCancel(id: String): Boolean {
-        val run = _runs.value[id]
-        update(id) { it.copy(status = SubAgentStatus.CANCELLED, finishedAtMs = System.currentTimeMillis()) }
         val job = activeJobs.remove(id)
         job?.cancel()
-        return job != null || run != null
+        return job != null
+    }
+
+    /**
+     * Cancels an active job if present OR reaps an orphaned run that is still in RUNNING or
+     * PENDING status (e.g. rehydrated across restart or terminated without clearing registry).
+     * Returns true if either a live job was cancelled or an active run was reaped to CANCELLED.
+     */
+    fun cancelOrReap(id: String): Boolean {
+        val run = _runs.value[id] ?: return false
+        val hadJob = requestCancel(id)
+        val wasActive = run.status == SubAgentStatus.RUNNING || run.status == SubAgentStatus.PENDING
+        if (hadJob || wasActive) {
+            update(id) {
+                it.copy(
+                    status = SubAgentStatus.CANCELLED,
+                    finishedAtMs = System.currentTimeMillis(),
+                    error = it.error ?: "Cancelled by user",
+                )
+            }
+            return true
+        }
+        return false
     }
 
     /**

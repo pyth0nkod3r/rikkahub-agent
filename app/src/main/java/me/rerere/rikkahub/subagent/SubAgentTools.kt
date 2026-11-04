@@ -132,8 +132,7 @@ fun subagentDispatchTool(
                             "Model for this sub-agent: a model uuid, a provider model id, or a " +
                                 "display name (case-insensitive exact match). Ambiguous or unknown " +
                                 "values fail the dispatch and the error lists the valid options. " +
-                                "Takes precedence over agent's model. Omit to inherit the agent " +
-                                "profile's model (if agent is set) or the parent assistant's model.",
+                                "When 'agent' is specified, omit model_id to use the profile's configured model.",
                         )
                     })
                     put("system_prompt", buildJsonObject { put("type", "string") })
@@ -294,10 +293,7 @@ fun subagentCancelTool(registry: SubAgentRegistry): Tool = Tool(
     execute = { args ->
         val id = args.jsonObject["id"]?.jsonPrimitive?.contentOrNull
             ?: return@Tool errEnv("invalid_id", "id is required")
-        val cancelled = registry.requestCancel(id)
-        if (cancelled) {
-            registry.update(id) { it.copy(status = SubAgentStatus.CANCELLED, finishedAtMs = System.currentTimeMillis()) }
-        }
+        val cancelled = registry.cancelOrReap(id)
         listOf(UIMessagePart.Text(buildJsonObject {
             put("ok", cancelled)
             put("id", id)

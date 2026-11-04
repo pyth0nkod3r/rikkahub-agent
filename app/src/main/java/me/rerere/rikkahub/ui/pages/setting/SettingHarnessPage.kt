@@ -115,7 +115,11 @@ fun SettingHarnessPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = {
                             Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                                 Text(
-                                    text = "${settings.streamIdleTimeoutSeconds}s idle token threshold",
+                                    text = if (settings.streamIdleTimeoutSeconds <= 0) {
+                                        "Watchdog disabled (no idle timeout)"
+                                    } else {
+                                        "${settings.streamIdleTimeoutSeconds}s idle token threshold"
+                                    },
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
@@ -124,11 +128,11 @@ fun SettingHarnessPage(vm: SettingVM = koinViewModel()) {
                                     onValueChange = { newVal ->
                                         val rounded = (newVal / 5f).roundToInt() * 5
                                         vm.updateSettings { current ->
-                                            current.copy(streamIdleTimeoutSeconds = rounded.coerceIn(15, 180))
+                                            current.copy(streamIdleTimeoutSeconds = rounded.coerceIn(0, 300))
                                         }
                                     },
-                                    valueRange = 15f..180f,
-                                    steps = 32,
+                                    valueRange = 0f..300f,
+                                    steps = 59,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
                             }
