@@ -49,6 +49,7 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
@@ -1746,8 +1747,7 @@ class ChatService(
 
         val isSubAgent = me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId) ||
             me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId) ||
-            initialConversation.title.startsWith("[Sub-agent]") ||
-            initialConversation.parentChatId != null
+            initialConversation.title.startsWith("[Sub-agent]")
 
         // For sub-agents / headless runs, prioritize the conversation's own chatModelId directly
         // and fall back to the global default model before inspecting assistant.chatModelId.
