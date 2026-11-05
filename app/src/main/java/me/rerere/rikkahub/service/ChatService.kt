@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.completeWith
@@ -161,6 +162,7 @@ private const val COMPACTION_TOTAL_TIMEOUT_MS = 300_000L
 private const val COMPACTION_SOFT_DEADLINE_MS = 200_000L
 private const val COMPACTION_MAX_REQUEST_OUTPUT_TOKENS = 16_384
 private const val MAX_PARALLEL_COMPACTION_REQUESTS = 2
+private const val COMPACTION_TRANSIENT_RETRIES = 2
 private const val MAX_FULL_CONTEXT_MAP_GROUPS = 8
 /**
  * Cap the automatic-compaction raw tail at half of the trigger threshold (after reserving room
@@ -3137,10 +3139,9 @@ class ChatService(
             // Provide reasoning-safe token headroom (4x requestedTargetTokens, min 4096) so
             // reasoning models do not exhaust max_tokens inside <think> / reasoning_content
             // before emitting the actual summary text.
-            val requestMaxTokens = ContextCompactionPlanner.compactionRequestMaxTokens(
-                requestedTargetTokens = requestedTargetTokens,
-                maxPerRequestTokens = COMPACTION_MAX_REQUEST_OUTPUT_TOKENS,
-            )
+            // Like upstream RikkaHub, send no max_tokens cap: the summary length is steered by
+            // the prompt, and a low cap lets reasoning models burn the whole budget on thinking
+            // and return an empty summary. Providers still enforce their own output ceiling.
 
             for (candidateModel in candidateModels.take(3)) {
                 if (compactionRemainingMs() <= 5_000L) {
@@ -3155,26 +3156,45 @@ class ChatService(
                     UsageTag(UsageSource.COMPRESSION, assistantId = null, conversationId = conversation.id),
                 )
                 val params = backgroundTextGenerationParams(candidateModel).copy(
-                    maxTokens = requestMaxTokens,
+                    maxTokens = null,
                 )
 
                 var generateError: Throwable? = null
-                val directSummary = runCatching {
-                    withTimeout(minOf(COMPACTION_REQUEST_TIMEOUT_MS, compactionRemainingMs().coerceAtLeast(1L))) {
-                        val result = candidateHandler.generateText(
-                            providerSetting = candidateProvider,
-                            messages = listOf(UIMessage.user(prompt)),
-                            params = params,
-                        )
-                        ContextCompactionPlanner.extractSummaryText(result.message)
+                var directSummary: String? = null
+                // Retry transient failures (timeouts, 429, 5xx, network) on the same model, as
+                // upstream does, before moving on to the next candidate or the streaming path.
+                for (attempt in 0..COMPACTION_TRANSIENT_RETRIES) {
+                    if (attempt > 0) {
+                        val backoffMs = 2_000L * attempt
+                        if (compactionRemainingMs() <= backoffMs + 5_000L) break
+                        delay(backoffMs)
                     }
-                }.onFailure { err ->
-                    generateError = err
-                    Log.w(TAG, "Compaction generateText failed on ${candidateModel.modelId}", err)
-                }.getOrNull()
+                    generateError = null
+                    directSummary = runCatching {
+                        withTimeout(minOf(COMPACTION_REQUEST_TIMEOUT_MS, compactionRemainingMs().coerceAtLeast(1L))) {
+                            val result = candidateHandler.generateText(
+                                providerSetting = candidateProvider,
+                                messages = listOf(UIMessage.user(prompt)),
+                                params = params,
+                            )
+                            ContextCompactionPlanner.extractSummaryText(result.message)
+                        }
+                    }.onFailure { err ->
+                        generateError = err
+                        Log.w(TAG, "Compaction generateText failed on ${candidateModel.modelId} (attempt ${attempt + 1})", err)
+                    }.getOrNull()
+                    if (!directSummary.isNullOrBlank()) break
+                    val err = generateError
+                    val permanent = err != null && (
+                        err.isContextLimitError() ||
+                            (err as? HttpException)?.statusCode?.let { it in 400..499 && it != 429 && it != 408 } == true
+                        )
+                    if (permanent || err is kotlinx.coroutines.CancellationException && err !is kotlinx.coroutines.TimeoutCancellationException) break
+                }
 
-                if (!directSummary.isNullOrBlank()) {
-                    return directSummary
+                val finalDirectSummary = directSummary
+                if (!finalDirectSummary.isNullOrBlank()) {
+                    return finalDirectSummary
                 }
 
                 val isFatalError = generateError?.let { err ->
