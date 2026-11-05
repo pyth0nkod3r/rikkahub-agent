@@ -150,9 +150,15 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
-private const val COMPACTION_REQUEST_TIMEOUT_MS = 35_000L
-private const val COMPACTION_STREAM_IDLE_TIMEOUT_MS = 12_000L
-private const val COMPACTION_TOTAL_TIMEOUT_MS = 90_000L
+private const val COMPACTION_REQUEST_TIMEOUT_MS = 60_000L
+private const val COMPACTION_STREAM_IDLE_TIMEOUT_MS = 20_000L
+/** Hard ceiling for the whole compaction; must exceed [COMPACTION_SOFT_DEADLINE_MS]. */
+private const val COMPACTION_TOTAL_TIMEOUT_MS = 300_000L
+/**
+ * After this much elapsed time no further LLM requests are started and the deterministic
+ * fallback summary is used, so compaction always completes instead of dying on the hard timeout.
+ */
+private const val COMPACTION_SOFT_DEADLINE_MS = 200_000L
 private const val COMPACTION_MAX_REQUEST_OUTPUT_TOKENS = 16_384
 private const val MAX_PARALLEL_COMPACTION_REQUESTS = 2
 private const val MAX_FULL_CONTEXT_MAP_GROUPS = 8
@@ -3092,6 +3098,10 @@ class ChatService(
         // consume the model's output budget, so keep the configured prose target intact.
         val modelSummaryTargetTokens = targetTokens.coerceAtLeast(1)
 
+        val compactionStartNanos = System.nanoTime()
+        fun compactionRemainingMs(): Long =
+            COMPACTION_SOFT_DEADLINE_MS - (System.nanoTime() - compactionStartNanos) / 1_000_000L
+
         suspend fun compressSources(
             sources: List<String>,
             requestedTargetTokens: Int,
@@ -3133,6 +3143,10 @@ class ChatService(
             )
 
             for (candidateModel in candidateModels.take(3)) {
+                if (compactionRemainingMs() <= 5_000L) {
+                    Log.w(TAG, "Compaction soft deadline reached; using deterministic fallback")
+                    break
+                }
                 val candidateProvider = candidateModel.findProvider(settings.providers)
                     ?.takeIf { it.enabled }
                     ?: continue
@@ -3146,7 +3160,7 @@ class ChatService(
 
                 var generateError: Throwable? = null
                 val directSummary = runCatching {
-                    withTimeout(COMPACTION_REQUEST_TIMEOUT_MS) {
+                    withTimeout(minOf(COMPACTION_REQUEST_TIMEOUT_MS, compactionRemainingMs().coerceAtLeast(1L))) {
                         val result = candidateHandler.generateText(
                             providerSetting = candidateProvider,
                             messages = listOf(UIMessage.user(prompt)),
@@ -3172,9 +3186,9 @@ class ChatService(
 
                 // Fallback to streamText for reverse proxies that reject or return empty bodies
                 // on non-streaming requests, unless generateText failed with a permanent client/context error.
-                if (!isFatalError && !isOnDeviceProvider(candidateProvider)) {
+                if (!isFatalError && !isOnDeviceProvider(candidateProvider) && compactionRemainingMs() > 5_000L) {
                     val streamedSummary = runCatching {
-                        withTimeout(COMPACTION_REQUEST_TIMEOUT_MS) {
+                        withTimeout(minOf(COMPACTION_REQUEST_TIMEOUT_MS, compactionRemainingMs().coerceAtLeast(1L))) {
                             val textBuilder = StringBuilder()
                             val reasoningBuilder = StringBuilder()
                             candidateHandler.streamText(
