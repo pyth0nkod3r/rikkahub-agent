@@ -101,4 +101,13 @@ class ErrorParserTest {
         assertEquals(400, ex.statusCode)
         assertTrue(ex.message!!.contains("array too long"))
     }
+
+    @Test
+    fun aw body keeps status code type and code in message() {
+        val raw = """{"error":{"message":"A server error occurred. Please try again.","type":"rate_limit_error","code":"rate_limit_exceeded"}}"""
+        val ex = json.parseToJsonElement(raw).parseErrorDetail(statusCode = 429, rawBody = raw)
+        assertEquals("Failed to get response: 429 $raw", ex.message)
+        assertEquals(429, ex.statusCode)
+        assertEquals(raw, ex.rawBody)
+    }
 }

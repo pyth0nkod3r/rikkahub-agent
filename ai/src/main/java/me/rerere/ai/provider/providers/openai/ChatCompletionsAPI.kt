@@ -129,7 +129,7 @@ class ChatCompletionsAPI(
                 providerId = providerSetting.id.toString(),
             )
             val parsedError = runCatching {
-                json.parseToJsonElement(bodyStr).parseErrorDetail(statusCode = response.code)
+                json.parseToJsonElement(bodyStr).parseErrorDetail(statusCode = response.code, rawBody = bodyStr)
             }.getOrNull()
             throw parsedError ?: HttpException(
                 "HTTP ${response.code}: ${bodyStr.take(300).replace(Regex("<[^>]*>"), " ").trim().ifBlank { response.message }}",
@@ -181,7 +181,7 @@ class ChatCompletionsAPI(
                 errorText = bodyStr,
                 providerId = providerSetting.id.toString(),
             )
-            throw it.parseErrorDetail(statusCode = response.code)
+            throw it.parseErrorDetail(statusCode = response.code, rawBody = bodyStr)
         }
 
         // Handle decision model response if returned (e.g. from Apinex or OpenRouter)
@@ -356,7 +356,7 @@ class ChatCompletionsAPI(
                             }
                         }
 
-                        exception = bodyElement.parseErrorDetail(statusCode = response?.code)
+                        exception = bodyElement.parseErrorDetail(statusCode = response?.code, rawBody = bodyRaw)
                         Log.i(TAG, "onFailure: $exception")
                     } else if (response != null && !response.isSuccessful) {
                         exception = me.rerere.ai.util.HttpException("HTTP ${response.code}: ${response.message}", statusCode = response.code)

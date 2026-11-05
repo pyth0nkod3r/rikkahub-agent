@@ -11,9 +11,22 @@ import kotlinx.serialization.json.jsonPrimitive
 class HttpException(
     message: String,
     val statusCode: Int? = null,
+    val rawBody: String? = null,
 ) : RuntimeException(message)
 
-fun JsonElement.parseErrorDetail(statusCode: Int? = null): HttpException {
+/**
+ * Parses an error payload. When [rawBody] is supplied the resulting message carries the HTTP
+ * status code and the complete raw response body (type, code, etc.) so nothing is lost.
+ */
+fun JsonElement.parseErrorDetail(statusCode: Int? = null, rawBody: String? = null): HttpException {
+    val base = parseErrorDetailCore(statusCode)
+    if (rawBody.isNullOrBlank()) return base
+    val code = base.statusCode ?: statusCode
+    val prefix = if (code != null) "Failed to get response: $code" else "Failed to get response:"
+    return HttpException("$prefix $rawBody", statusCode = code, rawBody = rawBody)
+}
+
+private fun JsonElement.parseErrorDetailCore(statusCode: Int? = null): HttpException {
     return when (this) {
         is JsonObject -> {
             // Check for OpenRouter / API gateway metadata containing raw error details

@@ -153,7 +153,7 @@ class ResponseAPI(
                 val bodyStr = response.body.stringSafe()
                 val parsedException = try {
                     if (!bodyStr.isNullOrBlank()) {
-                        json.parseToJsonElement(bodyStr).parseErrorDetail(statusCode = response.code)
+                        json.parseToJsonElement(bodyStr).parseErrorDetail(statusCode = response.code, rawBody = bodyStr)
                     } else null
                 } catch (_: Throwable) { null }
                 throw parsedException ?: me.rerere.ai.util.HttpException(
@@ -226,7 +226,7 @@ class ResponseAPI(
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         println(bodyElement)
-                        exception = bodyElement.parseErrorDetail(statusCode = response?.code)
+                        exception = bodyElement.parseErrorDetail(statusCode = response?.code, rawBody = bodyRaw)
                         Log.i(TAG, "onFailure: $exception")
                     } else if (response != null && !response.isSuccessful) {
                         exception = me.rerere.ai.util.HttpException("HTTP ${response.code}: ${response.message}", statusCode = response.code)

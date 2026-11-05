@@ -143,7 +143,7 @@ internal class InteractionsAPI(
                 val bodyRaw = response?.body?.stringSafe()
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
-                        exception = json.parseToJsonElement(bodyRaw).parseErrorDetail(statusCode = response?.code)
+                        exception = json.parseToJsonElement(bodyRaw).parseErrorDetail(statusCode = response?.code, rawBody = bodyRaw)
                     } else if (t == null && response != null) {
                         exception = Exception("Unknown error: ${response.code}")
                     }
