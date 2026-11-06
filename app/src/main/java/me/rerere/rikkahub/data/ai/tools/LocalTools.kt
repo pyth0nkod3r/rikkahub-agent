@@ -843,7 +843,14 @@ class LocalTools(
             options
         }
         val tools = mutableListOf<Tool>()
-        tools.add(createProposePlanTool(invocationContext))
+        val isPlanMode = runCatching {
+            invocationContext.callerConversationId?.takeIf { it.isNotBlank() }?.let {
+                me.rerere.rikkahub.data.ai.ConversationAgentMode.isPlanMode(kotlin.uuid.Uuid.parse(it))
+            }
+        }.getOrNull() ?: false
+        if (isPlanMode) {
+            tools.add(createProposePlanTool(invocationContext))
+        }
         if (options.contains(LocalToolOption.JavascriptEngine)) {
             tools.add(javascriptTool)
         }

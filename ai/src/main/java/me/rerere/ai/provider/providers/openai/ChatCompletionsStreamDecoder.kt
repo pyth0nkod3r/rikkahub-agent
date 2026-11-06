@@ -42,8 +42,8 @@ internal class ChatCompletionsStreamDecoder : StreamChunkDecoder {
 
         val chunks = buildList {
             event.data.trim().split("\n").filter(String::isNotBlank).forEach { line ->
-                val payload = json.parseToJsonElement(line).jsonObject
-                payload["error"]?.let { throw it.parseErrorDetail() }
+                val payload = json.parseToJsonElement(line).jsonObjectOrNull ?: return@forEach
+                payload["error"]?.let { throw it.parseErrorDetail(rawBody = line) }
                 responseId = payload["id"]?.jsonPrimitive?.contentOrNull ?: responseId
                 responseModel = payload["model"]?.jsonPrimitive?.contentOrNull ?: responseModel
 

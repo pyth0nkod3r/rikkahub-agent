@@ -104,7 +104,7 @@ class ChatCompletionsAPI(
 
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
-            .headers(params.customHeaders.toHeaders())
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
             .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}")
             .configureReferHeaders(providerSetting.baseUrl)
@@ -235,7 +235,7 @@ class ChatCompletionsAPI(
 
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
-            .headers(params.customHeaders.toHeaders())
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
             .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}")
             .addHeader("Content-Type", "application/json")
@@ -598,10 +598,26 @@ class ChatCompletionsAPI(
                     }
 
                     else -> {
-                        // OpenAI 官方
-                        // 文档中，completions API 只支持 "low", "medium", "high"
-                        if (level != ReasoningLevel.AUTO) {
-                            put("reasoning_effort", if (level.effort == "none") "low" else level.effort)
+                        // DeepSeek 模型通过第三方中转代理（如 Kiosapi、New-API 等）访问
+                        val isDeepSeek = "deepseek" in params.model.modelId.lowercase()
+                        if (isDeepSeek) {
+                            put("thinking", buildJsonObject {
+                                put("type", if (!level.isEnabled) "disabled" else "enabled")
+                            })
+                            if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                                val effort = when (level) {
+                                    ReasoningLevel.MEDIUM, ReasoningLevel.HIGH -> "high"
+                                    ReasoningLevel.MAX -> "max"
+                                    else -> level.effort
+                                }
+                                put("reasoning_effort", effort)
+                            }
+                        } else {
+                            // OpenAI 官方及兼容代理：当且仅当思考开启且指定了有效档位时才传递 reasoning_effort
+                            // 当 level == ReasoningLevel.AUTO 或 OFF 时切勿发送 "low"，否则非思考模型或严格校验代理会直接报错 "Invalid request"
+                            if (level != ReasoningLevel.AUTO && level != ReasoningLevel.OFF) {
+                                put("reasoning_effort", level.effort)
+                            }
                         }
                     }
                 }
