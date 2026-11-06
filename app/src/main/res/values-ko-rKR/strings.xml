@@ -1252,6 +1252,7 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="assistant_page_local_tools_workflows_title">워크플로</string>
   <string name="browser_address_bar_back">브라우저 뒤로</string>
   <string name="browser_address_bar_close">브라우저 닫기</string>
+  <string name="browser_minimize">최소화</string>
   <string name="browser_address_bar_forward">브라우저 앞으로</string>
   <string name="browser_address_bar_more">추가 옵션</string>
   <string name="browser_address_bar_placeholder">검색 또는 URL 입력</string>

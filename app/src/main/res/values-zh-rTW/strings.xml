@@ -1251,6 +1251,7 @@
   <string name="assistant_page_local_tools_workflows_title">工作流程</string>
   <string name="browser_address_bar_back">瀏覽器後退</string>
   <string name="browser_address_bar_close">關閉瀏覽器</string>
+  <string name="browser_minimize">最小化</string>
   <string name="browser_address_bar_forward">瀏覽器前進</string>
   <string name="browser_address_bar_more">更多選項</string>
   <string name="browser_address_bar_placeholder">搜尋或輸入網址</string>

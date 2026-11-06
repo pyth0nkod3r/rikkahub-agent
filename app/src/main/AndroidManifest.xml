@@ -206,6 +206,7 @@
       android:exported="false"
       android:configChanges="screenSize|orientation|keyboardHidden"
       android:hardwareAccelerated="true"
+      android:launchMode="singleTop"
       android:theme="@style/Theme.Rikkahub" />
 
     <activity

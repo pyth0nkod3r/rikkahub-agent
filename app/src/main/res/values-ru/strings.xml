@@ -1252,6 +1252,7 @@
   <string name="assistant_page_local_tools_workflows_title">Рабочие процессы</string>
   <string name="browser_address_bar_back">Браузер назад</string>
   <string name="browser_address_bar_close">Закрыть браузер</string>
+  <string name="browser_minimize">Свернуть</string>
   <string name="browser_address_bar_forward">Браузер вперёд</string>
   <string name="browser_address_bar_more">Дополнительно</string>
   <string name="browser_address_bar_placeholder">Поиск или ввод URL</string>

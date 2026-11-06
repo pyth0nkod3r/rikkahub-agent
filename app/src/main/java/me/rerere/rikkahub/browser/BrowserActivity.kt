@@ -43,6 +43,7 @@ class BrowserActivity : ComponentActivity() {
     private var conversationId: Uuid? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        instance = this
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
@@ -88,8 +89,14 @@ class BrowserActivity : ComponentActivity() {
                         // CookieManager singleton — the API split is a holdover from Lollipop.
                         CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
                     },
-                    onUrlChange = { currentUrl.value = it },
-                    onTitleChange = { currentTitle.value = it },
+                    onUrlChange = {
+                        currentUrl.value = it
+                        BrowserMinimizer.updatePage(it, currentTitle.value)
+                    },
+                    onTitleChange = {
+                        currentTitle.value = it
+                        BrowserMinimizer.updatePage(currentUrl.value, it)
+                    },
                     onLoadProgress = { loadProgress.value = it },
                     onCanGoBackChange = { canGoBack.value = it },
                     onCanGoForwardChange = { canGoForward.value = it },
@@ -98,7 +105,8 @@ class BrowserActivity : ComponentActivity() {
                     currentUrlState = currentUrl,
                     currentTitleState = currentTitle,
                     loadProgressState = loadProgress,
-                    onClose = { finish() },
+                    onClose = { BrowserMinimizer.close() },
+                    onMinimize = { BrowserMinimizer.minimize(this) },
                     onBackTap = { webView?.takeIf { it.canGoBack() }?.goBack() },
                     onForwardTap = { webView?.takeIf { it.canGoForward() }?.goForward() },
                     onRefreshTap = { webView?.reload() },
@@ -113,7 +121,29 @@ class BrowserActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        instance = this
+        BrowserMinimizer.onBrowserForeground()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra(EXTRA_INITIAL_URL)?.let { url ->
+            if (url.isNotBlank() && url != "about:blank") {
+                webView?.loadUrl(normalizeBrowserQuery(url))
+            }
+        }
+        intent.getStringExtra(EXTRA_CONVERSATION_ID)?.let { idStr ->
+            conversationId = runCatching { Uuid.parse(idStr) }.getOrNull()
+        }
+    }
     override fun onDestroy() {
+        if (instance === this) {
+            instance = null
+        }
+        BrowserMinimizer.onBrowserDestroyed(this)
         // Tear down the WebView the Activity created — not doing so leaks the entire view
         // hierarchy plus a JS engine on every Activity finish. Order matters: clear from the
         // controller first so an in-flight tool dispatch can fail-fast on browser_not_open
@@ -130,6 +160,9 @@ class BrowserActivity : ComponentActivity() {
     }
 
     companion object {
+        var instance: BrowserActivity? = null
+            private set
+
         /** Optional extra: initial URL to navigate to on launch. Defaults to about:blank. */
         const val EXTRA_INITIAL_URL = "me.rerere.rikkahub.browser.EXTRA_INITIAL_URL"
 

@@ -1252,6 +1252,7 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="assistant_page_local_tools_workflows_title">ワークフロー</string>
   <string name="browser_address_bar_back">ブラウザを戻る</string>
   <string name="browser_address_bar_close">ブラウザを閉じる</string>
+  <string name="browser_minimize">最小化</string>
   <string name="browser_address_bar_forward">ブラウザを進む</string>
   <string name="browser_address_bar_more">その他のオプション</string>
   <string name="browser_address_bar_placeholder">検索または URL を入力</string>

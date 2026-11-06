@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowLeft01
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Cancel01
@@ -65,6 +66,7 @@ fun BrowserAddressBar(
     canGoBack: Boolean,
     canGoForward: Boolean,
     onClose: () -> Unit,
+    onMinimize: () -> Unit,
     onBack: () -> Unit,
     onForward: () -> Unit,
     onRefresh: () -> Unit,
@@ -138,11 +140,21 @@ fun BrowserAddressBar(
             )
         },
         navigationIcon = {
-            IconButton(onClick = onClose) {
-                Icon(
-                    imageVector = HugeIcons.Cancel01,
-                    contentDescription = stringResource(R.string.browser_address_bar_close),
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onMinimize) {
+                    Icon(
+                        imageVector = HugeIcons.ArrowDown01,
+                        contentDescription = stringResource(R.string.browser_minimize),
+                    )
+                }
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = HugeIcons.Cancel01,
+                        contentDescription = stringResource(R.string.browser_address_bar_close),
+                    )
+                }
             }
         },
         actions = {
