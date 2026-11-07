@@ -75,9 +75,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import me.rerere.common.http.sse.newEventSource
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
-import okhttp3.sse.EventSources
 import kotlin.time.Clock
 
 private const val TAG = "ChatCompletionsAPI"
@@ -239,7 +239,6 @@ class ChatCompletionsAPI(
             .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
             .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}")
-            .addHeader("Content-Type", "application/json")
             .configureReferHeaders(providerSetting.baseUrl)
             .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
@@ -382,7 +381,7 @@ class ChatCompletionsAPI(
             }
         }
 
-        val eventSource = EventSources.createFactory(client).newEventSource(request, listener)
+        val eventSource = client.newEventSource(request, listener)
 
         awaitClose {
             println("[awaitClose] 关闭eventSource ")
@@ -599,26 +598,13 @@ class ChatCompletionsAPI(
                     }
 
                     else -> {
-                        // DeepSeek 模型通过第三方中转代理（如 Kiosapi、New-API 等）访问
-                        val isDeepSeek = "deepseek" in params.model.modelId.lowercase()
-                        if (isDeepSeek) {
-                            put("thinking", buildJsonObject {
-                                put("type", if (!level.isEnabled) "disabled" else "enabled")
-                            })
-                            if (level.isEnabled && level != ReasoningLevel.AUTO) {
-                                val effort = when (level) {
-                                    ReasoningLevel.MEDIUM, ReasoningLevel.HIGH -> "high"
-                                    ReasoningLevel.MAX -> "max"
-                                    else -> level.effort
-                                }
-                                put("reasoning_effort", effort)
-                            }
-                        } else {
-                            // OpenAI 官方及兼容代理：当且仅当思考开启且指定了有效档位时才传递 reasoning_effort
-                            // 当 level == ReasoningLevel.AUTO 或 OFF 时切勿发送 "low"，否则非思考模型或严格校验代理会直接报错 "Invalid request"
-                            if (level != ReasoningLevel.AUTO && level != ReasoningLevel.OFF) {
-                                put("reasoning_effort", level.effort)
-                            }
+                        // OpenAI 官方及兼容第三方代理（如 Kiosapi、New-API 等）：
+                        // 当且仅当思考开启且指定了非 AUTO/OFF 的有效档位时才传递 reasoning_effort。
+                        // 当 level == ReasoningLevel.AUTO 时切勿发送 "thinking" 或 "reasoning_effort"，
+                        // 否则第三方中转代理（如 Kiosapi）因无法识别该参数或转发异常导致流式挂起超时（75s watchdog）；
+                        // 不传任何 reasoning 字段时，DeepSeek 等思考模型在第三方代理上会自动按默认开启思考并正常流式输出。
+                        if (level != ReasoningLevel.AUTO && level != ReasoningLevel.OFF) {
+                            put("reasoning_effort", level.effort)
                         }
                     }
                 }
