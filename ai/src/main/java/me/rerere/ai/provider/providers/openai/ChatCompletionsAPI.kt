@@ -598,13 +598,21 @@ class ChatCompletionsAPI(
                     }
 
                     else -> {
-                        // OpenAI 官方及兼容第三方代理（如 Kiosapi、New-API 等）：
-                        // 当且仅当思考开启且指定了非 AUTO/OFF 的有效档位时才传递 reasoning_effort。
-                        // 当 level == ReasoningLevel.AUTO 时切勿发送 "thinking" 或 "reasoning_effort"，
-                        // 否则第三方中转代理（如 Kiosapi）因无法识别该参数或转发异常导致流式挂起超时（75s watchdog）；
-                        // 不传任何 reasoning 字段时，DeepSeek 等思考模型在第三方代理上会自动按默认开启思考并正常流式输出。
-                        if (level != ReasoningLevel.AUTO && level != ReasoningLevel.OFF) {
-                            put("reasoning_effort", level.effort)
+                        val isDeepSeek = "deepseek" in params.model.modelId.lowercase()
+                        if (isDeepSeek) {
+                            // DeepSeek 模型通过第三方代理（如 Kiosapi、New-API 等）访问：
+                            // 切勿传递 "reasoning_effort"，第三方中转代理无法识别该参数或转发异常导致流式挂起超时（75s watchdog）。
+                            // 思考关闭时显式传递 thinking: { type: "disabled" }，思考开启/AUTO 时不传任何 reasoning 字段即可按默认正常流式输出。
+                            if (level == ReasoningLevel.OFF) {
+                                put("thinking", buildJsonObject {
+                                    put("type", "disabled")
+                                })
+                            }
+                        } else {
+                            // OpenAI 官方及兼容第三方代理：当且仅当思考开启且指定了非 AUTO/OFF 的有效档位时才传递 reasoning_effort
+                            if (level != ReasoningLevel.AUTO && level != ReasoningLevel.OFF) {
+                                put("reasoning_effort", level.effort)
+                            }
                         }
                     }
                 }
@@ -619,13 +627,18 @@ class ChatCompletionsAPI(
                             put("function", buildJsonObject {
                                 put("name", tool.name)
                                 put("description", tool.description)
-                                put(
-                                    "parameters",
-                                    json.encodeToJsonElement(
-                                        tool.parameters()
-                                            ?: InputSchema.Obj(properties = JsonObject(emptyMap()))
-                                    )
+                                val rawParams = json.encodeToJsonElement(
+                                    tool.parameters()
+                                        ?: InputSchema.Obj(properties = JsonObject(emptyMap()))
                                 )
+                                val cleanParams = if (rawParams is JsonObject) {
+                                    JsonObject(rawParams.filterNot { (k, v) ->
+                                        k == "required" && (v is JsonArray && v.isEmpty())
+                                    })
+                                } else {
+                                    rawParams
+                                }
+                                put("parameters", cleanParams)
                             })
                         })
                     }

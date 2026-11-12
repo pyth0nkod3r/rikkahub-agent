@@ -384,8 +384,13 @@ class SubAgentProfileResolverTest {
         val fail2 = SubAgentFallbackPolicies.onGenerationFailed(convId)
         assertEquals(secModelId, fail2)
 
+        val config = SubAgentFallbackPolicies.getConfig(convId)
+        assertEquals(2, config?.maxFailsBeforeSwitch)
+        assertEquals(secModelId, config?.secondaryModelId)
+
         SubAgentFallbackPolicies.unregister(convId)
         val failAfterUnregister = SubAgentFallbackPolicies.onGenerationFailed(convId)
         assertEquals(null, failAfterUnregister)
+        assertEquals(null, SubAgentFallbackPolicies.getConfig(convId))
     }
 }

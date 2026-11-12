@@ -202,8 +202,14 @@ internal fun shouldRetryGenerationStreamFailure(
     retryAttempt: Long,
     maxRetries: Int,
     receivedMeaningfulOutput: Boolean,
+    hasFallbackModel: Boolean = false,
 ): Boolean {
     if (receivedMeaningfulOutput || retryAttempt >= maxRetries.coerceAtLeast(0).toLong()) {
+        return false
+    }
+    // If a 75-second inactivity watchdog timeout triggered and a fallback model is available,
+    // do not loop 10 times (12.5 minutes) on the unresponsive model. Allow at most 1 retry, then fall over.
+    if (failure is StreamIdleTimeoutException && hasFallbackModel && retryAttempt >= 1) {
         return false
     }
     if (failure is ResponseStreamErrorException || isContextLimitFailure(failure)) {
@@ -331,6 +337,7 @@ private fun isMeaningfulStreamChunk(chunk: StreamChunk): Boolean = when (chunk) 
 
 private suspend fun <T> retryGenerationTransportRequest(
     maxRetries: Int,
+    hasFallbackModel: Boolean = false,
     onRetry: (retryNumber: Long, failure: Throwable) -> Unit = { _, _ -> },
     request: suspend () -> T,
 ): T {
@@ -344,6 +351,7 @@ private suspend fun <T> retryGenerationTransportRequest(
                     retryAttempt = retryAttempt,
                     maxRetries = maxRetries,
                     receivedMeaningfulOutput = false,
+                    hasFallbackModel = hasFallbackModel,
                 )) {
                 throw failure
             }
@@ -1588,13 +1596,24 @@ class GenerationLoop(
             conversationId = conversationId,
         )
 
+        val subAgentFallback = conversationId?.let { me.rerere.rikkahub.subagent.SubAgentFallbackPolicies.getConfig(it) }
+        val hasFallbackCandidate = subAgentFallback?.secondaryModelId != null ||
+            settings.fallbackModelId != null ||
+            settings.fastModelId != null
+        val maxStreamRetries = when {
+            subAgentFallback != null && subAgentFallback.secondaryModelId != null ->
+                (subAgentFallback.maxFailsBeforeSwitch - 1).coerceAtLeast(0)
+            settings.networkSetting.enableAutoRetry -> settings.responseStreamMaxRetries
+            else -> 0
+        }
+
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
             model = model,
             temperature = assistant.temperature,
             topP = assistant.topP,
             maxTokens = assistant.maxTokens,
-            maxStreamRetries = if (settings.networkSetting.enableAutoRetry) settings.responseStreamMaxRetries else 0,
+            maxStreamRetries = maxStreamRetries,
             tools = tools,
             reasoningLevel = assistant.reasoningLevel,
             customHeaders = buildList {
@@ -1648,6 +1667,7 @@ class GenerationLoop(
                         retryAttempt = retryAttempt,
                         maxRetries = params.maxStreamRetries,
                         receivedMeaningfulOutput = receivedMeaningfulOutput,
+                        hasFallbackModel = hasFallbackCandidate,
                     )
                     if (shouldRetry) {
                         // A new attempt is about to start collecting from scratch: reset the
@@ -1690,6 +1710,7 @@ class GenerationLoop(
                 )
                 val result = retryGenerationTransportRequest(
                     maxRetries = params.maxStreamRetries,
+                    hasFallbackModel = hasFallbackCandidate,
                     onRetry = { retryNumber, failure ->
                         processingStatus.value = retryStatusText(
                             context = context,

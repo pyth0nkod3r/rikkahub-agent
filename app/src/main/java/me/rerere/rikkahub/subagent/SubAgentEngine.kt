@@ -106,6 +106,9 @@ object SubAgentFallbackPolicies {
         policies.remove(conversationId)
     }
 
+    fun getConfig(conversationId: Uuid?): FallbackConfig? =
+        conversationId?.let { policies[it] }
+
     fun onGenerationFailed(conversationId: Uuid?): Uuid? {
         val config = conversationId?.let { policies[it] } ?: return null
         val currentFails = config.failCounter.incrementAndGet()
