@@ -316,14 +316,15 @@ private fun SettingProviderConfigPage(
             )
         }
 
-        CardGroup {
-            item(
-                title = { Text(stringResource(R.string.setting_provider_page_custom_headers)) },
-                supportingContent = {
-                    Text(stringResource(R.string.setting_provider_page_custom_headers_desc))
-                }
-            )
-        }
+        Text(
+            text = stringResource(R.string.setting_provider_page_custom_headers),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = stringResource(R.string.setting_provider_page_custom_headers_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         CustomHeaders(
             headers = internalProvider.customHeaders,
