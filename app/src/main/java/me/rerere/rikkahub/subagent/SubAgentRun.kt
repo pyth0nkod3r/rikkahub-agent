@@ -175,4 +175,10 @@ data class SubAgentProfile(
     val tools: List<String> = emptyList(),
     /** Capability categories this profile always grants (added to the dispatch `capabilities`). */
     val capabilities: List<String> = emptyList(),
+    /** Optional secondary (fallback) model used when primary model is unavailable or fails. */
+    val secondaryModelId: Uuid? = null,
+    val secondaryModelSlug: String? = null,
+    val secondaryProviderId: Uuid? = null,
+    /** Number of fails before automatically switching to secondary model. */
+    val maxFailsBeforeSwitch: Int = 1,
 )

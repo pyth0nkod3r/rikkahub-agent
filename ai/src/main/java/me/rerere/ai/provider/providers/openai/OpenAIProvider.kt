@@ -104,11 +104,14 @@ class OpenAIProvider(
             } else {
                 "${providerSetting.baseUrl}/models"
             }
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url(modelsUrl)
-                .addHeader("Authorization", "Bearer $key")
-                .get()
-                .build()
+                .headers(providerSetting.mergeCustomHeaders())
+
+            if (key.isNotBlank() && providerSetting.customHeaders.none { it.name.equals("Authorization", ignoreCase = true) }) {
+                requestBuilder.addHeader("Authorization", "Bearer $key")
+            }
+            val request = requestBuilder.get().build()
 
             val response = client.newCall(request).await()
             val bodyStr = response.body.string()
@@ -150,7 +153,9 @@ class OpenAIProvider(
                     openRouterModelFromJson(modelObj)
                 } else {
                     val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                    val detectedType = if (isAuthenticDecisionModel(id)) ModelType.DECISION else ModelType.CHAT
+                    val upstreamType = modelObj["type"]?.jsonPrimitive?.contentOrNull
+                    val isDecision = isAuthenticDecisionModel(id) || upstreamType == "evaluation" || upstreamType == "decision"
+                    val detectedType = if (isDecision) ModelType.DECISION else ModelType.CHAT
                     Model(
                         modelId = id,
                         displayName = id,

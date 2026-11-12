@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -27,6 +29,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.mergeCustomBody
+import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.toHeaders
 import me.rerere.common.http.await
@@ -54,17 +57,27 @@ class DecisionsAPI(
         val inputText = extractInputText(messages)
         val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
 
+        val hasQuestions = params.customBody.any { it.key == "questions" }
         val requestBodyJson = buildJsonObject {
             put("model", params.model.modelId)
             put("input", inputText)
+            if (!hasQuestions) {
+                put("questions", buildJsonArray {
+                    add(buildJsonObject {
+                        put("type", "predicate")
+                        put("name", "assessment")
+                        put("instructions", inputText.take(500).ifBlank { "Evaluate input" })
+                    })
+                })
+            }
         }.mergeCustomBody(params.customBody)
 
         val requestBuilder = Request.Builder()
             .url(endpoint)
-            .headers(params.customHeaders.toHeaders())
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .addHeader("Content-Type", "application/json")
 
-        if (key.isNotBlank()) {
+        if (key.isNotBlank() && providerSetting.customHeaders.none { it.name.equals("Authorization", ignoreCase = true) }) {
             requestBuilder.addHeader("Authorization", "Bearer $key")
         }
 

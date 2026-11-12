@@ -931,6 +931,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_provider_page_claude_prompt_cache_ttl_5m">5 分钟</string>
   <string name="setting_provider_page_claude_prompt_caching">提示缓存 (cache_control)</string>
   <string name="setting_provider_page_configuration">配置</string>
+  <string name="setting_provider_page_custom_headers">提供商请求头</string>
+  <string name="setting_provider_page_custom_headers_desc">在拉取模型和测试连接时附带的自定义 HTTP 请求头（如 User-Agent 或自定义认证）。</string>
   <string name="setting_provider_page_configure_provider_override">配置提供商重写</string>
   <string name="setting_provider_page_delete_dialog_text">确定要删除这个提供商吗？此操作无法撤销。</string>
   <string name="setting_provider_page_deselect_models">取消全选</string>
@@ -2105,6 +2107,10 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_sub_agents_page_system_prompt_hint">派发到此配置时，会添加在子智能体任务之前。</string>
   <string name="setting_sub_agents_page_model">模型</string>
   <string name="setting_sub_agents_page_model_desc">留空则继承父助手的模型。</string>
+  <string name="setting_sub_agents_page_secondary_model">次要模型（备用）</string>
+  <string name="setting_sub_agents_page_secondary_model_hint">当主要模型失败或不可用时使用的备用模型。</string>
+  <string name="setting_sub_agents_page_fails_before_switch">自动切换前失败次数</string>
+  <string name="setting_sub_agents_page_fails_before_switch_hint">主要模型连续失败达到指定次数后自动切换至次要模型。</string>
   <string name="setting_sub_agents_page_enabled">已启用</string>
   <string name="setting_sub_agents_page_edit_title">编辑配置</string>
   <string name="setting_sub_agents_page_unnamed">未命名配置</string>

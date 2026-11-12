@@ -973,6 +973,8 @@
   <string name="setting_provider_page_claude_prompt_cache_ttl_5m">5 minutes</string>
   <string name="setting_provider_page_claude_prompt_caching">Prompt caching (cache_control)</string>
   <string name="setting_provider_page_configuration">Configuration</string>
+  <string name="setting_provider_page_custom_headers">Provider Headers</string>
+  <string name="setting_provider_page_custom_headers_desc">Custom HTTP headers (e.g. User-Agent or custom auth) sent when fetching models and running connection tests.</string>
   <string name="setting_provider_page_configure_provider_override">Configure Provider Override</string>
   <string name="setting_provider_page_delete_dialog_text">Are you sure you want to delete this provider? This action cannot be undone.</string>
   <string name="setting_provider_page_deselect_models">Deselect All</string>
@@ -2110,6 +2112,10 @@
   <string name="setting_sub_agents_page_system_prompt_hint">Prepended to the sub-agent\'s task when it is dispatched to this profile.</string>
   <string name="setting_sub_agents_page_model">Model</string>
   <string name="setting_sub_agents_page_model_desc">Leave unset to inherit the parent assistant\'s model.</string>
+  <string name="setting_sub_agents_page_secondary_model">Secondary Model (Fallback)</string>
+  <string name="setting_sub_agents_page_secondary_model_hint">Optional backup model used when the primary model fails or is unavailable.</string>
+  <string name="setting_sub_agents_page_fails_before_switch">Failures before auto-switch</string>
+  <string name="setting_sub_agents_page_fails_before_switch_hint">Number of consecutive failures on the primary model before automatically switching to the secondary model.</string>
   <string name="setting_sub_agents_page_enabled">Enabled</string>
   <string name="setting_sub_agents_page_edit_title">Edit profile</string>
   <string name="setting_sub_agents_page_unnamed">Unnamed profile</string>

@@ -215,14 +215,27 @@ private fun SubAgentProfileCard(
     val scope = rememberCoroutineScope()
     val hasConfiguredModel = profile.modelId != null || !profile.modelSlug.isNullOrBlank()
     val resolvedModel = remember(profile.modelId, profile.modelSlug, profile.providerId, providers) {
-        val chatModels = providers.filter { it.enabled }.flatMap { it.models }.filter { it.type == ModelType.CHAT }
+        val chatModels = providers.filter { it.enabled }.flatMap { it.models }.filter { it.type == ModelType.CHAT || it.type == ModelType.DECISION }
         (if (profile.modelId != null) chatModels.firstOrNull { it.id == profile.modelId } else null)
             ?: (if (profile.providerId != null && !profile.modelSlug.isNullOrBlank()) {
                 providers.filter { it.enabled }.firstOrNull { it.id == profile.providerId }?.models
-                    ?.firstOrNull { it.type == ModelType.CHAT && it.modelId.equals(profile.modelSlug, ignoreCase = true) }
+                    ?.firstOrNull { (it.type == ModelType.CHAT || it.type == ModelType.DECISION) && it.modelId.equals(profile.modelSlug, ignoreCase = true) }
             } else null)
             ?: (if (!profile.modelSlug.isNullOrBlank()) {
                 val matches = chatModels.filter { it.modelId.equals(profile.modelSlug, ignoreCase = true) }
+                if (matches.size == 1) matches[0] else null
+            } else null)
+    }
+    val hasConfiguredSecondaryModel = profile.secondaryModelId != null || !profile.secondaryModelSlug.isNullOrBlank()
+    val resolvedSecondaryModel = remember(profile.secondaryModelId, profile.secondaryModelSlug, profile.secondaryProviderId, providers) {
+        val chatModels = providers.filter { it.enabled }.flatMap { it.models }.filter { it.type == ModelType.CHAT || it.type == ModelType.DECISION }
+        (if (profile.secondaryModelId != null) chatModels.firstOrNull { it.id == profile.secondaryModelId } else null)
+            ?: (if (profile.secondaryProviderId != null && !profile.secondaryModelSlug.isNullOrBlank()) {
+                providers.filter { it.enabled }.firstOrNull { it.id == profile.secondaryProviderId }?.models
+                    ?.firstOrNull { (it.type == ModelType.CHAT || it.type == ModelType.DECISION) && it.modelId.equals(profile.secondaryModelSlug, ignoreCase = true) }
+            } else null)
+            ?: (if (!profile.secondaryModelSlug.isNullOrBlank()) {
+                val matches = chatModels.filter { it.modelId.equals(profile.secondaryModelSlug, ignoreCase = true) }
                 if (matches.size == 1) matches[0] else null
             } else null)
     }
@@ -300,6 +313,17 @@ private fun SubAgentProfileCard(
                         } else {
                             Tag(type = TagType.DEFAULT) {
                                 Text("Inherits default model")
+                            }
+                        }
+                        if (hasConfiguredSecondaryModel) {
+                            if (resolvedSecondaryModel != null) {
+                                Tag(type = TagType.INFO) {
+                                    Text("Fallback: ${resolvedSecondaryModel.displayName.ifBlank { resolvedSecondaryModel.modelId }} (fail \u2265 ${profile.maxFailsBeforeSwitch})")
+                                }
+                            } else {
+                                Tag(type = TagType.ERROR) {
+                                    Text("Stale fallback: ${profile.secondaryModelSlug ?: profile.secondaryModelId}")
+                                }
                             }
                         }
                     }
@@ -425,9 +449,9 @@ private fun SubAgentProfileEditSheet(
                                 profile.modelId
                             } else if (profile.providerId != null && !profile.modelSlug.isNullOrBlank()) {
                                 providers.firstOrNull { it.id == profile.providerId }?.models
-                                    ?.firstOrNull { it.type == ModelType.CHAT && it.modelId.equals(profile.modelSlug, ignoreCase = true) }?.id
+                                    ?.firstOrNull { (it.type == ModelType.CHAT || it.type == ModelType.DECISION) && it.modelId.equals(profile.modelSlug, ignoreCase = true) }?.id
                             } else if (!profile.modelSlug.isNullOrBlank()) {
-                                val matches = providers.flatMap { it.models }.filter { it.type == ModelType.CHAT && it.modelId.equals(profile.modelSlug, ignoreCase = true) }
+                                val matches = providers.flatMap { it.models }.filter { (it.type == ModelType.CHAT || it.type == ModelType.DECISION) && it.modelId.equals(profile.modelSlug, ignoreCase = true) }
                                 if (matches.size == 1) matches[0].id else null
                             } else {
                                 null
@@ -457,6 +481,59 @@ private fun SubAgentProfileEditSheet(
                         )
                     },
                 )
+
+                FormItem(
+                    label = { Text(stringResource(R.string.setting_sub_agents_page_secondary_model)) },
+                    description = { Text(stringResource(R.string.setting_sub_agents_page_secondary_model_hint)) },
+                    content = {
+                        val effectiveSecondaryModelId = remember(profile.secondaryModelId, profile.secondaryModelSlug, profile.secondaryProviderId, providers) {
+                            if (profile.secondaryModelId != null && providers.any { p -> p.models.any { it.id == profile.secondaryModelId } }) {
+                                profile.secondaryModelId
+                            } else if (profile.secondaryProviderId != null && !profile.secondaryModelSlug.isNullOrBlank()) {
+                                providers.firstOrNull { it.id == profile.secondaryProviderId }?.models
+                                    ?.firstOrNull { (it.type == ModelType.CHAT || it.type == ModelType.DECISION) && it.modelId.equals(profile.secondaryModelSlug, ignoreCase = true) }?.id
+                            } else if (!profile.secondaryModelSlug.isNullOrBlank()) {
+                                val matches = providers.flatMap { it.models }.filter { (it.type == ModelType.CHAT || it.type == ModelType.DECISION) && it.modelId.equals(profile.secondaryModelSlug, ignoreCase = true) }
+                                if (matches.size == 1) matches[0].id else null
+                            } else {
+                                null
+                            }
+                        }
+                        ModelSelector(
+                            modelId = effectiveSecondaryModelId,
+                            providers = providers,
+                            type = ModelType.CHAT,
+                            allowClear = true,
+                            onSelect = { model ->
+                                val isCleared = model.modelId.isBlank()
+                                val selectedProvider = if (!isCleared) {
+                                    providers.firstOrNull { p -> p.models.any { it.id == model.id } }
+                                } else null
+                                onEdit(
+                                    profile.copy(
+                                        secondaryModelId = model.id.takeIf { !isCleared },
+                                        secondaryModelSlug = model.modelId.takeIf { !isCleared },
+                                        secondaryProviderId = selectedProvider?.id.takeIf { !isCleared },
+                                    )
+                                )
+                            },
+                        )
+                    },
+                )
+
+                if (profile.secondaryModelId != null || !profile.secondaryModelSlug.isNullOrBlank()) {
+                    OutlinedTextField(
+                        value = profile.maxFailsBeforeSwitch.toString(),
+                        onValueChange = { str ->
+                            val parsed = str.filter { it.isDigit() }.toIntOrNull() ?: 1
+                            onEdit(profile.copy(maxFailsBeforeSwitch = parsed.coerceIn(1, 10)))
+                        },
+                        label = { Text(stringResource(R.string.setting_sub_agents_page_fails_before_switch)) },
+                        supportingText = { Text(stringResource(R.string.setting_sub_agents_page_fails_before_switch_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
 
                 OutlinedTextField(
                     value = profile.systemPrompt,

@@ -131,6 +131,7 @@ internal fun shouldFallbackToBackupModel(
 internal fun resolveFallbackModels(
     settings: Settings,
     primaryModel: Model,
+    subAgentSecondaryModel: Model? = null,
 ): List<Model> {
     fun Model.takeIfUsableBackup(): Model? {
         if (id == primaryModel.id || id == DEFAULT_AUTO_MODEL_ID) return null
@@ -151,6 +152,10 @@ internal fun resolveFallbackModels(
         if (candidates.none { it.id == usable.id }) {
             candidates.add(usable)
         }
+    }
+
+    if (subAgentSecondaryModel != null) {
+        addUnique(subAgentSecondaryModel)
     }
 
     addUnique(settings.findModelById(settings.fallbackModelId))
@@ -808,8 +813,12 @@ class GenerationLoop(
                             workspaceCwd = workspaceCwd,
                         )
                     } catch (primaryErr: Throwable) {
+                        val subAgentSecModelId = me.rerere.rikkahub.subagent.SubAgentFallbackPolicies.onGenerationFailed(conversationId)
+                        val subAgentSecModel = subAgentSecModelId?.let { settings.findModelById(it) }
                         val fallbackCandidates = if (shouldFallbackToBackupModel(primaryErr, emittedStepOutput)) {
-                            resolveFallbackModels(settings, effectiveModel)
+                            resolveFallbackModels(settings, effectiveModel, subAgentSecModel)
+                        } else if (subAgentSecModel != null) {
+                            listOf(subAgentSecModel)
                         } else emptyList()
                         val backupModel = fallbackCandidates.firstOrNull()
                         val backupProvider = backupModel?.findProvider(settings.providers)?.takeIf { it.enabled }

@@ -316,6 +316,22 @@ private fun SettingProviderConfigPage(
             )
         }
 
+        CardGroup {
+            item(
+                title = { Text(stringResource(R.string.setting_provider_page_custom_headers)) },
+                supportingContent = {
+                    Text(stringResource(R.string.setting_provider_page_custom_headers_desc))
+                }
+            )
+        }
+
+        CustomHeaders(
+            headers = internalProvider.customHeaders,
+            onUpdate = { headers ->
+                internalProvider = internalProvider.copyProvider(customHeaders = headers)
+            }
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1088,7 +1104,7 @@ private fun ModelModalitySelector(
     outputModalities: List<Modality>,
     onUpdateOutputModalities: (List<Modality>) -> Unit
 ) {
-    if (model.type == ModelType.CHAT) {
+    if (model.type == ModelType.CHAT || model.type == ModelType.DECISION) {
         Text(
             stringResource(R.string.setting_provider_page_input_modality),
             style = MaterialTheme.typography.titleSmall

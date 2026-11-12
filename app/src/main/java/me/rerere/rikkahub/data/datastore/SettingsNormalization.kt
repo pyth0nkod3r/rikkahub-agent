@@ -51,20 +51,25 @@ internal fun Settings.withoutInvalidReferences(): Settings {
     val validLorebookIds = settings.lorebooks.map { it.id }.toSet()
     val validQuickMessageIds = settings.quickMessages.map { it.id }.toSet()
     val validModelIds by lazy { settings.providers.flatMap { it.models }.mapTo(HashSet()) { it.id } }
-    val allChatModels by lazy { settings.providers.flatMap { it.models }.filter { it.type == me.rerere.ai.provider.ModelType.CHAT } }
+    val allChatModels by lazy { settings.providers.flatMap { it.models }.filter { it.type == me.rerere.ai.provider.ModelType.CHAT || it.type == me.rerere.ai.provider.ModelType.DECISION } }
     val asrProviders = settings.asrProviders.distinctBy { it.id }
     val normalizedSubAgents = settings.subAgents.distinctBy { it.id }.map { profile ->
-        if (profile.modelId != null || !profile.modelSlug.isNullOrBlank()) {
-            val matched = allChatModels.firstOrNull { it.id == profile.modelId }
-                ?: allChatModels.firstOrNull { !profile.modelSlug.isNullOrBlank() && it.modelId.equals(profile.modelSlug, ignoreCase = true) }
+        var p = profile
+        if (p.modelId != null || !p.modelSlug.isNullOrBlank()) {
+            val matched = allChatModels.firstOrNull { it.id == p.modelId }
+                ?: allChatModels.firstOrNull { !p.modelSlug.isNullOrBlank() && it.modelId.equals(p.modelSlug, ignoreCase = true) }
             if (matched != null) {
-                profile.copy(modelId = matched.id, modelSlug = matched.modelId)
-            } else {
-                profile
+                p = p.copy(modelId = matched.id, modelSlug = matched.modelId)
             }
-        } else {
-            profile
         }
+        if (p.secondaryModelId != null || !p.secondaryModelSlug.isNullOrBlank()) {
+            val matchedSec = allChatModels.firstOrNull { it.id == p.secondaryModelId }
+                ?: allChatModels.firstOrNull { !p.secondaryModelSlug.isNullOrBlank() && it.modelId.equals(p.secondaryModelSlug, ignoreCase = true) }
+            if (matchedSec != null) {
+                p = p.copy(secondaryModelId = matchedSec.id, secondaryModelSlug = matchedSec.modelId)
+            }
+        }
+        p
     }
     return settings.copy(
         providers = settings.providers.distinctBy { it.id }.map { provider ->

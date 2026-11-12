@@ -336,4 +336,56 @@ class SubAgentProfileResolverTest {
         assertEquals(modelUnique.id, resolved.modelId)
         assertEquals("Kiosapi-FreePro", resolved.providerName)
     }
+
+    @Test fun `resolveProfileModel falls back to secondary model when primary model is unavailable`() {
+        val backupModel = me.rerere.ai.provider.Model(
+            modelId = "backup-chat-model",
+            displayName = "Backup Chat Model",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val provider = me.rerere.ai.provider.ProviderSetting.OpenAI(
+            name = "Test Provider",
+            enabled = true,
+            models = listOf(backupModel),
+        )
+
+        val profile = researcher.copy(
+            modelId = Uuid.random(),
+            modelSlug = "nonexistent-primary",
+            providerId = null,
+            secondaryModelId = backupModel.id,
+            secondaryModelSlug = backupModel.modelId,
+            secondaryProviderId = provider.id,
+            maxFailsBeforeSwitch = 2,
+        )
+
+        val res = SubAgentModelResolver.resolveProfileModel(profile, listOf(provider))
+        assertTrue(res is SubAgentModelResolver.Result.Resolved)
+        val resolved = res as SubAgentModelResolver.Result.Resolved
+        assertEquals(backupModel.id, resolved.modelId)
+        assertTrue(resolved.fallbackReason?.contains("Primary profile model") == true)
+    }
+
+    @Test fun `SubAgentFallbackPolicies switches to secondary model after configured fail count`() {
+        val convId = Uuid.random()
+        val secModelId = Uuid.random()
+
+        SubAgentFallbackPolicies.register(
+            conversationId = convId,
+            secondaryModelId = secModelId,
+            maxFailsBeforeSwitch = 2,
+        )
+
+        // Fail 1: below threshold of 2 -> returns null
+        val fail1 = SubAgentFallbackPolicies.onGenerationFailed(convId)
+        assertEquals(null, fail1)
+
+        // Fail 2: reaches threshold of 2 -> returns secondary model ID
+        val fail2 = SubAgentFallbackPolicies.onGenerationFailed(convId)
+        assertEquals(secModelId, fail2)
+
+        SubAgentFallbackPolicies.unregister(convId)
+        val failAfterUnregister = SubAgentFallbackPolicies.onGenerationFailed(convId)
+        assertEquals(null, failAfterUnregister)
+    }
 }

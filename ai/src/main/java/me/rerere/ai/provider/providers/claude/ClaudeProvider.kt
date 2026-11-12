@@ -63,6 +63,7 @@ import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
+import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
@@ -277,12 +278,16 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
 
     override suspend fun listModels(providerSetting: ProviderSetting.Claude): List<Model> =
         withContext(Dispatchers.IO) {
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url("${providerSetting.baseUrl}/models")
-                .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
-                .addHeader("anthropic-version", ANTHROPIC_VERSION)
-                .get()
-                .build()
+                .headers(providerSetting.mergeCustomHeaders())
+            if (providerSetting.customHeaders.none { it.name.equals("x-api-key", ignoreCase = true) }) {
+                requestBuilder.addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
+            }
+            if (providerSetting.customHeaders.none { it.name.equals("anthropic-version", ignoreCase = true) }) {
+                requestBuilder.addHeader("anthropic-version", ANTHROPIC_VERSION)
+            }
+            val request = requestBuilder.get().build()
 
             val response = client.newCall(request).execute()
             val bodyStr = response.body.string()

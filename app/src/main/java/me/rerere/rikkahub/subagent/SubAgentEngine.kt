@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.subagent
 
 import android.util.Log
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -82,6 +84,43 @@ internal val ProviderSetting.endpointUrl: String
     }
 
 /**
+ * Tracks secondary models and fail thresholds for active subagent conversations.
+ */
+@OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+object SubAgentFallbackPolicies {
+    data class FallbackConfig(
+        val secondaryModelId: Uuid?,
+        val maxFailsBeforeSwitch: Int,
+        val failCounter: AtomicInteger = AtomicInteger(0),
+    )
+
+    private val policies = ConcurrentHashMap<Uuid, FallbackConfig>()
+
+    fun register(conversationId: Uuid, secondaryModelId: Uuid?, maxFailsBeforeSwitch: Int) {
+        if (secondaryModelId != null) {
+            policies[conversationId] = FallbackConfig(secondaryModelId, maxFailsBeforeSwitch.coerceAtLeast(1))
+        }
+    }
+
+    fun unregister(conversationId: Uuid) {
+        policies.remove(conversationId)
+    }
+
+    fun onGenerationFailed(conversationId: Uuid?): Uuid? {
+        val config = conversationId?.let { policies[it] } ?: return null
+        val currentFails = config.failCounter.incrementAndGet()
+        return if (currentFails >= config.maxFailsBeforeSwitch) {
+            config.secondaryModelId
+        } else {
+            null
+        }
+    }
+
+    fun getSecondaryModel(conversationId: Uuid?): Uuid? =
+        conversationId?.let { policies[it]?.secondaryModelId }
+}
+
+/**
  * Resolves subagent_dispatch's `model_id` (uuid, provider model id, or display name) against
  * the CHAT-type models of ENABLED providers. #28: `model_id` was parsed, stored and
  * echoed back but never used to pick a model - the sub-agent silently inherited the parent's.
@@ -97,6 +136,7 @@ internal object SubAgentModelResolver {
             val providerName: String = "",
             val providerType: String = "",
             val endpoint: String? = null,
+            val fallbackReason: String? = null,
         ) : Result()
         data class Failed(val message: String) : Result()
     }
@@ -118,7 +158,7 @@ internal object SubAgentModelResolver {
 
         val chatModels: List<Pair<ProviderSetting, Model>> = providers
             .filter { it.enabled }
-            .flatMap { provider -> provider.models.filter { it.type == ModelType.CHAT }.map { provider to it } }
+            .flatMap { provider -> provider.models.filter { it.type == ModelType.CHAT || it.type == ModelType.DECISION }.map { provider to it } }
 
         val asUuid = runCatching { Uuid.parse(modelIdInput) }.getOrNull()
         if (asUuid != null) {
@@ -169,11 +209,55 @@ internal object SubAgentModelResolver {
     fun resolveProfileModel(profile: SubAgentProfile, providers: List<ProviderSetting>): Result {
         val enabledProviders = providers.filter { it.enabled }
         val chatModels: List<Pair<ProviderSetting, Model>> = enabledProviders
-            .flatMap { provider -> provider.models.filter { it.type == ModelType.CHAT }.map { provider to it } }
+            .flatMap { provider -> provider.models.filter { it.type == ModelType.CHAT || it.type == ModelType.DECISION }.map { provider to it } }
 
+        val primaryResult = resolveModelTiers(
+            modelId = profile.modelId,
+            providerId = profile.providerId,
+            modelSlug = profile.modelSlug,
+            profileName = profile.name,
+            enabledProviders = enabledProviders,
+            chatModels = chatModels,
+            isSecondary = false,
+        )
+
+        if (primaryResult is Result.Resolved) {
+            return primaryResult
+        }
+
+        // If primary model cannot be resolved and secondary model is configured, fall back to secondary model
+        if (profile.secondaryModelId != null || !profile.secondaryModelSlug.isNullOrBlank()) {
+            val secondaryResult = resolveModelTiers(
+                modelId = profile.secondaryModelId,
+                providerId = profile.secondaryProviderId,
+                modelSlug = profile.secondaryModelSlug,
+                profileName = profile.name,
+                enabledProviders = enabledProviders,
+                chatModels = chatModels,
+                isSecondary = true,
+            )
+            if (secondaryResult is Result.Resolved) {
+                return secondaryResult.copy(
+                    fallbackReason = "Primary profile model (${profile.modelSlug ?: profile.modelId}) unavailable; fell back to secondary model (${secondaryResult.modelSlug})"
+                )
+            }
+        }
+
+        return primaryResult
+    }
+
+    private fun resolveModelTiers(
+        modelId: Uuid?,
+        providerId: Uuid?,
+        modelSlug: String?,
+        profileName: String,
+        enabledProviders: List<ProviderSetting>,
+        chatModels: List<Pair<ProviderSetting, Model>>,
+        isSecondary: Boolean = false,
+    ): Result {
         // Tier 1: Exact UUID match in enabled providers
-        if (profile.modelId != null) {
-            val byUuid = chatModels.firstOrNull { (_, model) -> model.id == profile.modelId }
+        if (modelId != null) {
+            val byUuid = chatModels.firstOrNull { (_, model) -> model.id == modelId }
             if (byUuid != null) {
                 val (provider, model) = byUuid
                 return Result.Resolved(
@@ -188,10 +272,11 @@ internal object SubAgentModelResolver {
         }
 
         // Tier 2: Provider affinity match (resilience against catalog refresh where model UUID changed)
-        if (profile.providerId != null && !profile.modelSlug.isNullOrBlank()) {
-            val provider = enabledProviders.firstOrNull { it.id == profile.providerId }
+        if (providerId != null && !modelSlug.isNullOrBlank()) {
+            val provider = enabledProviders.firstOrNull { it.id == providerId }
             val model = provider?.models?.firstOrNull {
-                it.type == ModelType.CHAT && it.modelId.equals(profile.modelSlug, ignoreCase = true)
+                (it.type == ModelType.CHAT || it.type == ModelType.DECISION) &&
+                    it.modelId.equals(modelSlug, ignoreCase = true)
             }
             if (provider != null && model != null) {
                 return Result.Resolved(
@@ -206,8 +291,8 @@ internal object SubAgentModelResolver {
         }
 
         // Tier 3 & 4: Model slug matching across enabled providers
-        if (!profile.modelSlug.isNullOrBlank()) {
-            val bySlug = chatModels.filter { (_, model) -> model.modelId.equals(profile.modelSlug, ignoreCase = true) }
+        if (!modelSlug.isNullOrBlank()) {
+            val bySlug = chatModels.filter { (_, model) -> model.modelId.equals(modelSlug, ignoreCase = true) }
             if (bySlug.size == 1) {
                 val (provider, model) = bySlug[0]
                 return Result.Resolved(
@@ -221,7 +306,7 @@ internal object SubAgentModelResolver {
             }
             if (bySlug.size > 1) {
                 return Result.Failed(
-                    "Sub-agent profile '${profile.name}' configured model '${profile.modelSlug}' is ambiguous " +
+                    "Sub-agent profile '$profileName' configured ${if (isSecondary) "secondary " else ""}model '$modelSlug' is ambiguous " +
                         "across multiple providers (${bySlug.size} matches):\n" +
                         bySlug.joinToString("\n") { candidateLine(it) } +
                         "\nSelect a specific provider in Settings → Sub-agents."
@@ -230,7 +315,7 @@ internal object SubAgentModelResolver {
         }
 
         return Result.Failed(
-            "Sub-agent profile '${profile.name}' configured model (${profile.modelSlug ?: profile.modelId}) " +
+            "Sub-agent profile '$profileName' configured ${if (isSecondary) "secondary " else ""}model (${modelSlug ?: modelId}) " +
                 "is not available or its provider is disabled. Refusing silent fallback."
         )
     }
@@ -680,7 +765,7 @@ class SubAgentEngine(
                         providerName = modelResolution.providerName,
                         providerType = modelResolution.providerType,
                         endpoint = modelResolution.endpoint,
-                        fallbackReason = null,
+                        fallbackReason = modelResolution.fallbackReason,
                     )
                 }
                 modelResolution.modelId
@@ -780,6 +865,13 @@ class SubAgentEngine(
                 append("When you have finished, end with one short paragraph in plain text that summarises what you did and what you found. Do NOT stop on a tool call — finish with assistant text. The dispatcher harvests only your final text reply, so this paragraph is the entire response the parent sees.")
             }
             SubAgentToolPolicies.register(conv.id, toolPolicy)
+            if (profile?.secondaryModelId != null) {
+                SubAgentFallbackPolicies.register(
+                    conversationId = conv.id,
+                    secondaryModelId = profile.secondaryModelId,
+                    maxFailsBeforeSwitch = profile.maxFailsBeforeSwitch,
+                )
+            }
             val reply = CompletableDeferred<String?>()
             chatService.sendMessage(
                 conversationId = conv.id,
@@ -818,6 +910,7 @@ class SubAgentEngine(
                 cleanupIsolatedGitWorktreeIfClean(baseWorkspaceCwd, isolatedWorktreeDir)
             }
             SubAgentToolPolicies.unregister(conv.id)
+            SubAgentFallbackPolicies.unregister(conv.id)
             HeadlessConversations.unmark(conv.id)
             registry.clearJob(runId)
         }
@@ -1046,6 +1139,18 @@ class SubAgentEngine(
                 append("When you have finished, end with one short paragraph in plain text that summarises what you did and what you found. Do NOT stop on a tool call — finish with assistant text. The dispatcher harvests only your final text reply, so this paragraph is the entire response the parent sees.")
             }
             SubAgentToolPolicies.register(convId, toolPolicy)
+            val reinjectSettings = settingsStore.settingsFlow.first()
+            val existingRun = registry.get(runId)
+            val reinjectProfile = existingRun?.agentName?.let { name ->
+                reinjectSettings.subAgents.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            }
+            if (reinjectProfile?.secondaryModelId != null) {
+                SubAgentFallbackPolicies.register(
+                    conversationId = convId,
+                    secondaryModelId = reinjectProfile.secondaryModelId,
+                    maxFailsBeforeSwitch = reinjectProfile.maxFailsBeforeSwitch,
+                )
+            }
             val reply = CompletableDeferred<String?>()
             chatService.sendMessage(
                 conversationId = convId,
@@ -1081,6 +1186,7 @@ class SubAgentEngine(
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } finally {
             SubAgentToolPolicies.unregister(convId)
+            SubAgentFallbackPolicies.unregister(convId)
             HeadlessConversations.unmark(convId)
             registry.clearJob(runId)
         }

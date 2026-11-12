@@ -160,4 +160,18 @@ class DecisionsApiTest {
         assertTrue(formatted.contains("Category") && formatted.contains("`general`"))
         assertTrue(formatted.contains("coding: 0%") && formatted.contains("general: 94%") && formatted.contains("analysis: 6%"))
     }
+
+    @Test
+    fun `evaluation model type from upstream metadata is identified as decision model`() {
+        val model = Model(
+            modelId = "custom-eval-model",
+            displayName = "Custom Evaluation",
+            type = ModelType.DECISION,
+        )
+        val providerSetting = ProviderSetting.OpenAI(
+            apiKey = "sk-test",
+            baseUrl = "https://ai-gateway.vercel.sh/v1",
+        )
+        assertTrue(provider.isDecisionRequest(TextGenerationParams(model = model), providerSetting))
+    }
 }
