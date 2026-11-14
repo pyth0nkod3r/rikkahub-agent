@@ -15,7 +15,15 @@ import java.io.IOException
 import kotlin.time.Duration.Companion.seconds
 
 class OAuthLoopbackCallbackServerTest {
-    private val httpClient = OkHttpClient()
+    private val httpClient = OkHttpClient.Builder()
+        .dns { hostname ->
+            if (hostname == "localhost") {
+                listOf(java.net.InetAddress.getByName("127.0.0.1"))
+            } else {
+                okhttp3.Dns.SYSTEM.lookup(hostname)
+            }
+        }
+        .build()
 
     @Test
     fun `callback is delivered only to matching state`() = runBlocking {
@@ -27,8 +35,8 @@ class OAuthLoopbackCallbackServerTest {
                 assertEquals(400, response.code)
             }
 
-            val callbackAndClose = async(Dispatchers.IO) {
-                session.awaitCallback(10.seconds).also { session.close() }
+            val callbackJob = async(Dispatchers.IO) {
+                session.awaitCallback(10.seconds)
             }
             withContext(Dispatchers.IO) {
                 execute("${session.redirectUri}?code=auth-code&state=expected-state").use { response ->
@@ -37,7 +45,7 @@ class OAuthLoopbackCallbackServerTest {
                 }
             }
 
-            val callback = callbackAndClose.await()
+            val callback = callbackJob.await()
             assertEquals("auth-code", callback?.code)
             assertEquals("expected-state", callback?.state)
             assertFalse(callback?.error != null)
