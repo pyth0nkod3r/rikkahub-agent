@@ -83,8 +83,8 @@ class TaskDagScheduler(
      */
     suspend fun execute(
         initialGraph: TaskGraph,
-        worker: suspend (TaskNode) -> Result<String>,
         onNodeUpdated: ((TaskNode) -> Unit)? = null,
+        worker: suspend (TaskNode) -> Result<String>,
     ): TaskGraph = coroutineScope {
         var currentGraph = initialGraph
 
@@ -180,6 +180,11 @@ class TaskDagScheduler(
 
         currentGraph
     }
+
+    suspend fun execute(
+        initialGraph: TaskGraph,
+        worker: suspend (TaskNode) -> Result<String>,
+    ): TaskGraph = execute(initialGraph, null, worker)
 
     private fun cascadeUpstreamFailures(
         graph: TaskGraph,

@@ -66,7 +66,7 @@ class ContextBrokerTest {
         assertTrue(bundle.plan!!.wasOverBudget)
 
         // Lowest priority item (RECENT_CHATS) was dropped
-        assertTrue(bundle.plan.droppedSources.contains(ContextSource.RECENT_CHATS))
+        assertTrue(bundle.plan!!.droppedSources.contains(ContextSource.RECENT_CHATS))
 
         // Pinned sources (RULES, MEMORY, SYSTEM_INSTRUCTION) must never be dropped
         assertTrue(bundle.hasSource(ContextSource.RULES))
