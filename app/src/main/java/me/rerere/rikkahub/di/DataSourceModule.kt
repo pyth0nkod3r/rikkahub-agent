@@ -190,6 +190,8 @@ val dataSourceModule = module {
             conversationRepo = get(),
             aiLoggingManager = get(),
             systemPromptBuilder = get(),
+            workspaceRepository = getOrNull(),
+            skillManager = getOrNull(),
         )
     }
 

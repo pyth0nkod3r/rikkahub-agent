@@ -97,7 +97,50 @@ internal class StreamIdleTimeoutException(message: String) : IOException(message
 @OptIn(FlowPreview::class)
 internal fun <T> Flow<T>.withStreamIdleTimeout(
     idleTimeoutMs: Long = STREAM_IDLE_WATCHDOG_TIMEOUT_MS,
-): Flow<T> = if (idleTimeoutMs <= 0L) {
+    watchdogController: me.rerere.rikkahub.data.ai.watchdog.StreamWatchdogController? = null,
+    streamHeartbeat: MutableStateFlow<me.rerere.rikkahub.data.ai.watchdog.StreamHeartbeatState?>? = null,
+): Flow<T> = if (watchdogController != null) {
+    flow {
+        coroutineScope {
+            watchdogController.start(this)
+            val heartbeatJob = if (streamHeartbeat != null) {
+                launch {
+                    watchdogController.heartbeatState.collect { hb ->
+                        streamHeartbeat.value = hb
+                    }
+                }
+            } else null
+
+            val checker = launch {
+                while (isActive) {
+                    delay(500L)
+                    when (watchdogController.evaluate()) {
+                        is me.rerere.rikkahub.data.ai.watchdog.WatchdogDecision.SwitchModelRequested -> {
+                            throw StreamIdleTimeoutException("User requested immediate switch to secondary model")
+                        }
+                        is me.rerere.rikkahub.data.ai.watchdog.WatchdogDecision.TimeoutExpired -> {
+                            throw StreamIdleTimeoutException(
+                                "Stream inactivity watchdog triggered: no chunks received for ${idleTimeoutMs / 1000}s"
+                            )
+                        }
+                        else -> {}
+                    }
+                }
+            }
+            try {
+                this@withStreamIdleTimeout.collect { value ->
+                    watchdogController.onChunkReceived()
+                    emit(value)
+                }
+            } finally {
+                checker.cancel()
+                heartbeatJob?.cancel()
+                watchdogController.stop()
+                streamHeartbeat?.value = null
+            }
+        }
+    }
+} else if (idleTimeoutMs <= 0L) {
     this
 } else {
     this.timeout(idleTimeoutMs.milliseconds).catch { cause ->
@@ -570,6 +613,8 @@ class GenerationLoop(
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
     private val systemPromptBuilder: SystemPromptBuilder,
+    private val workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
+    private val skillManager: me.rerere.rikkahub.data.files.SkillManager? = null,
 ) {
     fun generateText(
         settings: Settings,
@@ -608,6 +653,8 @@ class GenerationLoop(
         conversationModeInjectionIds: Set<Uuid> = emptySet(),
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
+        streamHeartbeat: MutableStateFlow<me.rerere.rikkahub.data.ai.watchdog.StreamHeartbeatState?>? = null,
+        onWatchdogControllerAttached: ((me.rerere.rikkahub.data.ai.watchdog.StreamWatchdogController?) -> Unit)? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = usageRecorder.wrap(
@@ -814,6 +861,8 @@ class GenerationLoop(
                             conversationModeInjectionIds = conversationModeInjectionIds,
                             conversationLorebookIds = conversationLorebookIds,
                             workspaceCwd = workspaceCwd,
+                            streamHeartbeat = streamHeartbeat,
+                            onWatchdogControllerAttached = onWatchdogControllerAttached,
                         )
                     } catch (primaryErr: Throwable) {
                         val subAgentSecModelId = me.rerere.rikkahub.subagent.SubAgentFallbackPolicies.onGenerationFailed(conversationId)
@@ -883,6 +932,8 @@ class GenerationLoop(
                                 conversationModeInjectionIds = conversationModeInjectionIds,
                                 conversationLorebookIds = conversationLorebookIds,
                                 workspaceCwd = workspaceCwd,
+                                streamHeartbeat = streamHeartbeat,
+                                onWatchdogControllerAttached = onWatchdogControllerAttached,
                             )
                         } else {
                             throw primaryErr
@@ -1523,6 +1574,8 @@ class GenerationLoop(
         conversationModeInjectionIds: Set<Uuid> = emptySet(),
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
+        streamHeartbeat: MutableStateFlow<me.rerere.rikkahub.data.ai.watchdog.StreamHeartbeatState?>? = null,
+        onWatchdogControllerAttached: ((me.rerere.rikkahub.data.ai.watchdog.StreamWatchdogController?) -> Unit)? = null,
     ) {
         val internalMessages = buildList {
             // Conversation-level system prompt override (upstream): when the assistant
@@ -1551,6 +1604,50 @@ class GenerationLoop(
             val recentChatsPrompt = if (assistant.enableRecentChatsReference && !isSubAgent) {
                 buildRecentChatsPrompt(assistant, conversationRepo)
             } else ""
+            val projectDoc = runCatching {
+                val wsId = assistant.workspaceId?.toString()
+                if (!wsId.isNullOrBlank()) {
+                    val repo = workspaceRepository ?: org.koin.java.KoinJavaComponent.getKoin().getOrNull<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
+                    val wsDir = repo?.resolveAbsoluteFile(wsId, "/workspace")
+                    if (wsDir != null) {
+                        val projFile = java.io.File(wsDir, me.rerere.rikkahub.data.cartography.ProjectCartographer.PROJECT_DOC_RELATIVE_PATH)
+                        if (projFile.exists() && projFile.isFile) projFile.readText() else ""
+                    } else ""
+                } else ""
+            }.getOrDefault("")
+
+            val rulesPrompt = runCatching {
+                val wsId = assistant.workspaceId?.toString()
+                if (!wsId.isNullOrBlank()) {
+                    val repo = workspaceRepository ?: org.koin.core.context.GlobalContext.getOrNull()?.getOrNull<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
+                    val wsDir = repo?.resolveAbsoluteFile(wsId, "/workspace")
+                    if (wsDir != null) {
+                        val rulesFile = java.io.File(wsDir, ".rikkahub/rules.md")
+                        val agentsFile = java.io.File(wsDir, "AGENTS.md")
+                        when {
+                            rulesFile.exists() && rulesFile.isFile -> rulesFile.readText()
+                            agentsFile.exists() && agentsFile.isFile -> agentsFile.readText()
+                            else -> ""
+                        }
+                    } else ""
+                } else ""
+            }.getOrDefault("")
+
+            val latestUserText = messages.lastOrNull { it.role == MessageRole.USER }?.parts
+                ?.filterIsInstance<UIMessagePart.Text>()?.joinToString(" ") { it.text } ?: ""
+            val skillsSelection = runCatching {
+                val sm = skillManager ?: org.koin.core.context.GlobalContext.getOrNull()?.getOrNull<me.rerere.rikkahub.data.files.SkillManager>()
+                val allSkills = sm?.listSkills() ?: emptyList()
+                val enabledSkillNames = assistant.enabledSkills
+                me.rerere.rikkahub.data.skills.selector.SkillsSelector.select(
+                    catalog = allSkills,
+                    userMessage = latestUserText,
+                    projectDoc = projectDoc,
+                    enabledSkillNames = enabledSkillNames,
+                )
+            }.getOrNull()
+            val skillsPrompt = skillsSelection?.renderMarkdown().orEmpty()
+
             val toolPrompts = tools.map { tool -> tool.systemPrompt(model, messages) }
             // Split into stable (assistant + tools) and volatile (memory + recent chats +
             // addendum) so prompt caching survives memory injection: the stable part is the
@@ -1561,6 +1658,9 @@ class GenerationLoop(
                 recentChatsPrompt = recentChatsPrompt,
                 toolPrompts = toolPrompts,
                 systemAddendum = systemAddendum,
+                projectDoc = projectDoc,
+                rulesPrompt = rulesPrompt,
+                skillsPrompt = skillsPrompt,
             )
             val systemParts = buildList {
                 if (stableSystem.isNotBlank()) add(UIMessagePart.Text(stableSystem))
@@ -1635,11 +1735,25 @@ class GenerationLoop(
                 var receivedAnyChunk = false
                 val streamChunkHandler = StreamChunkHandler(model)
                 val idleTimeoutMs = if (settings.streamIdleTimeoutSeconds <= 0) 0L else settings.streamIdleTimeoutSeconds * 1000L
+                val backupCandidate = resolveFallbackModels(
+                    settings = settings,
+                    primaryModel = model,
+                    subAgentSecondaryModel = subAgentFallback?.secondaryModelId?.let { settings.findModelById(it) }
+                ).firstOrNull()
+                val watchdogController = if (stream) {
+                    me.rerere.rikkahub.data.ai.watchdog.StreamWatchdogController(
+                        idleTimeoutMs = idleTimeoutMs,
+                        canSwitchModel = backupCandidate != null,
+                        candidateModelName = backupCandidate?.modelId,
+                    ).also { ctrl ->
+                        onWatchdogControllerAttached?.invoke(ctrl)
+                    }
+                } else null
                 providerImpl.streamText(
                     providerSetting = provider,
                     messages = internalMessages,
                     params = params
-                ).withStreamIdleTimeout(idleTimeoutMs).onCompletion { cause ->
+                ).withStreamIdleTimeout(idleTimeoutMs, watchdogController, streamHeartbeat).onCompletion { cause ->
                     // Some SSE implementations report an abruptly closed socket through onClosed
                     // without an exception. Treat a clean close with no chunks at all as a transport
                     // failure so the retry policy can recover a background continuation. A clean

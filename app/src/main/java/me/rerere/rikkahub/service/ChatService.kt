@@ -831,6 +831,17 @@ class ChatService(
     fun getProcessingStatusFlow(conversationId: Uuid): StateFlow<String?> =
         getOrCreateSession(conversationId).processingStatus
 
+    fun getStreamHeartbeatFlow(conversationId: Uuid): StateFlow<me.rerere.rikkahub.data.ai.watchdog.StreamHeartbeatState?> =
+        getOrCreateSession(conversationId).streamHeartbeat
+
+    fun extendWatchdog(conversationId: Uuid, seconds: Long = 30L) {
+        getOrCreateSession(conversationId).activeWatchdogController?.extendDeadline(seconds)
+    }
+
+    fun switchToSecondaryModel(conversationId: Uuid) {
+        getOrCreateSession(conversationId).activeWatchdogController?.requestModelSwitch()
+    }
+
     fun getReplyMessageIdFlow(conversationId: Uuid): StateFlow<Uuid?> =
         getOrCreateSession(conversationId).replyMessageId
 
@@ -1919,6 +1930,8 @@ class ChatService(
                 settings = settings,
                 model = model,
                 processingStatus = session.processingStatus,
+                streamHeartbeat = session.streamHeartbeat,
+                onWatchdogControllerAttached = { session.activeWatchdogController = it },
                 // Read once per call so the surface that wrote the addendum (Telegram bot,
                 // anything else) gets its runtime context into the system prompt without
                 // having to plumb a parameter all the way through sendMessage. Returns null

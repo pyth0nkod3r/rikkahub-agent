@@ -36,6 +36,10 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_run_background" to true,
     "workspace_background_status" to false,
     "workspace_background_kill" to false,
+    "update_project_doc" to false,
+    "inspect_file" to false,
+    "verify_ledger" to false,
+    "run_ultracode" to true,
 )
 
 fun resolveWorkspaceToolApproval(name: String, overrides: Map<String, Boolean>): Boolean =
@@ -62,6 +66,10 @@ suspend fun createWorkspaceTools(
         createRunBackgroundTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
         createBackgroundStatusTool(workspaceId, ::needsApproval, workspaceRepository),
         createBackgroundKillTool(workspaceId, ::needsApproval, workspaceRepository),
+        createUpdateProjectDocTool(workspaceId, workspaceRepository, needsApproval = ::needsApproval),
+        me.rerere.rikkahub.data.fileintel.tools.createInspectFileTool(workspaceId, workspaceRepository, ::needsApproval),
+        me.rerere.rikkahub.data.verification.tools.createVerifyLedgerTool(needsApproval = ::needsApproval),
+        me.rerere.rikkahub.data.ultracode.tools.createUltraCodeTool(workspaceId, workspaceRepository, needsApproval = ::needsApproval),
     )
 }
 
@@ -142,7 +150,12 @@ private fun createWriteFileTool(
         val path = params.absolutePath("path")
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
+        val targetFile = workspaceRepository.resolveAbsoluteFile(workspaceId, path)
+        val preDigest = targetFile?.let { f -> me.rerere.rikkahub.data.verification.VerificationLedger.computeFileDigest(f) }
         val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite)
+        val postDigest = targetFile?.let { f -> me.rerere.rikkahub.data.verification.VerificationLedger.computeFileDigest(f) }
+            ?: me.rerere.rikkahub.data.verification.VerificationLedger.computeDigest(text.toByteArray(Charsets.UTF_8))
+        me.rerere.rikkahub.data.verification.VerificationLedger.GLOBAL.recordFileWrite(path, null, preDigest, postDigest)
         listOf(UIMessagePart.Text(entry.toJson().toString()))
     },
 )
@@ -189,6 +202,7 @@ private fun createEditFileTool(
         require(oldText.isNotEmpty()) { "old_text must not be empty" }
 
         val original = workspaceRepository.readTextInRootfs(workspaceId, path)
+        val preDigest = me.rerere.rikkahub.data.verification.VerificationLedger.computeDigest(original.toByteArray(Charsets.UTF_8))
         // 逐级尝试 exact -> line_trimmed -> block_anchor 替换器, 见 TextReplacers.kt
         val result = try {
             replaceText(original, oldText, newText, replaceAll)
@@ -196,6 +210,8 @@ private fun createEditFileTool(
             error("${e.message} (path: $path)")
         }
         val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, result.updated, overwrite = true)
+        val postDigest = me.rerere.rikkahub.data.verification.VerificationLedger.computeDigest(result.updated.toByteArray(Charsets.UTF_8))
+        me.rerere.rikkahub.data.verification.VerificationLedger.GLOBAL.recordFileWrite(path, null, preDigest, postDigest)
         val diff = generateUnifiedDiff(original, result.updated, entry.path)
         listOf(
             UIMessagePart.Text(
@@ -322,6 +338,7 @@ private fun createShellTool(
             ?.times(1_000L)
             ?: WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS
         val result = workspaceRepository.executeCommand(workspaceId, command, cwd, timeoutMillis)
+        me.rerere.rikkahub.data.verification.VerificationLedger.GLOBAL.recordCommand(null, command, result.exitCode, result.stdout, result.stderr)
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {

@@ -44,6 +44,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
@@ -116,6 +117,10 @@ fun ChatList(
     state: LazyListState,
     loading: Boolean,
     processingStatus: String? = null,
+    streamHeartbeat: me.rerere.rikkahub.data.ai.watchdog.StreamHeartbeatState? = null,
+    onExtendWatchdog: () -> Unit = {},
+    onSwitchModel: () -> Unit = {},
+    onCancelGeneration: () -> Unit = {},
     previewMode: Boolean,
     settings: Settings,
     hazeState: HazeState,
@@ -162,6 +167,10 @@ fun ChatList(
                 state = state,
                 loading = loading,
                 processingStatus = processingStatus,
+                streamHeartbeat = streamHeartbeat,
+                onExtendWatchdog = onExtendWatchdog,
+                onSwitchModel = onSwitchModel,
+                onCancelGeneration = onCancelGeneration,
                 settings = settings,
                 hazeState = hazeState,
                 errors = errors,
@@ -195,6 +204,10 @@ private fun ChatListNormal(
     state: LazyListState,
     loading: Boolean,
     processingStatus: String? = null,
+    streamHeartbeat: me.rerere.rikkahub.data.ai.watchdog.StreamHeartbeatState? = null,
+    onExtendWatchdog: () -> Unit = {},
+    onSwitchModel: () -> Unit = {},
+    onCancelGeneration: () -> Unit = {},
     settings: Settings,
     hazeState: HazeState,
     errors: List<ChatError>,
@@ -403,22 +416,58 @@ private fun ChatListNormal(
 
             if (loading) {
                 item(LoadingIndicatorKey) {
-                    Row(
+                    Column(
                         modifier = Modifier.padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        RabbitLoadingIndicator(
-                            modifier = Modifier.size(28.dp)
-                        )
-                        AnimatedVisibility(
-                            visible = processingStatus != null,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text(
-                                text = processingStatus ?: "",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            RabbitLoadingIndicator(
+                                modifier = Modifier.size(28.dp)
                             )
+                            Column {
+                                AnimatedVisibility(
+                                    visible = processingStatus != null,
+                                ) {
+                                    Text(
+                                        text = processingStatus ?: "",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                if (streamHeartbeat != null) {
+                                    Text(
+                                        text = streamHeartbeat.statusText ?: "Streaming (${streamHeartbeat.elapsedSeconds}s elapsed)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (streamHeartbeat.isStuck) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+
+                        if (streamHeartbeat?.isStuck == true) {
+                            Row(
+                                modifier = Modifier.padding(start = 36.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                AssistChip(
+                                    onClick = onExtendWatchdog,
+                                    label = { Text("Wait 30s") },
+                                )
+                                if (streamHeartbeat.canSwitchModel) {
+                                    AssistChip(
+                                        onClick = onSwitchModel,
+                                        label = { Text("Switch Model") },
+                                    )
+                                }
+                                AssistChip(
+                                    onClick = onCancelGeneration,
+                                    label = { Text("Cancel") },
+                                )
+                            }
                         }
                     }
                 }

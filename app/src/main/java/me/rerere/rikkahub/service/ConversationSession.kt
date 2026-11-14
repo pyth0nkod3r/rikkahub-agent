@@ -41,6 +41,10 @@ class ConversationSession(
     // 处理状态（如 OCR 识别中）
     val processingStatus = MutableStateFlow<String?>(null)
 
+    // 流式心跳及卡顿状态
+    val streamHeartbeat = MutableStateFlow<me.rerere.rikkahub.data.ai.watchdog.StreamHeartbeatState?>(null)
+    var activeWatchdogController: me.rerere.rikkahub.data.ai.watchdog.StreamWatchdogController? = null
+
     // 最近一轮正在写的助手消息，这一轮还没有输出时为空。重新生成较早的消息时它不在会话末尾，
     // 生成期间那个节点还可能被切到别的分支，只能按 id 找
     val replyMessageId = MutableStateFlow<Uuid?>(null)
@@ -145,6 +149,9 @@ class ConversationSession(
     fun cleanup() {
         _generationJob.value = null
         processingStatus.value = null
+        streamHeartbeat.value = null
+        activeWatchdogController?.stop()
+        activeWatchdogController = null
         replyMessageId.value = null
         generationStartedAt.value = null
         cancelJobs()

@@ -134,6 +134,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     val conversation by vm.conversation.collectAsStateWithLifecycle()
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val processingStatus by vm.processingStatus.collectAsStateWithLifecycle()
+    val streamHeartbeat by vm.streamHeartbeat.collectAsStateWithLifecycle()
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
     val errors by vm.errors.collectAsStateWithLifecycle()
@@ -234,6 +235,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                     inputState = inputState,
                     loadingJob = loadingJob,
                     processingStatus = processingStatus,
+                    streamHeartbeat = streamHeartbeat,
                     setting = setting,
                     conversation = conversation,
                     drawerState = drawerState,
@@ -267,6 +269,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                     inputState = inputState,
                     loadingJob = loadingJob,
                     processingStatus = processingStatus,
+                    streamHeartbeat = streamHeartbeat,
                     setting = setting,
                     conversation = conversation,
                     drawerState = drawerState,
@@ -294,6 +297,7 @@ private fun ChatPageContent(
     inputState: ChatInputState,
     loadingJob: Job?,
     processingStatus: String? = null,
+    streamHeartbeat: me.rerere.rikkahub.data.ai.watchdog.StreamHeartbeatState? = null,
     setting: Settings,
     bigScreen: Boolean,
     conversation: Conversation,
@@ -574,6 +578,10 @@ private fun ChatPageContent(
                 state = chatListState,
                 loading = loadingJob != null,
                 processingStatus = processingStatus,
+                streamHeartbeat = streamHeartbeat,
+                onExtendWatchdog = { vm.extendWatchdog(30) },
+                onSwitchModel = { vm.switchToSecondaryModel() },
+                onCancelGeneration = { vm.stopGeneration() },
                 previewMode = previewMode,
                 settings = setting,
                 hazeState = hazeState,

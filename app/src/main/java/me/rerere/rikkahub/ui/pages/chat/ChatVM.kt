@@ -85,6 +85,18 @@ class ChatVM(
         chatService
             .getProcessingStatusFlow(_conversationId)
 
+    val streamHeartbeat: StateFlow<me.rerere.rikkahub.data.ai.watchdog.StreamHeartbeatState?> =
+        chatService
+            .getStreamHeartbeatFlow(_conversationId)
+
+    fun extendWatchdog(seconds: Long = 30L) {
+        chatService.extendWatchdog(_conversationId, seconds)
+    }
+
+    fun switchToSecondaryModel() {
+        chatService.switchToSecondaryModel(_conversationId)
+    }
+
     val conversationJobs = chatService
         .getConversationJobs()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
