@@ -427,6 +427,30 @@ class SubAgentProfileResolverTest {
         assertEquals("Researcher", extractAgentName(taskPrefixJson, enabled))
     }
 
+    @Test fun `extractAgentName falls back to single enabled profile and role keywords`() {
+        val builderProfile = SubAgentProfile(
+            name = "builder",
+            description = "Builds components",
+            systemPrompt = "You are a builder.",
+            enabled = true,
+        )
+        val enabled = listOf(builderProfile)
+
+        // Single enabled profile defaults when neither agent nor role is given
+        val emptyArgs = kotlinx.serialization.json.buildJsonObject {
+            put("task", kotlinx.serialization.json.JsonPrimitive("implement the login screen"))
+            put("label", kotlinx.serialization.json.JsonPrimitive("balance-sheet-adapter"))
+        }
+        assertEquals("builder", extractAgentName(emptyArgs, enabled))
+
+        // Role keywords like adapter/build match builder
+        val multiProfiles = listOf(builderProfile, researcher)
+        val keywordArgs = kotlinx.serialization.json.buildJsonObject {
+            put("task", kotlinx.serialization.json.JsonPrimitive("write balance-sheet-adapter"))
+        }
+        assertEquals("builder", extractAgentName(keywordArgs, multiProfiles))
+    }
+
     @Test fun `resolveSecondaryProfileModel resolves secondary model via modelSlug across providers`() {
         val secModel = me.rerere.ai.provider.Model(
             modelId = "backup-slug",

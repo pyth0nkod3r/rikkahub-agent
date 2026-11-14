@@ -89,7 +89,11 @@ internal fun extractAgentName(
     }
     val label = params["label"]?.jsonPrimitive?.contentOrNull?.trim()
     val task = params["task"]?.jsonPrimitive?.contentOrNull?.trim()
+    val systemPrompt = params["system_prompt"]?.jsonPrimitive?.contentOrNull?.trim()
+    val fullText = listOfNotNull(label, task, systemPrompt).joinToString(" ")
+
     if (enabledProfiles.isNotEmpty()) {
+        // 1. Direct prefix check on label or task: [builder] or builder:
         for (p in enabledProfiles) {
             val name = p.name.trim()
             if (name.isEmpty()) continue
@@ -99,6 +103,48 @@ internal fun extractAgentName(
             if (task != null && (task.startsWith("[$name]", ignoreCase = true) || task.startsWith("$name:", ignoreCase = true))) {
                 return name
             }
+        }
+
+        // 2. Exact word boundary match for profile name in label, task, or systemPrompt
+        for (p in enabledProfiles) {
+            val name = p.name.trim()
+            if (name.isEmpty()) continue
+            val wordRegex = Regex("""(?i)\b${Regex.escape(name)}\b""")
+            if (wordRegex.containsMatchIn(fullText)) {
+                return name
+            }
+        }
+
+        // 3. Keyword / role intent match (e.g. builder, researcher, critic, planner, designer, merger)
+        val roleKeywords = mapOf(
+            "builder" to listOf("build", "adapter", "implement", "fix", "code", "refactor", "patch", "create"),
+            "researcher" to listOf("research", "find", "search", "investigate", "explore", "query", "look up", "survey"),
+            "critic" to listOf("review", "verify", "audit", "lint", "test", "inspect", "critique", "check"),
+            "planner" to listOf("plan", "architect", "spec", "roadmap", "triage", "break down"),
+            "designer" to listOf("design", "wireframe", "mockup", "ui", "ux", "component", "token"),
+            "merger" to listOf("merge", "integrate", "reconcile", "combine")
+        )
+        for ((roleName, keywords) in roleKeywords) {
+            val matchingProfile = enabledProfiles.firstOrNull { it.name.equals(roleName, ignoreCase = true) }
+            if (matchingProfile != null) {
+                for (kw in keywords) {
+                    val kwRegex = Regex("""(?i)\b${Regex.escape(kw)}\b""")
+                    if (kwRegex.containsMatchIn(fullText)) {
+                        return matchingProfile.name
+                    }
+                }
+            }
+        }
+
+        // 4. Default fallback: if there is only one enabled profile, default to it!
+        if (enabledProfiles.size == 1) {
+            return enabledProfiles.first().name
+        }
+
+        // 5. If "builder" profile exists among enabled profiles and no other match, default to "builder"
+        val defaultBuilder = enabledProfiles.firstOrNull { it.name.equals("builder", ignoreCase = true) }
+        if (defaultBuilder != null) {
+            return defaultBuilder.name
         }
     }
     return null
@@ -143,8 +189,9 @@ fun subagentDispatchTool(
         if (enabledProfiles.isNotEmpty()) {
             appendLine()
             appendLine()
-            append("Named sub-agent profiles (pass the name as `agent`):\n")
-            append(enabledProfiles.joinToString("\n") { "- ${it.name}: ${it.description}" })
+            append("MANDATORY: You MUST pass the sub-agent profile name as `agent` (e.g. `agent: \"builder\"`).\n")
+            append("Configured profiles:\n")
+            append(enabledProfiles.joinToString("\n") { "- ${it.name}: ${it.description} (Model: ${it.modelSlug ?: "configured"})" })
         }
     }
     return Tool(
@@ -157,7 +204,7 @@ fun subagentDispatchTool(
                     put("label", buildJsonObject { put("type", "string") })
                     if (enabledProfiles.isNotEmpty()) {
                         val profileNames = enabledProfiles.joinToString(", ") { it.name }
-                        val desc = "Name or canonical role of a configured sub-agent profile (case-insensitive): " +
+                        val desc = "MANDATORY. Name or canonical role of a configured sub-agent profile (case-insensitive): " +
                             "$profileNames. Supplies that profile's model and system prompt. Unknown " +
                             "names fail the dispatch and the error lists valid names. model_id, if also given, " +
                             "wins over the profile's model."
@@ -215,7 +262,7 @@ fun subagentDispatchTool(
                         )
                     })
                 },
-                required = listOf("task"),
+                required = if (enabledProfiles.isNotEmpty()) listOf("task", "agent") else listOf("task"),
             )
         },
         needsApproval = { true },

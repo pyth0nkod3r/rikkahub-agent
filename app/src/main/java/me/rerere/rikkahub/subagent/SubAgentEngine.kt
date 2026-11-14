@@ -711,7 +711,14 @@ class SubAgentEngine(
                 return
             }
         val settings = settingsStore.settingsFlow.first()
-        val profileResolution = SubAgentProfileResolver.resolve(request.agentName, settings.subAgents)
+        val effectiveAgent = if (!request.agentName.isNullOrBlank()) {
+            request.agentName
+        } else {
+            val enabled = SubAgentProfileResolver.enabledProfiles(settings.subAgents)
+            if (enabled.size == 1) enabled.first().name
+            else enabled.firstOrNull { it.name.equals("builder", ignoreCase = true) }?.name
+        }
+        val profileResolution = SubAgentProfileResolver.resolve(effectiveAgent, settings.subAgents)
         val profile = when (profileResolution) {
             is SubAgentProfileResolver.Result.NotRequested -> null
             is SubAgentProfileResolver.Result.Resolved -> profileResolution.profile
@@ -872,7 +879,7 @@ class SubAgentEngine(
         val isolatedWorktreeDir = if (settings.subAgentWorktreeIsolation) prepareIsolatedGitWorktreeIfEligible(baseWorkspaceCwd, runId, toolPolicy) else null
         val effectiveWorkspaceCwd = isolatedWorktreeDir ?: baseWorkspaceCwd
 
-        val effectiveAgentName = profile?.name ?: request.agentName
+        val effectiveAgentName = profile?.name ?: effectiveAgent ?: request.agentName
         val cleanTaskOrLabel = request.label?.take(40) ?: request.task.take(40)
         val convTitle = if (!effectiveAgentName.isNullOrBlank()) {
             "[Sub-agent: $effectiveAgentName] $cleanTaskOrLabel"

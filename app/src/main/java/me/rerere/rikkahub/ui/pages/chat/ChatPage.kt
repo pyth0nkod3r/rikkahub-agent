@@ -873,7 +873,13 @@ private fun TopBar(
                     if (model != null && provider != null) {
                         val isSubAgentConv = conversation.title.startsWith("[Sub-agent")
                         val subAgentName = if (isSubAgentConv) {
-                            conversation.title.substringAfter("[Sub-agent: ", "").substringBefore("]").trim().takeIf { it.isNotBlank() }
+                            if (conversation.title.startsWith("[Sub-agent: ")) {
+                                conversation.title.substringAfter("[Sub-agent: ", "").substringBefore("]").trim().takeIf { it.isNotBlank() }
+                            } else {
+                                val reg = org.koin.java.KoinJavaComponent.getKoin().getOrNull<me.rerere.rikkahub.subagent.SubAgentRegistry>()
+                                reg?.getByConversationId(conversation.id.toString())?.agentName
+                                    ?: settings.subAgents.firstOrNull { it.enabled }?.name
+                            }
                         } else null
                         val headerAssistantLabel = if (isSubAgentConv && subAgentName != null) {
                             "Sub-agent: $subAgentName"

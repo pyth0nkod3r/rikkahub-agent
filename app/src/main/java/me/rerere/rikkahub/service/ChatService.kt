@@ -1764,18 +1764,19 @@ class ChatService(
 
         val isSubAgent = me.rerere.rikkahub.subagent.SubAgentToolPolicies.isSubAgent(conversationId) ||
             me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId) ||
-            initialConversation.title.startsWith("[Sub-agent]")
+            initialConversation.title.startsWith("[Sub-agent")
 
         // For sub-agents / headless runs, prioritize the conversation's own chatModelId directly
         // and fall back to the global default model before inspecting assistant.chatModelId.
         // This ensures a broken/disabled/missing parent assistant model does not crash sub-agents.
         val modelTargetId = if (isSubAgent) {
-            initialConversation.chatModelId
-                ?: settings.getCurrentChatModel()?.id
+            initialConversation.config?.chatModelId
+                ?: initialConversation.chatModelId
                 ?: assistant.chatModelId
+                ?: settings.getCurrentChatModel()?.id
                 ?: settings.chatModelId
         } else {
-            initialConversation.chatModelId ?: assistant.chatModelId ?: settings.chatModelId
+            initialConversation.config?.chatModelId ?: initialConversation.chatModelId ?: assistant.chatModelId ?: settings.chatModelId
         }
         var model = settings.findModelById(modelTargetId)
         var resolvedProvider = model?.findProvider(settings.providers)
@@ -1790,8 +1791,14 @@ class ChatService(
             if (fallbackModel != null) {
                 model = fallbackModel
                 resolvedProvider = fallbackModel.findProvider(settings.providers)
-                if (initialConversation.chatModelId != fallbackModel.id) {
-                    saveConversation(conversationId, initialConversation.copy(chatModelId = fallbackModel.id))
+                if (initialConversation.chatModelId != fallbackModel.id || initialConversation.config?.chatModelId != fallbackModel.id) {
+                    saveConversation(
+                        conversationId,
+                        initialConversation.copy(
+                            chatModelId = fallbackModel.id,
+                            config = initialConversation.config?.copy(chatModelId = fallbackModel.id),
+                        )
+                    )
                 }
             }
         }
@@ -1827,6 +1834,7 @@ class ChatService(
             } else {
                 val reg = org.koin.java.KoinJavaComponent.getKoin().getOrNull<me.rerere.rikkahub.subagent.SubAgentRegistry>()
                 reg?.getByConversationId(conversationId.toString())?.agentName
+                    ?: settings.subAgents.firstOrNull { it.enabled }?.name
             }
         } else null
         val senderName = if (isSubAgent) {
