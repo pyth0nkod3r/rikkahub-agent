@@ -433,7 +433,7 @@ class SubAgentProfileResolverTest {
             displayName = "Backup Model",
             type = me.rerere.ai.provider.ModelType.CHAT,
         )
-        val provider = me.rerere.rikkahub.data.model.ProviderSetting.OpenAI(
+        val provider = me.rerere.ai.provider.ProviderSetting.OpenAI(
             name = "BackupProvider",
             enabled = true,
             models = listOf(secModel),
