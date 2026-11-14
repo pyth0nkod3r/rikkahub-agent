@@ -29,7 +29,7 @@ data class ConversationConfig(
 )
 
 // 内置搜索是模型的开关，不在助手上，由调用方另行填入
-private fun Assistant.toConversationConfig() = ConversationConfig(
+fun Assistant.toConversationConfig() = ConversationConfig(
     chatModelId = chatModelId,
     reasoningLevel = reasoningLevel,
     enableWebSearch = enableWebSearch,
