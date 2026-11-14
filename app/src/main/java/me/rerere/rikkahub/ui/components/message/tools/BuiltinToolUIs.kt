@@ -63,6 +63,7 @@ import me.rerere.hugeicons.stroke.Message02
 import me.rerere.hugeicons.stroke.Pin
 import me.rerere.hugeicons.stroke.QuillWrite01
 import me.rerere.hugeicons.stroke.Refresh01
+import me.rerere.hugeicons.stroke.Robot01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.Calendar03
@@ -1035,5 +1036,58 @@ object ShowLocationOnMapToolUI : ToolUIRenderer {
         context.content.getStringContent("summary")?.let { return it }
         val q = context.arguments.getStringContent("query").orEmpty()
         return if (q.isNotBlank()) "Map: $q" else "Open map"
+    }
+}
+
+object SubAgentDispatchToolUI : ToolUIRenderer {
+    override val toolName: String = "subagent_dispatch"
+
+    override fun icon(context: ToolUIContext): ImageVector = HugeIcons.Robot01
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        val agent = context.arguments.getStringContent("agent")
+            ?: context.arguments.getStringContent("role")
+            ?: context.arguments.getStringContent("agent_name")
+            ?: context.arguments.getStringContent("subagent")
+            ?: context.arguments.getStringContent("profile")
+            ?: context.arguments.getStringContent("name")
+        val label = context.arguments.getStringContent("label")
+        return if (!agent.isNullOrBlank()) {
+            if (!label.isNullOrBlank() && !label.contains(agent, ignoreCase = true)) {
+                "Sub-agent: $agent ($label)"
+            } else {
+                "Sub-agent: $agent"
+            }
+        } else if (!label.isNullOrBlank()) {
+            "Sub-agent ($label)"
+        } else {
+            "Sub-agent dispatch"
+        }
+    }
+
+    override fun hasSummary(context: ToolUIContext): Boolean = true
+
+    @Composable
+    override fun Summary(context: ToolUIContext) {
+        val task = context.arguments.getStringContent("task")
+        val model = context.arguments.getStringContent("model_id")
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            if (!model.isNullOrBlank()) {
+                Text(
+                    text = "Model: $model",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (!task.isNullOrBlank()) {
+                Text(
+                    text = if (task.length > 120) task.take(120) + "..." else task,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }

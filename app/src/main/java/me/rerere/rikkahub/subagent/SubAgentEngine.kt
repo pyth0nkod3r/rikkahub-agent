@@ -249,6 +249,22 @@ internal object SubAgentModelResolver {
         return primaryResult
     }
 
+    fun resolveSecondaryProfileModel(profile: SubAgentProfile, providers: List<ProviderSetting>): Result {
+        if (profile.secondaryModelId == null && profile.secondaryModelSlug.isNullOrBlank()) return Result.Inherit
+        val enabledProviders = providers.filter { it.enabled }
+        val chatModels: List<Pair<ProviderSetting, Model>> = enabledProviders
+            .flatMap { provider -> provider.models.filter { it.type == ModelType.CHAT || it.type == ModelType.DECISION }.map { provider to it } }
+        return resolveModelTiers(
+            modelId = profile.secondaryModelId,
+            providerId = profile.secondaryProviderId,
+            modelSlug = profile.secondaryModelSlug,
+            profileName = profile.name,
+            enabledProviders = enabledProviders,
+            chatModels = chatModels,
+            isSecondary = true,
+        )
+    }
+
     private fun resolveModelTiers(
         modelId: Uuid?,
         providerId: Uuid?,
@@ -602,12 +618,18 @@ class SubAgentEngine(
         val convId = Uuid.random()
         val now = System.currentTimeMillis()
         val attemptedModel = cleaned.modelId ?: cleaned.agentName
+        val rawLabel = cleaned.label?.takeIf { it.isNotBlank() } ?: cleaned.task.take(60)
+        val effectiveLabel = if (cleaned.agentName != null && !rawLabel.contains(cleaned.agentName, ignoreCase = true)) {
+            "[${cleaned.agentName}] $rawLabel"
+        } else {
+            rawLabel
+        }
         val initialRun = SubAgentRun(
             id = runId,
             conversationId = convId.toString(),
             parentChatId = parentChatId,
             parentAssistantId = parentAssistantId,
-            label = cleaned.label?.takeIf { it.isNotBlank() } ?: cleaned.task.take(60),
+            label = effectiveLabel,
             task = cleaned.task,
             modelId = cleaned.modelId,
             agentName = cleaned.agentName,
@@ -847,13 +869,28 @@ class SubAgentEngine(
         val isolatedWorktreeDir = if (settings.subAgentWorktreeIsolation) prepareIsolatedGitWorktreeIfEligible(baseWorkspaceCwd, runId, toolPolicy) else null
         val effectiveWorkspaceCwd = isolatedWorktreeDir ?: baseWorkspaceCwd
 
+        val effectiveAgentName = profile?.name ?: request.agentName
+        val cleanTaskOrLabel = request.label?.take(40) ?: request.task.take(40)
+        val convTitle = if (!effectiveAgentName.isNullOrBlank()) {
+            "[Sub-agent: $effectiveAgentName] $cleanTaskOrLabel"
+        } else {
+            "[Sub-agent] $cleanTaskOrLabel"
+        }
+
+        val parentAsst = parentAsstUuid?.let { settings.findAssistantById(it) }
+        val baseConfig = parentAsst?.toConversationConfig() ?: ConversationConfig()
+        val subAgentConfig = baseConfig.copy(
+            chatModelId = resolvedChatModelId,
+            builtInSearch = actualModel != null && BuiltInTools.Search in actualModel.tools,
+        )
         val conv = Conversation.ofId(
             id = convId,
             assistantId = parentAsstUuid,
             newConversation = true,
         ).copy(
-            title = "[Sub-agent] ${request.label?.take(40) ?: request.task.take(40)}",
+            title = convTitle,
             chatModelId = resolvedChatModelId,
+            config = subAgentConfig,
             customSystemPrompt = subAgentSystemPrompt,
             workspaceCwd = effectiveWorkspaceCwd,
         )
@@ -861,18 +898,30 @@ class SubAgentEngine(
         chatService.initializeConversation(conv.id)
         HeadlessConversations.mark(conv.id)
         try {
+            val agentPrefix = if (!effectiveAgentName.isNullOrBlank()) {
+                "[Sub-agent: $effectiveAgentName]\n\n"
+            } else {
+                ""
+            }
             val taskWithWrapup = buildString {
+                if (agentPrefix.isNotEmpty()) append(agentPrefix)
                 append(request.task)
                 appendLine()
                 appendLine()
                 append("When you have finished, end with one short paragraph in plain text that summarises what you did and what you found. Do NOT stop on a tool call — finish with assistant text. The dispatcher harvests only your final text reply, so this paragraph is the entire response the parent sees.")
             }
             SubAgentToolPolicies.register(conv.id, toolPolicy)
-            if (profile?.secondaryModelId != null) {
+            val resolvedSecondaryId = if (profile != null) {
+                when (val secRes = SubAgentModelResolver.resolveSecondaryProfileModel(profile, settings.providers)) {
+                    is SubAgentModelResolver.Result.Resolved -> secRes.modelId
+                    else -> profile.secondaryModelId
+                }
+            } else null
+            if (resolvedSecondaryId != null) {
                 SubAgentFallbackPolicies.register(
                     conversationId = conv.id,
-                    secondaryModelId = profile.secondaryModelId,
-                    maxFailsBeforeSwitch = profile.maxFailsBeforeSwitch,
+                    secondaryModelId = resolvedSecondaryId,
+                    maxFailsBeforeSwitch = profile?.maxFailsBeforeSwitch ?: 1,
                 )
             }
             val reply = CompletableDeferred<String?>()
@@ -1041,7 +1090,8 @@ class SubAgentEngine(
                 val modelRes = SubAgentModelResolver.resolveProfileModel(profile, settings.providers)
                 if (modelRes is SubAgentModelResolver.Result.Resolved) {
                     if (modelRes.modelId != conv.chatModelId) {
-                        conversationRepo.updateConversation(conv.copy(chatModelId = modelRes.modelId))
+                        val updatedConfig = (conv.config ?: ConversationConfig()).copy(chatModelId = modelRes.modelId)
+                        conversationRepo.updateConversation(conv.copy(chatModelId = modelRes.modelId, config = updatedConfig))
                     }
                     reinjectModelId = modelRes.modelId.toString()
                     reinjectModelSlug = modelRes.modelSlug
@@ -1147,11 +1197,17 @@ class SubAgentEngine(
             val reinjectProfile = existingRun?.agentName?.let { name ->
                 reinjectSettings.subAgents.firstOrNull { it.name.equals(name, ignoreCase = true) }
             }
-            if (reinjectProfile?.secondaryModelId != null) {
+            val resolvedSecondaryId = if (reinjectProfile != null) {
+                when (val secRes = SubAgentModelResolver.resolveSecondaryProfileModel(reinjectProfile, reinjectSettings.providers)) {
+                    is SubAgentModelResolver.Result.Resolved -> secRes.modelId
+                    else -> reinjectProfile.secondaryModelId
+                }
+            } else null
+            if (resolvedSecondaryId != null) {
                 SubAgentFallbackPolicies.register(
                     conversationId = convId,
-                    secondaryModelId = reinjectProfile.secondaryModelId,
-                    maxFailsBeforeSwitch = reinjectProfile.maxFailsBeforeSwitch,
+                    secondaryModelId = resolvedSecondaryId,
+                    maxFailsBeforeSwitch = reinjectProfile?.maxFailsBeforeSwitch ?: 1,
                 )
             }
             val reply = CompletableDeferred<String?>()

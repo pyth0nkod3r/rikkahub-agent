@@ -117,6 +117,7 @@ object ToolUIRegistry {
         SendEmailIntentToolUI,
         OpenWifiSettingsToolUI,
         ShowLocationOnMapToolUI,
+        SubAgentDispatchToolUI,
     ).plus(MemoryFileToolUI.all)
 
     private val aliasMap: Map<String, ToolUIRenderer> = mapOf(

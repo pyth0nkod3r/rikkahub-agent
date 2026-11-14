@@ -30,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -79,6 +80,12 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
     }
     var proxyPassword by remember(settings.networkSetting.proxyPassword) {
         mutableStateOf(settings.networkSetting.proxyPassword)
+    }
+    var maxRetries by remember(settings.responseStreamMaxRetries) {
+        mutableStateOf(settings.responseStreamMaxRetries.toString())
+    }
+    var watchdogTimeout by remember(settings.streamIdleTimeoutSeconds) {
+        mutableStateOf(settings.streamIdleTimeoutSeconds.toString())
     }
     var proxyUrlDraft by remember { mutableStateOf("") }
     var proxyUsernameDraft by remember { mutableStateOf("") }
@@ -300,6 +307,86 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                                     )
                                 },
                             )
+                        },
+                    )
+                    item(
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_model_page_response_stream_retries))
+                        },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(stringResource(R.string.setting_model_page_response_stream_retries_desc))
+                                OutlinedTextField(
+                                    value = maxRetries,
+                                    onValueChange = { value ->
+                                        maxRetries = value.filter(Char::isDigit)
+                                        maxRetries.toIntOrNull()?.let { parsed ->
+                                            val normalized = parsed.coerceAtLeast(0)
+                                            if (normalized != settings.responseStreamMaxRetries) {
+                                                vm.updateSettings(settings.copy(responseStreamMaxRetries = normalized))
+                                            }
+                                        }
+                                    },
+                                    singleLine = true,
+                                    label = {
+                                        Text(stringResource(R.string.setting_model_page_response_stream_retries_input))
+                                    },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .onFocusChanged { focusState ->
+                                            if (!focusState.isFocused) {
+                                                val normalized = maxRetries.toIntOrNull()
+                                                    ?.coerceAtLeast(0)
+                                                    ?: settings.responseStreamMaxRetries
+                                                maxRetries = normalized.toString()
+                                                if (settings.responseStreamMaxRetries != normalized) {
+                                                    vm.updateSettings(settings.copy(responseStreamMaxRetries = normalized))
+                                                }
+                                            }
+                                        },
+                                )
+                            }
+                        },
+                    )
+                    item(
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_harness_watchdog_timeout))
+                        },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Inactivity watchdog timeout in seconds (0 to disable). Retries when no chunk arrives within this interval.")
+                                OutlinedTextField(
+                                    value = watchdogTimeout,
+                                    onValueChange = { value ->
+                                        watchdogTimeout = value.filter(Char::isDigit)
+                                        watchdogTimeout.toIntOrNull()?.let { parsed ->
+                                            val normalized = parsed.coerceAtLeast(0)
+                                            if (normalized != settings.streamIdleTimeoutSeconds) {
+                                                vm.updateSettings(settings.copy(streamIdleTimeoutSeconds = normalized))
+                                            }
+                                        }
+                                    },
+                                    singleLine = true,
+                                    label = {
+                                        Text("Timeout in seconds")
+                                    },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .onFocusChanged { focusState ->
+                                            if (!focusState.isFocused) {
+                                                val normalized = watchdogTimeout.toIntOrNull()
+                                                    ?.coerceAtLeast(0)
+                                                    ?: settings.streamIdleTimeoutSeconds
+                                                watchdogTimeout = normalized.toString()
+                                                if (settings.streamIdleTimeoutSeconds != normalized) {
+                                                    vm.updateSettings(settings.copy(streamIdleTimeoutSeconds = normalized))
+                                                }
+                                            }
+                                        },
+                                )
+                            }
                         },
                     )
                 }

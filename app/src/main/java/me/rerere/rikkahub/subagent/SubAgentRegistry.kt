@@ -51,6 +51,9 @@ class SubAgentRegistry {
 
     fun get(id: String): SubAgentRun? = _runs.value[id]
 
+    fun getByConversationId(conversationId: String): SubAgentRun? =
+        _runs.value.values.firstOrNull { it.conversationId == conversationId }
+
     fun all(): Map<String, SubAgentRun> = _runs.value
 
     fun rehydrate(runs: List<SubAgentRun>) {

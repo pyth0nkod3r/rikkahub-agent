@@ -1769,8 +1769,12 @@ class ChatService(
         var model = settings.findModelById(modelTargetId)
         var resolvedProvider = model?.findProvider(settings.providers)
         if (model == null || resolvedProvider == null || !resolvedProvider.enabled) {
-            val fallbackModel = settings.getCurrentChatModel()
-                ?.takeIf { it.findProvider(settings.providers)?.enabled == true }
+            val subAgentSecondaryModel = if (isSubAgent) {
+                val secId = me.rerere.rikkahub.subagent.SubAgentFallbackPolicies.getSecondaryModel(conversationId)
+                secId?.let { settings.findModelById(it) }?.takeIf { it.findProvider(settings.providers)?.enabled == true }
+            } else null
+            val fallbackModel = subAgentSecondaryModel
+                ?: settings.getCurrentChatModel()?.takeIf { it.findProvider(settings.providers)?.enabled == true }
                 ?: settings.providers.firstOrNull { it.enabled }?.models?.firstOrNull { it.type == ModelType.CHAT }
             if (fallbackModel != null) {
                 model = fallbackModel
@@ -1805,8 +1809,17 @@ class ChatService(
         if (isSubAgent && !model.abilities.contains(ModelAbility.TOOL)) {
             model = model.copy(abilities = model.abilities + ModelAbility.TOOL)
         }
+        val subAgentName = if (isSubAgent) {
+            val title = initialConversation.title
+            if (title.startsWith("[Sub-agent: ")) {
+                title.substringAfter("[Sub-agent: ").substringBefore("]").trim().takeIf { it.isNotBlank() }
+            } else {
+                val reg = org.koin.java.KoinJavaComponent.getKoin().getOrNull<me.rerere.rikkahub.subagent.SubAgentRegistry>()
+                reg?.getByConversationId(conversationId.toString())?.agentName
+            }
+        } else null
         val senderName = if (isSubAgent) {
-            "Sub-agent"
+            if (!subAgentName.isNullOrBlank()) "Sub-agent ($subAgentName)" else "Sub-agent"
         } else if (assistant.useAssistantAvatar) {
             assistant.name.ifEmpty { context.getString(R.string.assistant_page_default_assistant) }
         } else {

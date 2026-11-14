@@ -90,6 +90,8 @@ class SubAgentToolsEncodeRunTest {
         )
         val json = encodeRun(run)
         assertEquals("researcher", json["agent"]?.toString()?.trim('"'))
+        assertEquals("researcher", json["role"]?.toString()?.trim('"'))
+        assertEquals("researcher", json["subagent_name"]?.toString()?.trim('"'))
         assertEquals("gemini-3.8-flash-high", json["attempted_model"]?.toString()?.trim('"'))
         assertEquals("glm-4-flash", json["resolved_model"]?.toString()?.trim('"'))
         assertEquals("provider rate limited", json["fallback_reason"]?.toString()?.trim('"'))

@@ -29,7 +29,11 @@ internal fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject 
     if (run.conversationId != null) put("conversation_id", run.conversationId)
     put("status", run.status.name)
     put("label", run.label)
-    if (run.agentName != null) put("agent", run.agentName)
+    if (run.agentName != null) {
+        put("agent", run.agentName)
+        put("role", run.agentName)
+        put("subagent_name", run.agentName)
+    }
     if (run.modelId != null) put("model_id", run.modelId)
     if (run.attemptedModel != null) put("attempted_model", run.attemptedModel)
     if (run.resolvedModelSlug != null) put("resolved_model", run.resolvedModelSlug)
@@ -59,6 +63,45 @@ internal fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject 
             run.capabilities.forEach { add(it) }
         })
     }
+}
+
+internal fun extractAgentName(
+    params: kotlinx.serialization.json.JsonObject,
+    enabledProfiles: List<SubAgentProfile> = emptyList(),
+): String? {
+    val candidates = listOf(
+        "agent",
+        "role",
+        "agent_name",
+        "subagent",
+        "subagent_name",
+        "profile",
+        "profile_name",
+        "name",
+        "type",
+        "typeName",
+    )
+    for (key in candidates) {
+        val candidate = params[key]?.jsonPrimitive?.contentOrNull?.trim()
+        if (!candidate.isNullOrEmpty()) {
+            return candidate
+        }
+    }
+    val label = params["label"]?.jsonPrimitive?.contentOrNull?.trim()
+    val task = params["task"]?.jsonPrimitive?.contentOrNull?.trim()
+    if (enabledProfiles.isNotEmpty()) {
+        for (p in enabledProfiles) {
+            val name = p.name.trim()
+            if (name.isEmpty()) continue
+            if (label != null && (label.startsWith("[$name]", ignoreCase = true) || label.startsWith("$name:", ignoreCase = true))) {
+                return name
+            }
+            if (task != null && (task.startsWith("[$name]", ignoreCase = true) || task.startsWith("$name:", ignoreCase = true))) {
+                return name
+            }
+        }
+    }
+    return null
 }
 
 /**
@@ -113,16 +156,18 @@ fun subagentDispatchTool(
                     put("task", buildJsonObject { put("type", "string") })
                     put("label", buildJsonObject { put("type", "string") })
                     if (enabledProfiles.isNotEmpty()) {
+                        val profileNames = enabledProfiles.joinToString(", ") { it.name }
+                        val desc = "Name or canonical role of a configured sub-agent profile (case-insensitive): " +
+                            "$profileNames. Supplies that profile's model and system prompt. Unknown " +
+                            "names fail the dispatch and the error lists valid names. model_id, if also given, " +
+                            "wins over the profile's model."
                         put("agent", buildJsonObject {
                             put("type", "string")
-                            put(
-                                "description",
-                                "Name of a configured sub-agent profile (case-insensitive), " +
-                                    "supplying that profile's model and system prompt. Unknown " +
-                                    "names fail the dispatch and the error lists the valid " +
-                                    "names. model_id, if also given, wins over the profile's " +
-                                    "model.",
-                            )
+                            put("description", desc)
+                        })
+                        put("role", buildJsonObject {
+                            put("type", "string")
+                            put("description", desc)
                         })
                     }
                     put("model_id", buildJsonObject {
@@ -193,9 +238,7 @@ fun subagentDispatchTool(
             val request = SubAgentRequest(
                 task = task,
                 modelId = params["model_id"]?.jsonPrimitive?.contentOrNull,
-                agentName = params["agent"]?.jsonPrimitive?.contentOrNull
-                    ?: params["profile"]?.jsonPrimitive?.contentOrNull
-                    ?: params["subagent"]?.jsonPrimitive?.contentOrNull,
+                agentName = extractAgentName(params, enabledProfiles),
                 systemPrompt = params["system_prompt"]?.jsonPrimitive?.contentOrNull,
                 tools = params["tools"]?.let { runCatching { it.jsonArray }.getOrNull() }
                     ?.mapNotNull { it.jsonPrimitive.contentOrNull },

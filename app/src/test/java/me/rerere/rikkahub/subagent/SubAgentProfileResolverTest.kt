@@ -393,4 +393,56 @@ class SubAgentProfileResolverTest {
         assertEquals(null, failAfterUnregister)
         assertEquals(null, SubAgentFallbackPolicies.getConfig(convId))
     }
+
+    @Test fun `extractAgentName resolves from role and aliases`() {
+        val enabled = listOf(researcher)
+        val roleJson = kotlinx.serialization.json.buildJsonObject {
+            put("role", kotlinx.serialization.json.JsonPrimitive("Researcher"))
+            put("task", kotlinx.serialization.json.JsonPrimitive("test task"))
+        }
+        assertEquals("Researcher", extractAgentName(roleJson, enabled))
+
+        val agentNameJson = kotlinx.serialization.json.buildJsonObject {
+            put("agent_name", kotlinx.serialization.json.JsonPrimitive("researcher"))
+        }
+        assertEquals("researcher", extractAgentName(agentNameJson, enabled))
+
+        val typeJson = kotlinx.serialization.json.buildJsonObject {
+            put("type", kotlinx.serialization.json.JsonPrimitive("Researcher"))
+        }
+        assertEquals("Researcher", extractAgentName(typeJson, enabled))
+    }
+
+    @Test fun `extractAgentName extracts from label and task prefix fallbacks`() {
+        val enabled = listOf(researcher)
+        val labelPrefixJson = kotlinx.serialization.json.buildJsonObject {
+            put("label", kotlinx.serialization.json.JsonPrimitive("[Researcher] do research"))
+            put("task", kotlinx.serialization.json.JsonPrimitive("find papers"))
+        }
+        assertEquals("Researcher", extractAgentName(labelPrefixJson, enabled))
+
+        val taskPrefixJson = kotlinx.serialization.json.buildJsonObject {
+            put("task", kotlinx.serialization.json.JsonPrimitive("Researcher: investigate codebase"))
+        }
+        assertEquals("Researcher", extractAgentName(taskPrefixJson, enabled))
+    }
+
+    @Test fun `resolveSecondaryProfileModel resolves secondary model via modelSlug across providers`() {
+        val secModel = me.rerere.ai.provider.Model(
+            modelId = "backup-slug",
+            displayName = "Backup Model",
+            type = me.rerere.ai.provider.ModelType.CHAT,
+        )
+        val provider = me.rerere.rikkahub.data.model.ProviderSetting.OpenAI(
+            name = "BackupProvider",
+            enabled = true,
+            models = listOf(secModel),
+        )
+        val profileWithSecondary = researcher.copy(
+            secondaryModelSlug = "backup-slug",
+        )
+        val result = SubAgentModelResolver.resolveSecondaryProfileModel(profileWithSecondary, listOf(provider))
+        assertTrue(result is SubAgentModelResolver.Result.Resolved)
+        assertEquals(secModel.id, (result as SubAgentModelResolver.Result.Resolved).modelId)
+    }
 }

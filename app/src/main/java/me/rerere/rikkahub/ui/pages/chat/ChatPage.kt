@@ -863,8 +863,19 @@ private fun TopBar(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (model != null && provider != null) {
+                        val isSubAgentConv = conversation.title.startsWith("[Sub-agent")
+                        val subAgentName = if (isSubAgentConv) {
+                            conversation.title.substringAfter("[Sub-agent: ", "").substringBefore("]").trim().takeIf { it.isNotBlank() }
+                        } else null
+                        val headerAssistantLabel = if (isSubAgentConv && subAgentName != null) {
+                            "Sub-agent: $subAgentName"
+                        } else if (isSubAgentConv) {
+                            "Sub-agent"
+                        } else {
+                            assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }
+                        }
                         Text(
-                            text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${model.displayName} (${provider.name})",
+                            text = "$headerAssistantLabel / ${model.displayName} (${provider.name})",
                             overflow = TextOverflow.Ellipsis,
                             maxLines = 1,
                             color = LocalContentColor.current.copy(0.65f),
@@ -1068,8 +1079,13 @@ private fun ChatHarnessInspectorSheet(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
+                                    val itemLabel = if (run.agentName != null && !run.label.contains(run.agentName, ignoreCase = true)) {
+                                        "[${run.agentName}] ${run.label}"
+                                    } else {
+                                        run.label.ifBlank { run.agentName ?: run.id }
+                                    }
                                     Text(
-                                        text = run.label.ifBlank { run.agentName ?: run.id },
+                                        text = itemLabel,
                                         style = MaterialTheme.typography.titleSmall,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,

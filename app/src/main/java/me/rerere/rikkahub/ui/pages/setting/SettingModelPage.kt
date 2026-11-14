@@ -332,6 +332,9 @@ private fun ResponseStreamRetrySettingItem(
     var maxRetries by remember(settings.responseStreamMaxRetries) {
         mutableStateOf(settings.responseStreamMaxRetries.toString())
     }
+    var watchdogTimeout by remember(settings.streamIdleTimeoutSeconds) {
+        mutableStateOf(settings.streamIdleTimeoutSeconds.toString())
+    }
 
     CardGroup {
         item(
@@ -344,9 +347,9 @@ private fun ResponseStreamRetrySettingItem(
                     OutlinedTextField(
                         value = maxRetries,
                         onValueChange = { value ->
-                            maxRetries = value.filter(Char::isDigit).take(2)
+                            maxRetries = value.filter(Char::isDigit)
                             maxRetries.toIntOrNull()?.let { parsed ->
-                                val normalized = parsed.coerceIn(0, 10)
+                                val normalized = parsed.coerceAtLeast(0)
                                 if (normalized != settings.responseStreamMaxRetries) {
                                     vm.updateSettings { current ->
                                         current.copy(responseStreamMaxRetries = normalized)
@@ -364,7 +367,7 @@ private fun ResponseStreamRetrySettingItem(
                             .onFocusChanged { focusState ->
                                 if (!focusState.isFocused) {
                                     val normalized = maxRetries.toIntOrNull()
-                                        ?.coerceIn(0, 10)
+                                        ?.coerceAtLeast(0)
                                         ?: settings.responseStreamMaxRetries
                                     maxRetries = normalized.toString()
                                     vm.updateSettings { current ->
@@ -372,6 +375,42 @@ private fun ResponseStreamRetrySettingItem(
                                             current
                                         } else {
                                             current.copy(responseStreamMaxRetries = normalized)
+                                        }
+                                    }
+                                }
+                            },
+                    )
+                    OutlinedTextField(
+                        value = watchdogTimeout,
+                        onValueChange = { value ->
+                            watchdogTimeout = value.filter(Char::isDigit)
+                            watchdogTimeout.toIntOrNull()?.let { parsed ->
+                                val normalized = parsed.coerceAtLeast(0)
+                                if (normalized != settings.streamIdleTimeoutSeconds) {
+                                    vm.updateSettings { current ->
+                                        current.copy(streamIdleTimeoutSeconds = normalized)
+                                    }
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        label = {
+                            Text(stringResource(R.string.setting_harness_watchdog_timeout))
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { focusState ->
+                                if (!focusState.isFocused) {
+                                    val normalized = watchdogTimeout.toIntOrNull()
+                                        ?.coerceAtLeast(0)
+                                        ?: settings.streamIdleTimeoutSeconds
+                                    watchdogTimeout = normalized.toString()
+                                    vm.updateSettings { current ->
+                                        if (current.streamIdleTimeoutSeconds == normalized) {
+                                            current
+                                        } else {
+                                            current.copy(streamIdleTimeoutSeconds = normalized)
                                         }
                                     }
                                 }

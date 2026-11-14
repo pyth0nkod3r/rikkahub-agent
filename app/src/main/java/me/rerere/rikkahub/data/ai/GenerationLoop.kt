@@ -207,11 +207,6 @@ internal fun shouldRetryGenerationStreamFailure(
     if (receivedMeaningfulOutput || retryAttempt >= maxRetries.coerceAtLeast(0).toLong()) {
         return false
     }
-    // If a 75-second inactivity watchdog timeout triggered and a fallback model is available,
-    // do not loop 10 times (12.5 minutes) on the unresponsive model. Allow at most 1 retry, then fall over.
-    if (failure is StreamIdleTimeoutException && hasFallbackModel && retryAttempt >= 1) {
-        return false
-    }
     if (failure is ResponseStreamErrorException || isContextLimitFailure(failure)) {
         return false
     }
@@ -1639,7 +1634,7 @@ class GenerationLoop(
                 var receivedMeaningfulOutput = false
                 var receivedAnyChunk = false
                 val streamChunkHandler = StreamChunkHandler(model)
-                val idleTimeoutMs = if (settings.streamIdleTimeoutSeconds <= 0) 0L else (settings.streamIdleTimeoutSeconds * 1000L).coerceAtLeast(15_000L)
+                val idleTimeoutMs = if (settings.streamIdleTimeoutSeconds <= 0) 0L else settings.streamIdleTimeoutSeconds * 1000L
                 providerImpl.streamText(
                     providerSetting = provider,
                     messages = internalMessages,

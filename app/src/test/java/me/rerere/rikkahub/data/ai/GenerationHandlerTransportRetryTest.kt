@@ -233,9 +233,8 @@ class GenerationHandlerTransportRetryTest {
     }
 
     @Test
-    fun `stream idle watchdog timeout stops retrying when fallback model candidate is ready`() {
+    fun `stream idle watchdog timeout retries according to supplied maxRetries`() {
         val watchdogErr = StreamIdleTimeoutException("Stream inactivity watchdog triggered: no chunks received for 75s")
-        // retryAttempt 0: allowed once
         assertTrue(
             shouldRetryGenerationStreamFailure(
                 failure = watchdogErr,
@@ -245,11 +244,19 @@ class GenerationHandlerTransportRetryTest {
                 hasFallbackModel = true,
             )
         )
-        // retryAttempt 1: fast failover to fallback model instead of continuing 10 retries
+        assertTrue(
+            shouldRetryGenerationStreamFailure(
+                failure = watchdogErr,
+                retryAttempt = 4,
+                maxRetries = 5,
+                receivedMeaningfulOutput = false,
+                hasFallbackModel = true,
+            )
+        )
         assertFalse(
             shouldRetryGenerationStreamFailure(
                 failure = watchdogErr,
-                retryAttempt = 1,
+                retryAttempt = 5,
                 maxRetries = 5,
                 receivedMeaningfulOutput = false,
                 hasFallbackModel = true,

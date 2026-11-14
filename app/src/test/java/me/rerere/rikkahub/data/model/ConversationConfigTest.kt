@@ -57,6 +57,12 @@ class ConversationConfigTest {
     }
 
     @Test
+    fun `conversation with explicit chatModelId is respected even when config is null`() {
+        val conversation = conversation().copy(chatModelId = modelB.id)
+        assertEquals(modelB, settings().getChatModelOf(conversation))
+    }
+
+    @Test
     fun `binding snapshots the assistant configuration`() {
         val bound = conversation().bindConfig(settings())
 
