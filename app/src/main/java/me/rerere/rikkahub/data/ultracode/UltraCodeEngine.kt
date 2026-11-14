@@ -166,6 +166,12 @@ class UltraCodeEngine(
                         needs = failed.needs,
                         payload = mapOf("targetTaskId" to failed.id, "diagnosis" to (failed.error ?: "Verification contradicted")),
                     )
+                    // Mark the failed node as superseded/skipped by the repair so it doesn't fail the graph
+                    val supersededFailed = failed.copy(
+                        status = TaskNodeStatus.SKIPPED,
+                        error = "Superseded by repair node $repairId",
+                    )
+                    updatedGraph = updatedGraph.withNode(supersededFailed)
                     // Add repair node and make downstream nodes depend on the repair instead
                     updatedGraph = updatedGraph.withNode(repairNode)
                     val downstream = updatedGraph.nodes.values.filter { failed.id in it.needs }
